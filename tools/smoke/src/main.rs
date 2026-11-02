@@ -7,8 +7,9 @@
 //! 3. one third-party `RegisterThirdParty` for X (publisher Q signs);
 //! 4. one `Update` by A (revision 2);
 //! 5. the Mallory negative: `RegisterDeployer` at (X3, REG) for a header X3 she does not hold,
-//!    signed only by her. Simulation refuses it; it is then forced on chain with a fixed gas limit
-//!    and must revert, charged to Mallory;
+//!    signed only by her. Simulation refuses it ("must sign"); it is then forced on chain with a
+//!    gas limit above what the honestly signed instruction needs, and must revert, charged to
+//!    Mallory (at least the full limit × base fee);
 //! 6. reads back: one `getAccount(X)` returns the deployer entry and the loader header; the
 //!    global, name, author and third-party list walks.
 //!
@@ -89,6 +90,10 @@ struct Outcome {
     fee: u128,
     tx_bytes: usize,
     cycles: Option<u64>,
+    /// The declared gas limit.
+    limit: u64,
+    /// Why simulation refused the transaction, when it did.
+    sim_error: Option<String>,
 }
 
 struct Smoke {
@@ -260,7 +265,8 @@ impl Smoke {
             cycles.map_or_else(|| "refused".into(), |c| c.to_string()),
             if reverted { "**REVERTED**" } else { "applied" }
         ));
-        Ok(Outcome { block, reverted, fee, tx_bytes, cycles })
+        let sim_error = sim.as_ref().err().map(ToString::to_string);
+        Ok(Outcome { block, reverted, fee, tx_bytes, cycles, limit, sim_error })
     }
 
     async fn ix(&mut self, what: &str, root: AccountId, ix: &Instruction, signers: &[AccountId], payer: AccountId, first_segment: Option<AccountId>, force_gas: Option<u64>) -> Result<Outcome> {
@@ -316,6 +322,10 @@ fn source() -> t::SourceRef {
 fn now_ms() -> u64 {
     u64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_millis()).expect("ms")
 }
+
+/// Gas limit Mallory's transaction is forced with: above any honest `RegisterDeployer`
+/// (165–183k cycles, limit ≤ ~275k), so only the authorization check can make it revert.
+const FORCED_GAS: u64 = 400_000;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
@@ -463,15 +473,31 @@ async fn main() -> Result<()> {
         now: now_ms().saturating_sub(5_000),
         via_pda_seed: None,
     };
+    // Control: the same instruction, signed by X3 too, simulates fine and needs far less gas
+    // than Mallory's forced limit, so running out of gas cannot be why her transaction reverts.
+    let declared: Vec<Actor> = std::iter::once(Actor::new(x3, reg)).chain(actors_to_declare(x3, reg, &evil)).collect();
+    let honest = s.simulate(Actor::new(x3, reg), &borsh::to_vec(&evil)?, &declared, &[x3, m], None).await?;
+    let honest_limit = honest.saturating_add(honest.div_ceil(2));
+    println!("\n== control: the same RegisterDeployer signed by X3 and M simulates OK, {honest} cycles (limit {honest_limit})");
+    assert!(honest_limit < FORCED_GAS, "the forced limit must exceed an honest registration's");
     let refused = s.ix("Mallory: RegisterDeployer (X3, REG), signed only by M (simulate)", x3, &evil, &[m], m, None, None).await;
     match refused {
-        Err(e) => println!("   refused before sending: {e}"),
+        Err(e) => {
+            println!("   refused before sending: {e}");
+            assert!(e.to_string().contains("must sign"), "refused for the wrong reason: {e}");
+        }
         Ok(_) => bail!("Mallory's registration was accepted"),
     }
-    let forced = s.ix("Mallory: RegisterDeployer (X3, REG), forced", x3, &evil, &[m], m, None, Some(100_000)).await?;
+    let forced = s.ix("Mallory: RegisterDeployer (X3, REG), forced", x3, &evil, &[m], m, None, Some(FORCED_GAS)).await?;
+    assert!(forced.sim_error.as_deref().is_some_and(|e| e.contains("must sign")), "{:?}", forced.sim_error);
     assert!(forced.reverted, "Mallory's forced registration must revert");
     assert!(s.state(Actor::new(x3, reg)).await?.is_empty(), "no entry at (X3, REG)");
-    println!("   Mallory paid {} for her own failed attempt; (X3, REG) is still empty", forced.fee);
+    let floor = u128::from(forced.limit) * u128::from(fee_state.base_fee_exec);
+    assert!(forced.fee >= floor && forced.fee <= wallet::max_fee_for(forced.limit), "charged {} for limit {}", forced.fee, forced.limit);
+    println!(
+        "   Mallory paid {} (>= the full gas limit {} x base fee) for her own failed attempt; (X3, REG) is still empty",
+        forced.fee, forced.limit
+    );
     let _ = (forced.block, forced.tx_bytes, forced.cycles);
 
     // 6. Read back.

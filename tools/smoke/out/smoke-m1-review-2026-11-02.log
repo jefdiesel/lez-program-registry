@@ -1,0 +1,89 @@
+sequencer http://127.0.0.1:3062: base_fee_exec 8 base_fee_stor 8
+registry image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab
+sample image   ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082
+P=7tXghtfa5JBm8rph5bKaGmdo94A5sLCTfNbWuFKSMRfF
+M=SbbMK567STenvjMPwRRW5ZQ9yHLwKQzcoPEmDYzsso1
+R=4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC
+X=ErNMkrVL8ACC4BVjLQ9adZCnmUPsoiEPk9hRxXa2beB3
+A=CAuLok2ykdP6n4p4CGAzPFe3REKHkb7GaiVaYoojvoDX
+Q=4xDCQdkPjB5fVkCZkYWx48m2ZWmCm1G9igp3JaVe7jDd
+X3=GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z
+funded 7tXghtfa5JBm8rph5bKaGmdo94A5sLCTfNbWuFKSMRfF with 300000000 (block 2542)
+funded SbbMK567STenvjMPwRRW5ZQ9yHLwKQzcoPEmDYzsso1 with 20000000 (block 2544)
+wrote 5 segments (489712 bytes of user ELF), fee 3941920
+
+== CreateHeader 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC
+   root Actor { account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC, program_account_id: JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ }; 1 actors declared; 34 message bytes
+   simulated: OK, 0 cycles
+   tx bc8d2e6247015d04d170120009da18f5a7205b109b197e384cb16609c8a4d986: block 2558, 607 bytes, gas limit 30000, fee 4864: APPLIED
+registry 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC header image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab (expected b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab)
+
+== RegisterDeployer (REG, REG) self-entry
+   root Actor { account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 6 actors declared; 552 message bytes
+   simulated: OK, 168399 cycles
+   tx 05d43f141a5b18fad6558603c8e89c9fd887cf2d6584b408972e2dac79611728: block 2561, 1445 bytes, gas limit 252599, fee 1358760: APPLIED
+wrote 4 segments (297504 bytes of user ELF), fee 2399360
+
+== DeployAndRegister X (X + A sign, P pays)
+   root Actor { account_id: ErNMkrVL8ACC4BVjLQ9adZCnmUPsoiEPk9hRxXa2beB3, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 8 actors declared; 573 message bytes
+   simulated: OK, 182591 cycles
+   tx 1c2c357acb3653e7b7bf43a4383ccc013b7a50347811abe743338b09ff9faf86: block 2573, 1770 bytes, gas limit 273887, fee 1474896: APPLIED
+
+== RegisterThirdParty for X (Q signs, P pays)
+   root Actor { account_id: 4xDCQdkPjB5fVkCZkYWx48m2ZWmCm1G9igp3JaVe7jDd, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 8 actors declared; 488 message bytes
+   simulated: OK, 233870 cycles
+   tx bbb89af70206e44835a5cd981b641cf708cb522ee91cc263088e0803f43d8bfe: block 2575, 1509 bytes, gas limit 350805, fee 1883040: APPLIED
+
+== Update X by author A (revision 2)
+   root Actor { account_id: CAuLok2ykdP6n4p4CGAzPFe3REKHkb7GaiVaYoojvoDX, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 3 actors declared; 198 message bytes
+   simulated: OK, 92679 cycles
+   tx bd0fa9ef006ea630bf4826fb3480243057007df2a28c1a460c7dcc2d7de22b16: block 2578, 899 bytes, gas limit 139019, fee 748632: APPLIED
+
+== CreateHeader GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z
+   root Actor { account_id: GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z, program_account_id: JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ }; 1 actors declared; 34 message bytes
+   simulated: OK, 0 cycles
+   tx 5c5239ecd548862777b18cb7805fc7a8d4c9b2a9f5c63008e938aa77173452f1: block 2580, 607 bytes, gas limit 30000, fee 4864: APPLIED
+
+== control: the same RegisterDeployer signed by X3 and M simulates OK, 182333 cycles (limit 273500)
+
+== Mallory: RegisterDeployer (X3, REG), signed only by M (simulate)
+   root Actor { account_id: GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 7 actors declared; 489 message bytes
+
+thread 'main' (1) panicked at program/src/lib.rs:386:1:
+register_deployer: `program` (the root account) must sign
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+   refused before sending: Mallory: RegisterDeployer (X3, REG), signed only by M (simulate): simulation refused: Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
+
+== Mallory: RegisterDeployer (X3, REG), forced
+   root Actor { account_id: GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z, program_account_id: 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC }; 7 actors declared; 489 message bytes
+
+thread 'main' (1) panicked at program/src/lib.rs:386:1:
+register_deployer: `program` (the root account) must sign
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+   simulated: REFUSED: Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
+   sending anyway with gas limit 400000
+   tx bb90a26bbc6b9182ac362648dc2d734c87115c03af735826068a260c989f2124: block 2583, 1270 bytes, gas limit 400000, fee 3210168: REVERTED (charged)
+   Mallory paid 3210168 (>= the full gas limit 400000 x base fee) for her own failed attempt; (X3, REG) is still empty
+
+== read back
+one getAccount(X): entry kind 0 name smoke-forwarder v1.1.0 rev 2 author CAuLok2ykdP6n4p4CGAzPFe3REKHkb7GaiVaYoojvoDX born_with_deploy true; header image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (entry claims ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) -> fresh
+global list (newest first): #2 smoke-forwarder BV8E4Y6rM5hKqfW3W8Gm2WyUUDDZBsgfg9KG9SnSwsyL, #1 smoke-forwarder ErNMkrVL8ACC4BVjLQ9adZCnmUPsoiEPk9hRxXa2beB3, #0 lez_program_registry 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC
+name 'smoke-forwarder': 2 entries
+author A holds: [ErNMkrVL8ACC4BVjLQ9adZCnmUPsoiEPk9hRxXa2beB3]
+third-party entries for X: [BV8E4Y6rM5hKqfW3W8Gm2WyUUDDZBsgfg9KG9SnSwsyL] (expected BV8E4Y6rM5hKqfW3W8Gm2WyUUDDZBsgfg9KG9SnSwsyL)
+Release #2 of X: version 1.1.0 build_hash a94867c4a28ee2f0550787e9878e8e2769e1bc22ae02259308f57b9ba885de12
+
+| Transaction | Simulated cycles | Tx bytes | Outcome | Fee |
+|---|---|---|---|---|
+| WriteSegment ×5 | 489712 B user ELF | applied | 3941920 |
+| CreateHeader 4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC | 0 | 607 | applied | 4864 |
+| RegisterDeployer (REG, REG) self-entry | 168399 | 1445 | applied | 1358760 |
+| WriteSegment ×4 | 297504 B user ELF | applied | 2399360 |
+| DeployAndRegister X (X + A sign, P pays) | 182591 | 1770 | applied | 1474896 |
+| RegisterThirdParty for X (Q signs, P pays) | 233870 | 1509 | applied | 1883040 |
+| Update X by author A (revision 2) | 92679 | 899 | applied | 748632 |
+| CreateHeader GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z | 0 | 607 | applied | 4864 |
+| Mallory: RegisterDeployer (X3, REG), forced | refused | 1270 | **REVERTED** | 3210168 |
+
+REG=4iAJbwwgoiAwQ8JDNRN8EjbECMf9HgPmVFepGyZJ5BAC X=ErNMkrVL8ACC4BVjLQ9adZCnmUPsoiEPk9hRxXa2beB3 A=CAuLok2ykdP6n4p4CGAzPFe3REKHkb7GaiVaYoojvoDX Q=4xDCQdkPjB5fVkCZkYWx48m2ZWmCm1G9igp3JaVe7jDd M=SbbMK567STenvjMPwRRW5ZQ9yHLwKQzcoPEmDYzsso1 X3=GFfJMJtU1LmtEUk6L3LDTBw1BfJ8dX8PyHm1jjsoG49Z
+SMOKE PASS
