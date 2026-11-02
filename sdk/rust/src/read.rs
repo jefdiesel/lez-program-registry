@@ -344,6 +344,7 @@ impl<R: Rpc> Registry<R> {
 
     /// Entries ever registered under `name`.
     pub fn name_count(&self, name: &str) -> Result<u64> {
+        let name = &name.to_ascii_lowercase();
         if lezreg_types::pda::try_seed_str(name).is_none() {
             return Ok(0);
         }
@@ -487,8 +488,10 @@ impl<R: Rpc> Registry<R> {
         Ok((links, rest.is_some()))
     }
 
-    /// Entries named exactly `name`, newest first (the name's own list).
+    /// Entries named exactly `name` (names are lower case; the query is lowercased), newest
+    /// first (the name's own list).
     pub fn by_name(&self, name: &str, limit: usize) -> Result<Vec<Listed>> {
+        let name = &name.to_ascii_lowercase();
         if lezreg_types::pda::try_seed_str(name).is_none() {
             return Ok(Vec::new());
         }

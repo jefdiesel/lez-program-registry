@@ -256,6 +256,8 @@ cargo test -p lezreg-types -p lezreg-program            # unit tests
 cargo test --release -p lezreg-engine-test              # the real guest on the rc1 state machine
 cargo test --release -p lezreg-sdk -p lezreg            # SDK against a mocked sequencer; CLI unit tests
 scripts/test-deploy-sh.sh                               # chain/deploy.sh resume/failure cases (stub lezreg)
+# a write whose inclusion is never confirmed is confirmed by read-back (local sequencer, wallet copy):
+LEE_WALLET_HOME_DIR=<copy> ENTRY=<entry> PAYER=<funded> scripts/test-not-included.sh
 # end to end against a local standalone sequencer (writes need a COPY of a funded wallet):
 LEZREG_E2E_RPC=http://127.0.0.1:3062 LEZREG_E2E_REGISTRY=<id> \
   [LEZREG_E2E_PAYER=<funded> LEE_WALLET_HOME_DIR=<wallet copy>] \

@@ -441,4 +441,7 @@ fn counts_for_names_and_third_parties() {
     assert_eq!(r.name_count("token").unwrap(), 3);
     assert_eq!(r.third_party_count(&x).unwrap(), 2);
     assert_eq!(r.name_count("Not A Name").unwrap(), 0);
+    // Review fix (conformance 9): names are normalised in the SDK, not only in the CLI.
+    assert_eq!(r.name_count("TOKEN").unwrap(), 3);
+    assert_eq!(r.by_name("Token", 10).unwrap().len(), 3);
 }

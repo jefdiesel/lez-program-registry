@@ -69,7 +69,8 @@ struct Cli {
 /// Options every write takes.
 #[derive(clap::Args, Clone)]
 struct WriteOpts {
-    /// Account that pays the fee (the wallet must hold its key). Default: the first signer.
+    /// Account that pays the fee (the wallet must hold its key). Default: the first signer
+    /// (for `deploy`: --author, since a new header account holds nothing).
     #[arg(long, env = "LEZREG_PAYER")]
     payer: Option<String>,
     /// Simulate only: report what would happen and the gas, send nothing.
@@ -307,6 +308,9 @@ fn lock_wallet() -> Result<()> {
         return Ok(());
     }
     let path = fetch_persistent_storage_path()?.with_file_name("lezreg.lock");
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
     let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path).with_context(|| format!("cannot open {}", path.display()))?;
     // SAFETY: flock on a descriptor we own.
     if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
