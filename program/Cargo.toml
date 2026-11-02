@@ -17,4 +17,4 @@ spel = { package = "spel04-shim", path = "../spel04-shim" }
 lezreg-types = { path = "../crates/types" }
 
 [dev-dependencies]
-lee_core.workspace = true
+lee_core = { workspace = true, features = ["host"] }
