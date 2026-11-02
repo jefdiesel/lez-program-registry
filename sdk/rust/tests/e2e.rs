@@ -1,3 +1,4 @@
+#![cfg(feature = "tx")]
 //! End to end against a real standalone LEZ sequencer. Skipped unless `LEZREG_E2E_RPC` is set.
 //!
 //! - `LEZREG_E2E_RPC`: a LOCAL sequencer (loopback only; this never spends testnet funds).

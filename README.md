@@ -34,10 +34,13 @@ registry id yet, and `lezreg` says so. The registry will be deployed there on la
 
 ## Install
 
-Build from source. You need Rust; `rust-toolchain.toml` pins 1.98.1, the same as LEZ
-v0.4.0-rc1. Building the CLI does not need the risc0 toolchain.
+Build from source. You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ
+v0.4.0-rc1) and the RISC Zero toolchain, installed as `.github/workflows/ci.yml` does it:
+`lezreg` links the registry program crate, which simulates transactions locally. The read-only
+SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
 
 ```sh
+curl -L https://risczero.com/install | bash && rzup install cargo-risczero 3.0.5 && rzup install rust
 git clone https://github.com/jefdiesel/lez-program-registry
 cd lez-program-registry
 cargo build --release -p lezreg
@@ -105,7 +108,8 @@ Every write runs in four steps:
 
 Any write also takes these options:
 - `--payer <ACCOUNT>`: who pays the fee.
-- `--dry-run`: simulate only, send nothing.
+- `--dry-run`: simulate only, send nothing (not on `deploy`, whose segment writes are real
+  transactions).
 - `--yes`: required before writing through a sequencer that is not on this machine.
 
 The IDL and source pointers are a Logos Storage CID (`z…`, `b…` or `0x…`) plus the content's
