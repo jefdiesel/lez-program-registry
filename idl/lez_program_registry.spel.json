@@ -1,0 +1,1305 @@
+{
+  "version": "0.1.0",
+  "name": "lez_program_registry",
+  "instructions": [
+    {
+      "name": "register_deployer",
+      "accounts": [
+        {
+          "name": "program",
+          "writable": true,
+          "signer": true,
+          "init": true
+        },
+        {
+          "name": "author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "program"
+              },
+              {
+                "kind": "arg",
+                "path": "revision_seed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/head"
+              }
+            ]
+          }
+        },
+        {
+          "name": "name_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/name"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              }
+            ]
+          }
+        },
+        {
+          "name": "author_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/author"
+              },
+              {
+                "kind": "account",
+                "path": "author"
+              }
+            ]
+          }
+        },
+        {
+          "name": "link",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/link"
+              },
+              {
+                "kind": "account",
+                "path": "program"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_third_party",
+      "accounts": [
+        {
+          "name": "publisher",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/tp"
+              },
+              {
+                "kind": "arg",
+                "path": "program"
+              },
+              {
+                "kind": "account",
+                "path": "publisher"
+              }
+            ]
+          }
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "entry"
+              },
+              {
+                "kind": "arg",
+                "path": "revision_seed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/head"
+              }
+            ]
+          }
+        },
+        {
+          "name": "name_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/name"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              }
+            ]
+          }
+        },
+        {
+          "name": "author_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/author"
+              },
+              {
+                "kind": "account",
+                "path": "publisher"
+              }
+            ]
+          }
+        },
+        {
+          "name": "program_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/tphead"
+              },
+              {
+                "kind": "arg",
+                "path": "program"
+              }
+            ]
+          }
+        },
+        {
+          "name": "link",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/link"
+              },
+              {
+                "kind": "account",
+                "path": "entry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "program",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": true,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "entry"
+              },
+              {
+                "kind": "arg",
+                "path": "revision_seed"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "version",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "tags",
+          "type": {
+            "option": {
+              "vec": "string"
+            }
+          }
+        },
+        {
+          "name": "author_label",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "option": {
+              "defined": "SourceRef"
+            }
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "option": {
+              "defined": "BuildConfig"
+            }
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "transfer_author",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": true,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "new_author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "new_author_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/author"
+              },
+              {
+                "kind": "account",
+                "path": "new_author"
+              }
+            ]
+          }
+        },
+        {
+          "name": "author_node",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/anode"
+              },
+              {
+                "kind": "account",
+                "path": "new_author"
+              },
+              {
+                "kind": "account",
+                "path": "entry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "new_author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "freeze",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": true,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deploy_and_register",
+      "accounts": [
+        {
+          "name": "program",
+          "writable": true,
+          "signer": true,
+          "init": true
+        },
+        {
+          "name": "program_header",
+          "writable": true,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "program"
+              },
+              {
+                "kind": "arg",
+                "path": "revision_seed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/head"
+              }
+            ]
+          }
+        },
+        {
+          "name": "name_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/name"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              }
+            ]
+          }
+        },
+        {
+          "name": "author_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/author"
+              },
+              {
+                "kind": "account",
+                "path": "author"
+              }
+            ]
+          }
+        },
+        {
+          "name": "link",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "lezreg/v1/link"
+              },
+              {
+                "kind": "account",
+                "path": "program"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "first_segment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "immutable",
+          "type": "bool"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Entry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "flags",
+            "type": "u8"
+          },
+          {
+            "name": "program",
+            "type": "account_id"
+          },
+          {
+            "name": "author",
+            "type": "account_id"
+          },
+          {
+            "name": "registrant",
+            "type": "account_id"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "type": "string"
+          },
+          {
+            "name": "author_label",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "tags",
+            "type": {
+              "vec": "string"
+            }
+          },
+          {
+            "name": "idl",
+            "type": {
+              "defined": "ContentRef"
+            }
+          },
+          {
+            "name": "source",
+            "type": {
+              "defined": "SourceRef"
+            }
+          },
+          {
+            "name": "build",
+            "type": {
+              "defined": "BuildConfig"
+            }
+          },
+          {
+            "name": "image_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registered_at",
+            "type": "u64"
+          },
+          {
+            "name": "updated_at",
+            "type": "u64"
+          },
+          {
+            "name": "revision",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Release",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "entry",
+            "type": "account_id"
+          },
+          {
+            "name": "revision",
+            "type": "u32"
+          },
+          {
+            "name": "version",
+            "type": "string"
+          },
+          {
+            "name": "idl",
+            "type": {
+              "defined": "ContentRef"
+            }
+          },
+          {
+            "name": "source",
+            "type": {
+              "defined": "SourceRef"
+            }
+          },
+          {
+            "name": "build",
+            "type": {
+              "defined": "BuildConfig"
+            }
+          },
+          {
+            "name": "image_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "build_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "at",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Link",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "program",
+            "type": "account_id"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "author",
+            "type": "account_id"
+          },
+          {
+            "name": "prev_global",
+            "type": {
+              "option": "account_id"
+            }
+          },
+          {
+            "name": "prev_name",
+            "type": {
+              "option": "account_id"
+            }
+          },
+          {
+            "name": "prev_author",
+            "type": {
+              "option": "account_id"
+            }
+          },
+          {
+            "name": "prev_program",
+            "type": {
+              "option": "account_id"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Head",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "newest",
+            "type": {
+              "option": "account_id"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuthorNode",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "entry",
+            "type": "account_id"
+          },
+          {
+            "name": "prev",
+            "type": {
+              "option": "account_id"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "BuildConfig",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "builder",
+          "type": "u8"
+        },
+        {
+          "name": "image_digest",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "image_tag",
+          "type": "string"
+        },
+        {
+          "name": "risc0_build",
+          "type": "string"
+        },
+        {
+          "name": "host_risc0_rust",
+          "type": "string"
+        },
+        {
+          "name": "manifest_path",
+          "type": "string"
+        },
+        {
+          "name": "binary",
+          "type": "string"
+        },
+        {
+          "name": "features",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "lock_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "docker_env",
+          "type": {
+            "vec": {
+              "defined": "EnvVar"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ContentRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cid",
+          "type": {
+            "vec": "u8"
+          }
+        },
+        {
+          "name": "sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        },
+        {
+          "name": "peer_hint",
+          "type": {
+            "option": {
+              "vec": "u8"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "EnvVar",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "SourceRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "repo",
+          "type": "string"
+        },
+        {
+          "name": "commit",
+          "type": {
+            "vec": "u8"
+          }
+        },
+        {
+          "name": "docker_root",
+          "type": "string"
+        },
+        {
+          "name": "archive",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "instruction_type": "Instruction"
+}
