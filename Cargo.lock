@@ -3726,6 +3726,7 @@ dependencies = [
  "sequencer_service_rpc",
  "serde_json",
  "tokio",
+ "url",
  "wallet",
 ]
 

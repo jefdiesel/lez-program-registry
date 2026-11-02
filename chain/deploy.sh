@@ -8,8 +8,11 @@
 # already, and such a transaction is dropped as "Unknown program" (spike d, N5). So the
 # self-entry has no born_with_deploy; R's header-key signature is its proof.
 #
-# Resumable: the header id is kept in $STATE. On a rerun, a header already at R skips the
-# deploy, and an entry already at (R, R) skips the registration.
+# Resumable: the header id is kept in $STATE as soon as its key is saved in the wallet (even
+# when the deploy fails after that). On a rerun, a header already at R skips the deploy, a
+# saved R without a header is deployed at R again (never a second registry), and an entry
+# already at (R, R) skips the registration. A read that fails stops the script: it never
+# takes "could not read" for "not there".
 #
 #   chain/deploy.sh --elf lez_program_registry.bin --payer <funded account> \
 #       [--rpc http://127.0.0.1:3062] [--network local] [--commit <hex>] [--idl-cid <cid>] [--yes]
@@ -67,20 +70,49 @@ print("" if v is None else v)' "$1"; }
 REG=""
 [ -f "$STATE" ] && . "$STATE"
 
+# `show R --json`, or stop: a transport error must not read as "nothing there".
+show_reg() {
+  local out
+  out=$("$LEZREG" "${NET[@]}" --registry "$REG" show "$REG" --json) || { echo "cannot read $REG: $out" >&2; exit 1; }
+  printf '%s' "$out"
+}
+
 # 1. Deploy (segments + CreateHeader), unless R already has a header.
-if [ -n "$REG" ] && [ -n "$("$LEZREG" "${NET[@]}" --registry "$REG" show "$REG" --json | json_get header.image_id)" ]; then
+HEADER=""
+if [ -n "$REG" ]; then
+  SHOWN=$(show_reg) || exit 1
+  HEADER=$(printf '%s' "$SHOWN" | json_get header.image_id)
+fi
+if [ -n "$HEADER" ]; then
   echo "registry header already deployed at $REG (from $STATE); skipping the deploy"
 else
-  echo "== deploying the registry guest $ELF"
-  OUT=$("$LEZREG" "${NET[@]}" deploy "$ELF" --no-register --payer "$PAYER" ${YES[@]+"${YES[@]}"} --json)
-  REG=$(echo "$OUT" | json_get program)
-  [ -n "$REG" ] || { echo "deploy failed: $OUT" >&2; exit 1; }
-  echo "REG=$REG" > "$STATE"
+  AT=()
+  if [ -n "$REG" ]; then
+    echo "== $REG (from $STATE) has no header yet: deploying the registry guest $ELF there"
+    AT=(--program "$REG")
+  else
+    echo "== deploying the registry guest $ELF"
+  fi
+  RC=0
+  OUT=$("$LEZREG" "${NET[@]}" deploy "$ELF" --no-register ${AT[@]+"${AT[@]}"} --payer "$PAYER" ${YES[@]+"${YES[@]}"} --json) || RC=$?
+  # `program` is in the output, an error included, once its key is saved in the wallet.
+  NEW=$(echo "$OUT" | json_get program)
+  if [ -n "$NEW" ] && [ "$NEW" != "$REG" ]; then
+    REG=$NEW
+    echo "REG=$REG" > "$STATE"
+  fi
+  if [ "$RC" -ne 0 ]; then
+    echo "deploy failed: $OUT" >&2
+    [ -n "$REG" ] && echo "the header account $REG is saved in $STATE: rerun to finish the deploy there" >&2
+    exit 1
+  fi
+  [ -n "$REG" ] || { echo "deploy printed no program id: $OUT" >&2; exit 1; }
   echo "deployed the registry at $REG (saved in $STATE)"
 fi
 
 # 2. Self-entry at (R, R), unless it is already there.
-if [ -n "$("$LEZREG" "${NET[@]}" --registry "$REG" show "$REG" --json | json_get deployer_entry.name)" ]; then
+SHOWN=$(show_reg) || exit 1
+if [ -n "$(printf '%s' "$SHOWN" | json_get deployer_entry.name)" ]; then
   echo "self-entry (REG, REG) already registered; skipping"
 else
   echo "== registering the registry in itself at (REG, REG)"
@@ -95,6 +127,6 @@ else
     --payer "$PAYER" ${YES[@]+"${YES[@]}"}
 fi
 
-# 3. Make it the network's registry.
+# 3. Make it the network's registry (lezreg checks the self-entry first).
 "$LEZREG" "${NET[@]}" network set "$NETWORK" --registry "$REG" ${RPC:+--rpc "$RPC"}
 echo "REG=$REG"

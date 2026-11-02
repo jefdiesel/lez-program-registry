@@ -5,4 +5,5 @@ _deps/
 /smoke-out/
 .DS_Store
 /demo-out/
+/demo-out.prev-*/
 /chain/.deploy-*.env

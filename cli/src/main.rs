@@ -184,7 +184,9 @@ enum Command {
         #[command(flatten)]
         opts: WriteOpts,
     },
-    /// Hand an entry to a new author. The current and the new author both sign.
+    /// Hand an entry to a new author. The current and the new author both sign. This moves the
+    /// entry only: the program's header (upgrade) key stays where it is, so the original
+    /// deployer can still repoint the code (the entry then shows stale).
     Transfer {
         #[command(flatten)]
         target: Target,
@@ -352,8 +354,8 @@ fn write_default_wallet_files(rpc: &str) -> Result<()> {
         std::fs::create_dir_all(home).with_context(|| format!("failed to create the wallet home {}", home.display()))?;
     }
     if !config_path.exists() {
-        let mut config = wallet::config::WalletConfig::default();
-        config.sequencer = SequencerConnectionData { sequencer_addr: rpc.parse().map_err(|_| anyhow!("{rpc} is not a URL"))?, basic_auth: None };
+        let sequencer = SequencerConnectionData { sequencer_addr: rpc.parse().map_err(|_| anyhow!("{rpc} is not a URL"))?, basic_auth: None };
+        let config = wallet::config::WalletConfig { sequencer, ..Default::default() };
         std::fs::write(&config_path, serde_json::to_vec_pretty(&serde_json::to_value(config)?)?)?;
     }
     Ok(())
@@ -596,9 +598,14 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 Some(p) => p,
                 None => w.new_account().await?,
             };
-            out.context("program", json!(program.to_string()));
             let register = input.as_ref().map(|i| (author.unwrap_or(program), i));
-            let receipt = w.deploy(&bytes, program, immutable, register, &so).await?;
+            let result = w.deploy(&bytes, program, immutable, register, &so).await;
+            // On failure, name the header account only if its key is in the wallet (given, or
+            // saved by the first segment write), so a rerun can finish the deploy there.
+            if given.is_some() || w.wrote() {
+                out.context("program", json!(program.to_string()));
+            }
+            let receipt = result?;
             out.text(&format!("program {program}"));
             render::receipt(out, &receipt);
             out.json_merge(json!({"program": program.to_string()}));

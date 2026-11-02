@@ -224,6 +224,9 @@ pub struct Found {
     pub truncated: bool,
 }
 
+/// Links of a walk, newest first, and the next unvisited address.
+type Walked = (Vec<(AccountId, Link)>, Option<AccountId>);
+
 /// Read-only registry client.
 pub struct Registry<R: Rpc> {
     rpc: R,
@@ -403,7 +406,7 @@ impl<R: Rpc> Registry<R> {
         limit: usize,
         global_from: Option<u64>,
         prev: impl Fn(&Link) -> Option<AccountId> + Copy,
-    ) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>)> {
+    ) -> Result<Walked> {
         match self.walk_once(start, limit, global_from, prev) {
             Err(Error::BadRecord { what: "link order", .. }) if !self.cache.is_empty() => {
                 self.cache.clear();
@@ -419,7 +422,7 @@ impl<R: Rpc> Registry<R> {
         limit: usize,
         global_from: Option<u64>,
         prev: impl Fn(&Link) -> Option<AccountId>,
-    ) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>)> {
+    ) -> Result<Walked> {
         let mut out = Vec::new();
         let mut seen = HashSet::new();
         let mut next = start;
@@ -445,7 +448,7 @@ impl<R: Rpc> Registry<R> {
     }
 
     /// Walks the global list from the newest entry (or from just after `after`).
-    fn walk_global(&self, after: Option<&AccountId>, limit: usize) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>, u64)> {
+    fn walk_global(&self, after: Option<&AccountId>, limit: usize) -> Result<(Walked, u64)> {
         let run = || -> Result<_> {
             let head = self.head(&addr::global_head(&self.reg))?;
             let (start, from) = match after {
@@ -455,8 +458,7 @@ impl<R: Rpc> Registry<R> {
                     (l.prev_global, l.seq.checked_sub(1))
                 }
             };
-            let (links, rest) = self.walk_links(start, limit, from.or(Some(0)), |l| l.prev_global)?;
-            Ok((links, rest, head.count))
+            Ok((self.walk_links(start, limit, from.or(Some(0)), |l| l.prev_global)?, head.count))
         };
         match run() {
             // The `after` link itself may be the stale one.
@@ -472,7 +474,7 @@ impl<R: Rpc> Registry<R> {
     /// entry). Reads one `Link` per item (cached after the first time), then the entries in
     /// one batch.
     pub fn list(&self, after: Option<&AccountId>, limit: usize) -> Result<Page> {
-        let (links, rest, total) = self.walk_global(after, limit)?;
+        let ((links, rest), total) = self.walk_global(after, limit)?;
         let items = self.listed_many(links)?;
         let next = rest.and_then(|_| items.last().map(|i| i.address));
         Ok(Page { items, next, total })
@@ -481,7 +483,7 @@ impl<R: Rpc> Registry<R> {
     /// Links of the global list, newest first, up to `scan` (no entry reads), and whether
     /// older entries were left unscanned.
     pub fn scan_links(&self, scan: usize) -> Result<(Vec<(AccountId, Link)>, bool)> {
-        let (links, rest, _) = self.walk_global(None, scan)?;
+        let ((links, rest), _) = self.walk_global(None, scan)?;
         Ok((links, rest.is_some()))
     }
 

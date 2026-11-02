@@ -9,9 +9,11 @@
 #
 #   WALLET_SRC=/path/to/funded/wallet FUNDER=<account> REG_ELF=… SAMPLE_ELF=… scripts/demo-m2.sh
 #
-# The funded wallet is COPIED, never modified. Output goes to demo-out/ (gitignored); the
-# transcript is demo-out/demo-m2.log. Mallory's wallet is made outside the transcript so no
-# recovery phrase lands in it.
+# The funded wallet is COPIED, never modified. Output goes to $DEMO_OUT (default demo-out/,
+# gitignored); the transcript is $DEMO_OUT/demo-m2.log. A previous run's output is moved
+# aside to $DEMO_OUT.prev-<time>, never deleted: its wallet holds that run's registry header
+# (upgrade) key. Mallory's wallet is made outside the transcript so no recovery phrase lands
+# in it.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${WALLET_SRC:?set WALLET_SRC to a funded wallet directory (it is copied, not modified)}"
@@ -24,8 +26,10 @@ export LEZREG=${LEZREG:-$T/release/lezreg}
 COMMIT=${COMMIT:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo 0000000000000000000000000000000000000000)}
 case "$RPC" in http://127.0.0.1:*|http://localhost:*) ;; *) echo "refusing non-local RPC $RPC" >&2; exit 2 ;; esac
 
-OUT=$ROOT/demo-out
-rm -rf "$OUT"
+OUT=${DEMO_OUT:-$ROOT/demo-out}
+if [ -e "$OUT" ]; then
+  mv "$OUT" "$OUT.prev-$(date +%Y%m%d-%H%M%S)"
+fi
 mkdir -p "$OUT"
 cp -R "$WALLET_SRC" "$OUT/wallet"
 export LEE_WALLET_HOME_DIR=$OUT/wallet
@@ -80,6 +84,11 @@ lz show "$REG"
 step "2. Accounts: author A, third-party publisher Q, new author B (main wallet)"
 read -r A _ < <(new_account); read -r Q _ < <(new_account); read -r B _ < <(new_account)
 echo "A=$A Q=$Q B=$B"
+
+step "3a. Pre-flight: a deploy dry run checks everything (keys, simulation over an in-memory segment chain, funds) and writes nothing"
+lz deploy "$SAMPLE_ELF" --dry-run --author "$A" --payer "$FUNDER" --name smoke-forwarder --version 1.0.0 "${META[@]}"
+echo "-- a deploy whose payer cannot cover it is refused before the first (paid) segment write"
+lz_fails "Nothing was written" deploy "$SAMPLE_ELF" --author "$A" --name smoke-forwarder --version 1.0.0 "${META[@]}"
 
 step "3. Deploy a program and register it in the same transaction (DeployAndRegister; header X and author A sign, FUNDER pays)"
 DEP=$("$LEZREG" deploy "$SAMPLE_ELF" --author "$A" --payer "$FUNDER" --name smoke-forwarder --version 1.0.0 \
@@ -148,8 +157,30 @@ echo "   -> (X3, REG) is still empty"
 echo "-- (e) Mallory tries to update X, an entry she is not the author of"
 LEE_WALLET_HOME_DIR=$MW lz_fails "only the entry's author" update "$X" --author "$M" --payer "$M" --version 6.6.6
 LEE_WALLET_HOME_DIR=$MW lz_fails "REVERTED" update "$X" --author "$M" --payer "$M" --version 6.6.6 --force-send --gas-limit 200000
-echo "-- (d) a second deployer entry for X, even by X's own key, is refused"
+echo "-- (d) a second deployer entry for X, even by X's own key, is refused: by lezreg ..."
 lz_fails "already has a deployer entry" register --program "$X" --payer "$FUNDER" --name smoke-forwarder --version 2.0.0 "${META[@]}"
+echo "-- (d) ... and, forced, by the chain (the registry's init check on (X, REG)); the payer is charged"
+lz_fails "REVERTED" register --program "$X" --payer "$FUNDER" --name smoke-forwarder --version 2.0.0 "${META[@]}" --force-send --gas-limit 400000
+GOT=$("$LEZREG" show "$X" --json | jget deployer_entry.version)
+[ "$GOT" != "2.0.0" ] || { echo "DEMO FAIL: the second deployer entry landed"; exit 1; }
+echo "   -> X's deployer entry is unchanged (version $GOT)"
+
+step "12b. Only the sequencer you choose"
+echo "-- the wallet refuses a network with no RPC instead of falling back to the LEZ wallet's default (the public testnet)"
+( unset LEZREG_RPC; lz_fails "has not launched" --network testnet wallet check-health )
+( unset LEZREG_RPC; lz_fails "unknown network" --network bogus wallet check-health )
+lz_fails "change-network" wallet change-network testnet
+echo "-- writes through a sequencer that is not on this machine need --yes; the URL is parsed, not prefix-matched"
+lz_fails "is not on this machine" --rpc "http://127.0.0.1:3062@example.invalid/" register --program "$X" --name x --version 1 "${META[@]}"
+lz_fails "is not on this machine" --rpc http://192.0.2.1:3062 wallet auth-transfer send --from "Public/$FUNDER" --to "Public/$A" --amount 1
+
+step "12c. An entry for an account with no program is marked NO-PROGRAM wherever it is listed, and ranked last among its name"
+lz register --third-party --program "$M" --publisher "$Q" --payer "$FUNDER" --name smoke-forwarder --version 9.9.9 \
+  --label "Smoke Labs" --description "claims a program that does not exist" --image-id "$LIVE" "${META[@]}"
+lz list --limit 1
+"$LEZREG" list --limit 1 | grep -q "NO-PROGRAM" || { echo "DEMO FAIL: list does not flag NO-PROGRAM"; exit 1; }
+lz show smoke-forwarder
+"$LEZREG" show Smoke-Forwarder | tail -1 | grep -q "NO-PROGRAM" || { echo "DEMO FAIL: show <name> does not rank NO-PROGRAM last"; exit 1; }
 
 step "13. Final state"
 GOT=$("$LEZREG" show "$X" --json | jget deployer_entry.author)

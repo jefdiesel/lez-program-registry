@@ -1,325 +1,349 @@
-LEZ Program Registry: M2 demo core, 2026-11-02 18:22:26Z
+LEZ Program Registry: M2 demo core, 2026-11-02 19:24:14Z
 sequencer http://127.0.0.1:3062 (local LEZ v0.4.0-rc1 standalone); lezreg lezreg 0.1.0
 registry ELF /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
 sample ELF   /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin
-payer (funded, copied wallet) 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg; Mallory 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X (her own wallet)
+payer (funded, copied wallet) 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg; Mallory FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY (her own wallet)
 
 ######## 1. Deploy the registry and register it in itself (chain/deploy.sh)
 == deploying the registry guest /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
-new header account (program id) DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7, key saved in the wallet
-== deploying 522136 bytes (image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab) at DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
-   writing segment 1/5 (96496 bytes) at EKAEiDG5oSv1tU7hxa7KinzVqFMHDbf9BQaTabWJpbRj
-   writing segment 2/5 (98304 bytes) at BJCkN1aJf4f6H8uNZs9DPsppdsmQivfTFved7PgMVJfo
-   writing segment 3/5 (98304 bytes) at 8i8bJwAXGHJe9N5Fw5kK28DSjwhjhjYcxgYav581H2kU
-   writing segment 4/5 (98304 bytes) at B4CxFbgR7JjMYWQ1W521baVcz9TBTC8Gr39JMAusaAyJ
-   writing segment 5/5 (98304 bytes) at 7GnA21eYefFWEpmvvUVUPaM76ga8yTEhAdukVVgCEHoE
-   wrote the segment chain (489712 bytes of user ELF), first segment 7GnA21eYefFWEpmvvUVUPaM76ga8yTEhAdukVVgCEHoE
+== deploy 522136 bytes (image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab) at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: 5 segment writes, then CreateHeader
+   pre-flight: CreateHeader simulated OK (0 cycles, gas limit 30000); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997716331024, the whole deploy reserves up to about 4833594
+   writing segment 1/5 (96496 bytes) at tqPhgBskLp2AzcySqg9FvevSWBJeEY3zBioPJ2K2FVZ
+   writing segment 2/5 (98304 bytes) at 7eABVH5tWbFCstMME5k26Attj789MJDb2gwUawiaajMS
+   writing segment 3/5 (98304 bytes) at 8VfomHvGmKDgoAk8xaDJrfQESm7b1EbCSxjje8iCabJ4
+   writing segment 4/5 (98304 bytes) at A9CaLW6wMX7P3UU9xS4HAhB9rzjwR63Y7ypADWdQokZL
+   writing segment 5/5 (98304 bytes) at 4QcLXpFTbYaj1ZKv55ScgMvq1sAHb9iEmFuoHrFUYvWc
+   wrote the segment chain (489712 bytes of user ELF), first segment 4QcLXpFTbYaj1ZKv55ScgMvq1sAHb9iEmFuoHrFUYvWc
 == CreateHeader
-   root (DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+   root (58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
    simulated: OK, 0 cycles -> gas limit 30000
-   submitted 8d31a0ace8f4bb008e138b52b308523b33bde9e55e6f658881863eaba438c9df
-   block 3517: APPLIED; 607 bytes, gas limit 30000, fee 4864
-   read back header at DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7: image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab (upgradeable): confirmed
-deployed the registry at DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7 (saved in /Volumes/exos162/logos/lez-program-registry/demo-out/deploy-local.env)
+   submitted 00c381f4dc5389c0bfb05b0aed02446a37c786abcc7ad0f9d4782b92e29ac2cc
+   block 4259: APPLIED; 607 bytes, gas limit 30000, fee 4864
+   read back header at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab (upgradeable): confirmed
+note: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+deployed the registry at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 (saved in /Volumes/exos162/logos/lez-program-registry/demo-out/deploy-local.env)
 == registering the registry in itself at (REG, REG)
 == RegisterDeployer
-   root (DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7, REG); 6 actors declared; 637 message bytes; signing: DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+   root (58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25, REG); 6 actors declared; 637 message bytes; signing: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 reading the registry's bytecode from the chain (once; it is cached next to the wallet)
    simulated: OK, 169334 cycles -> gas limit 254001
-   submitted ab38ba0bba463580a0774e30f244c6874d871ea64b3192374826ecd45458b6a5
-   block 3520: APPLIED; 1530 bytes, gas limit 254001, fee 1366920
-   read back DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7: lez_program_registry v0.1.0 revision 1, author DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7 (deployer entry: confirmed)
-RegisterDeployer: applied in block 3520 (tx ab38ba0bba463580a0774e30f244c6874d871ea64b3192374826ecd45458b6a5); simulated 169334 cycles, gas limit 254001, fee 1366920, 1530 bytes; entry DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+   submitted e69484c93056f79d4dc257b3eaebb0055b63ba04b75a465009723b6a5c69cb20
+   block 4261: APPLIED; 1530 bytes, gas limit 254001, fee 1366920
+   read back 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: lez_program_registry v0.1.0 revision 1, author 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 (deployer entry: confirmed)
+RegisterDeployer: applied in block 4261 (tx e69484c93056f79d4dc257b3eaebb0055b63ba04b75a465009723b6a5c69cb20); simulated 169334 cycles, gas limit 254001, fee 1366920, 1530 bytes; entry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 saved network 'local' in /Volumes/exos162/logos/lez-program-registry/demo-out/config/networks.json
-REG=DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+REG=58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 $ lezreg network show
 network  local
 rpc      http://127.0.0.1:3062
-registry DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 config   /Volumes/exos162/logos/lez-program-registry/demo-out/config/networks.json
-$ lezreg show DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
-program DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+$ lezreg show 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
+program 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
   deployed     image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab  (upgradeable)
 
 deployer entry  lez_program_registry v0.1.0  (revision 1)
-  address      DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7  (the program's own account: only its header key could write it)
-  program      DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7
+  address      58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25  (the program's own account: only its header key could write it)
+  program      58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
   status       FRESH: the claimed image b61b79de…544f7bab is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7  (proven co-signer; the only account that may update)
+  author       58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25  (proven co-signer; the only account that may update)
   label        "LEZ Program Registry"  (UNPROVEN free text)
   description  The LEZ Program Registry, registered in itself: on-chain registry of LEZ 0.4 programs with proven deployer entries
   tags         registry, infrastructure
   idl          zb2rhXaCrR6x9m6cX42MbFfkAzVyNagEykywuAqbufKhqB4Rg  sha256 0dd074b8…26415613  37789 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
-  build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 783d8795…4a06f6bb
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
+  build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash bae9b82f…82f034e9
   image id     b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab
-  registered   2026-11-02 18:23:35Z   updated 2026-11-02 18:23:35Z
+  registered   2026-11-02 19:25:25Z   updated 2026-11-02 19:25:25Z
 
 third-party (community) entries: 0
 
 ######## 2. Accounts: author A, third-party publisher Q, new author B (main wallet)
-A=HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x Q=B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB B=GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP
+A=9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb Q=ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV B=8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K
+
+######## 3a. Pre-flight: a deploy dry run checks everything (keys, simulation over an in-memory segment chain, funds) and writes nothing
+$ lezreg deploy /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --dry-run --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
+== deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: 4 segment writes, then DeployAndRegister
+   pre-flight: DeployAndRegister simulated OK (180894 cycles, gas limit 271341); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997711017320, the whole deploy reserves up to about 5252598
+   dry run: nothing written
+program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+DeployAndRegister (after 4 segment writes): dry run, nothing sent; simulated 180894 cycles, gas limit would be 271341; the payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg must hold about 5252598 for the fee reserve
+-- a deploy whose payer cannot cover it is refused before the first (paid) segment write
+$ lezreg deploy /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
+== deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: 4 segment writes, then DeployAndRegister
+   pre-flight: DeployAndRegister simulated OK (180894 cycles, gas limit 271341); payer 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb holds 0, the whole deploy reserves up to about 5252598
+error: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb holds 0, but deploying this program reserves up to about 5252598 (4 segment writes and DeployAndRegister): send it at least 5252598 more, or pick another --payer. Nothing was written
+   -> refused as expected (exit 1)
 
 ######## 3. Deploy a program and register it in the same transaction (DeployAndRegister; header X and author A sign, FUNDER pays)
-new header account (program id) 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J, key saved in the wallet
-== deploying 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-   writing segment 1/4 (2592 bytes) at 3FqpXbCyacYao37RdUrAjtjAcJXEWgQmifjFGXqXTWhj
-   writing segment 2/4 (98304 bytes) at 5h1h9WUmHD38ai4sHzgp1FfXfQ4ytUYVLc6anGVyDF58
-   writing segment 3/4 (98304 bytes) at 5r4va4oRJ8otEV4LtnDVPuyJYdHhEcPoRJVWt1gZ6nDw
-   writing segment 4/4 (98304 bytes) at 7Bpjb6gS9wxCpR9T57jWb833F7RxYkpdTKEdVbuhhRCN
-   wrote the segment chain (297504 bytes of user ELF), first segment 7Bpjb6gS9wxCpR9T57jWb833F7RxYkpdTKEdVbuhhRCN
+== deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: 4 segment writes, then DeployAndRegister
+   pre-flight: DeployAndRegister simulated OK (184006 cycles, gas limit 276009); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997711017320, the whole deploy reserves up to about 5295384
+   writing segment 1/4 (2592 bytes) at H1cq9THDSwmcRBk8ues1Fux88HBTHaWbQzTTKRRWihsb
+   writing segment 2/4 (98304 bytes) at 5qEXQdiFTECJW7DcqCtZkmoKxG36W5Cr1pChqUYPoq3Z
+   writing segment 3/4 (98304 bytes) at Gwpwg9YiuiJ9GPp8gw6fbgeXxc6woCTdUHfodJsLx6DW
+   writing segment 4/4 (98304 bytes) at B7PTyFNGctDKHZi8hLFd3CXoAbVTy5Puo2xxay9UANyR
+   wrote the segment chain (297504 bytes of user ELF), first segment B7PTyFNGctDKHZi8hLFd3CXoAbVTy5Puo2xxay9UANyR
 == DeployAndRegister
-   root (4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J, REG); 8 actors declared; 607 message bytes; signing: 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J, HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x
+   root (Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6, REG); 8 actors declared; 607 message bytes; signing: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6, 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb
    simulated: OK, 184006 cycles -> gas limit 276009
-   submitted 1b479c61f5a18677be3d51b25f4038c0d3a137c27f03c0649efe1c1841a66f00
-   block 3532: APPLIED; 1804 bytes, gas limit 276009, fee 1486488
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.0.0 revision 1, author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x (deploy-and-register: confirmed)
-   read back header at 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
+   submitted 7e794cc960d6770283dc92a9782f42233a55f962ead054f26c6ba38545f468ad
+   block 4274: APPLIED; 1804 bytes, gas limit 276009, fee 1486488
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.0.0 revision 1, author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (deploy-and-register: confirmed)
+   read back header at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
+note: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
 {
-  "block": 3532,
+  "block": 4274,
+  "confirmed_by_read_back": false,
   "dry_run": false,
-  "entry": "4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J",
+  "entry": "Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6",
   "fee": "1486488",
+  "fee_reserve": "2507544",
   "gas_limit": 276009,
   "payer": "26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg",
-  "program": "4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J",
+  "program": "Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6",
   "signers": [
-    "4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J",
-    "HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x"
+    "Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6",
+    "9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb"
   ],
   "simulated_cycles": 184006,
   "simulation_refused": null,
-  "tx": "1b479c61f5a18677be3d51b25f4038c0d3a137c27f03c0649efe1c1841a66f00",
+  "tx": "7e794cc960d6770283dc92a9782f42233a55f962ead054f26c6ba38545f468ad",
   "tx_bytes": 1804,
   "what": "DeployAndRegister"
 }
-X=4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-$ lezreg show 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+X=Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+$ lezreg show Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   deployed     image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082  (upgradeable)
 
 deployer entry  smoke-forwarder v1.0.0  (revision 1)
-  address      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J  (the program's own account: only its header key could write it)
-  program      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+  address      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6  (the program's own account: only its header key could write it)
+  program      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   status       FRESH: the claimed image ac1d4ff2…5ca6b082 is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x  (proven co-signer; the only account that may update)
+  author       9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb  (proven co-signer; the only account that may update)
   label        "Smoke Labs"  (UNPROVEN free text)
   description  sample program, deployed and registered in one transaction
   tags         sample, demo
   idl          zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep  sha256 cbd9ff52…472d2af5  10 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lezreg_forwarder, build hash d4347b42…c5225cc0
+               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)
   image id     ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082
-  registered   2026-11-02 18:24:40Z   updated 2026-11-02 18:24:40Z
+  registered   2026-11-02 19:26:30Z   updated 2026-11-02 19:26:30Z
   flags        born with deploy (registered in the same transaction that deployed the program)
 
 third-party (community) entries: 0
 
 ######## 4. A third-party (community) entry for X, published by Q
-$ lezreg register --third-party --program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --publisher B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 1.0.0 --label a\ community\ packager --description community\ metadata\ for\ X --tag sample --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit b39edbe713edc4c14e24e6b6509d2bd47bf25df2 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
+$ lezreg register --third-party --program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --publisher ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 1.0.0 --label a\ community\ packager --description community\ metadata\ for\ X --tag sample --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
 == RegisterThirdParty
-   root (B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB, REG); 8 actors declared; 542 message bytes; signing: B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB
+   root (ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV, REG); 8 actors declared; 542 message bytes; signing: ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV
    simulated: OK, 236260 cycles -> gas limit 354390
-   submitted eb2f075c3120873271a74a1d8e59eeefdf0dd5bcc6c35accd10d0b6588188d3c
-   block 3534: APPLIED; 1563 bytes, gas limit 354390, fee 1902592
-   read back 2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN: smoke-forwarder v1.0.0 revision 1, author B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB (third-party entry: confirmed)
-RegisterThirdParty: applied in block 3534 (tx eb2f075c3120873271a74a1d8e59eeefdf0dd5bcc6c35accd10d0b6588188d3c); simulated 236260 cycles, gas limit 354390, fee 1902592, 1563 bytes; entry 2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN
+   submitted 23d4824a9f2da667e72c37e361ec64c86938f402b446e4ac8e9388167178cdf9
+   block 4276: APPLIED; 1563 bytes, gas limit 354390, fee 1902592
+   read back 9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb: smoke-forwarder v1.0.0 revision 1, author ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV (third-party entry: confirmed)
+RegisterThirdParty: applied in block 4276 (tx 23d4824a9f2da667e72c37e361ec64c86938f402b446e4ac8e9388167178cdf9); simulated 236260 cycles, gas limit 354390, fee 1902592, 1563 bytes; entry 9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb
 
 ######## 5. Update by the author A (revision 2, release snapshot #2)
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --version 1.1.0 --description updated\ by\ its\ author --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --version 1.1.0 --description updated\ by\ its\ author --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 == Update (revision 2)
-   root (HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x, REG); 3 actors declared; 120 message bytes; signing: HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x
+   root (9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb, REG); 3 actors declared; 120 message bytes; signing: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb
    simulated: OK, 90599 cycles -> gas limit 135899
-   submitted 7ecb9440ee2d248de6d2112762bae294a11e69605aeb0ded5bcfbee67c283ed7
-   block 3537: APPLIED; 821 bytes, gas limit 135899, fee 731368
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.1.0 revision 2, author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x (revision 2: confirmed)
-Update (revision 2): applied in block 3537 (tx 7ecb9440ee2d248de6d2112762bae294a11e69605aeb0ded5bcfbee67c283ed7); simulated 90599 cycles, gas limit 135899, fee 731368, 821 bytes; entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+   submitted 3dbcc9c4024b33abfd5cf687c3db69d294bd196c8d20a0e78bfc41f8982819df
+   block 4279: APPLIED; 821 bytes, gas limit 135899, fee 731368
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.1.0 revision 2, author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (revision 2: confirmed)
+Update (revision 2): applied in block 4279 (tx 3dbcc9c4024b33abfd5cf687c3db69d294bd196c8d20a0e78bfc41f8982819df); simulated 90599 cycles, gas limit 135899, fee 731368, 821 bytes; entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
 
 ######## 6. Stale and fresh: claim a different image (stale), then the live one again (fresh)
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --image-id b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab --version 1.2.0-wrong --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --image-id b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab --version 1.2.0-wrong --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 == Update (revision 3)
-   root (HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x, REG); 3 actors declared; 133 message bytes; signing: HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x
+   root (9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb, REG); 3 actors declared; 133 message bytes; signing: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb
    simulated: OK, 91000 cycles -> gas limit 136500
-   submitted 365a2224e65aa091ee6da9a70d47215ab2d5d49f809a3f204f8f97e729ce141f
-   block 3539: APPLIED; 834 bytes, gas limit 136500, fee 734680
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.2.0-wrong revision 3, author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x (revision 3: confirmed)
-Update (revision 3): applied in block 3539 (tx 365a2224e65aa091ee6da9a70d47215ab2d5d49f809a3f204f8f97e729ce141f); simulated 91000 cycles, gas limit 136500, fee 734680, 834 bytes; entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-$ lezreg show 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+   submitted 088c517fe727696fb258a4a8148f6bec27ffd32bba6c0efc314c30bc94c3788b
+   block 4281: APPLIED; 834 bytes, gas limit 136500, fee 734680
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.2.0-wrong revision 3, author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (revision 3: confirmed)
+Update (revision 3): applied in block 4281 (tx 088c517fe727696fb258a4a8148f6bec27ffd32bba6c0efc314c30bc94c3788b); simulated 91000 cycles, gas limit 136500, fee 734680, 834 bytes; entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+$ lezreg show Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   deployed     image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082  (upgradeable)
 
 deployer entry  smoke-forwarder v1.2.0-wrong  (revision 3)
-  address      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J  (the program's own account: only its header key could write it)
-  program      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+  address      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6  (the program's own account: only its header key could write it)
+  program      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   status       STALE: the entry claims image b61b79de…544f7bab but the program now runs ac1d4ff2…5ca6b082 (header repointed, or the claim was never updated)
   code         upgradeable (the header key can repoint it)
-  author       HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x  (proven co-signer; the only account that may update)
+  author       9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb  (proven co-signer; the only account that may update)
   label        "Smoke Labs"  (UNPROVEN free text)
   description  updated by its author
   tags         sample, demo
   idl          zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep  sha256 cbd9ff52…472d2af5  10 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lezreg_forwarder, build hash d4347b42…c5225cc0
+               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)
   image id     b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab
-  registered   2026-11-02 18:24:40Z   updated 2026-11-02 18:25:15Z
+  registered   2026-11-02 19:26:30Z   updated 2026-11-02 19:27:05Z
   flags        born with deploy (registered in the same transaction that deployed the program)
 
 third-party (community) entries: 1
-  community entry by B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB: smoke-forwarder v1.0.0 (revision 1), fresh  [2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN]
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --image-id ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 --version 1.2.0 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+  community entry by ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV: smoke-forwarder v1.0.0 (revision 1), fresh  [9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb]
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --image-id ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 --version 1.2.0 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 == Update (revision 4)
-   root (HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x, REG); 3 actors declared; 127 message bytes; signing: HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x
+   root (9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb, REG); 3 actors declared; 127 message bytes; signing: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb
    simulated: OK, 90592 cycles -> gas limit 135888
-   submitted 70da45bce85853bad657d9f30c855292d0126cba16dc35dbc4a0447ed4a7ad3a
-   block 3541: APPLIED; 828 bytes, gas limit 135888, fee 731368
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.2.0 revision 4, author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x (revision 4: confirmed)
-Update (revision 4): applied in block 3541 (tx 70da45bce85853bad657d9f30c855292d0126cba16dc35dbc4a0447ed4a7ad3a); simulated 90592 cycles, gas limit 135888, fee 731368, 828 bytes; entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-$ lezreg show 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --revision 3
-program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+   submitted d7a077eb6b44eb7d3081892dd80ceb0730bea3795731b978fc9973f4f4029d62
+   block 4283: APPLIED; 828 bytes, gas limit 135888, fee 731368
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.2.0 revision 4, author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (revision 4: confirmed)
+Update (revision 4): applied in block 4283 (tx d7a077eb6b44eb7d3081892dd80ceb0730bea3795731b978fc9973f4f4029d62); simulated 90592 cycles, gas limit 135888, fee 731368, 828 bytes; entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+$ lezreg show Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --revision 3
+program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   deployed     image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082  (upgradeable)
 
 deployer entry  smoke-forwarder v1.2.0  (revision 4)
-  address      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J  (the program's own account: only its header key could write it)
-  program      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+  address      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6  (the program's own account: only its header key could write it)
+  program      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   status       FRESH: the claimed image ac1d4ff2…5ca6b082 is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x  (proven co-signer; the only account that may update)
+  author       9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb  (proven co-signer; the only account that may update)
   label        "Smoke Labs"  (UNPROVEN free text)
   description  updated by its author
   tags         sample, demo
   idl          zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep  sha256 cbd9ff52…472d2af5  10 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lezreg_forwarder, build hash d4347b42…c5225cc0
+               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)
   image id     ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082
-  registered   2026-11-02 18:24:40Z   updated 2026-11-02 18:25:25Z
+  registered   2026-11-02 19:26:30Z   updated 2026-11-02 19:27:15Z
   flags        born with deploy (registered in the same transaction that deployed the program)
-  release #3   v1.2.0-wrong image b61b79de…544f7bab idl zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep build hash d4347b42…c5225cc0 at 2026-11-02 18:25:15Z
+  release #3   v1.2.0-wrong image b61b79de…544f7bab idl zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep build hash d4347b42…c5225cc0 at 2026-11-02 19:27:05Z
 
 third-party (community) entries: 1
-  community entry by B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB: smoke-forwarder v1.0.0 (revision 1), fresh  [2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN]
+  community entry by ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV: smoke-forwarder v1.0.0 (revision 1), fresh  [9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb]
 
 ######## 7. Transfer X's deployer entry from A to B (A and B both sign, in one transaction)
-$ lezreg transfer 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --to GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+$ lezreg transfer Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --to 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 == TransferAuthor
-   root (HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x, REG); 5 actors declared; 74 message bytes; signing: HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x, GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP
+   root (9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb, REG); 5 actors declared; 74 message bytes; signing: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb, 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K
    simulated: OK, 98275 cycles -> gas limit 147413
-   submitted 5803278306cd9684c96ae685cc912fb6cd67b3052a9405c4f0357417c82f2fde
-   block 3544: APPLIED; 1079 bytes, gas limit 147413, fee 794840
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.2.0 revision 4, author GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP (new author: confirmed)
-TransferAuthor: applied in block 3544 (tx 5803278306cd9684c96ae685cc912fb6cd67b3052a9405c4f0357417c82f2fde); simulated 98275 cycles, gas limit 147413, fee 794840, 1079 bytes; entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+   submitted a28d8098bc7add2393a1e83dabef9c7972bdfff655a28933876f28c94c45992f
+   block 4286: APPLIED; 1079 bytes, gas limit 147413, fee 794840
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.2.0 revision 4, author 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K (new author: confirmed)
+TransferAuthor: applied in block 4286 (tx a28d8098bc7add2393a1e83dabef9c7972bdfff655a28933876f28c94c45992f); simulated 98275 cycles, gas limit 147413, fee 794840, 1079 bytes; entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
 
 ######## 8. Freeze it (B, the new author, signs); a frozen entry refuses further changes
-$ lezreg freeze 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+$ lezreg freeze Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 == Freeze
-   root (GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP, REG); 2 actors declared; 42 message bytes; signing: GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP
+   root (8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K, REG); 2 actors declared; 42 message bytes; signing: 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K
    simulated: OK, 45462 cycles -> gas limit 68193
-   submitted 5a196a20b239ebc510edde63357db393c9b612965c315bd5e65d04ea5e391e45
-   block 3546: APPLIED; 679 bytes, gas limit 68193, fee 369136
-   read back 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J: smoke-forwarder v1.2.0 revision 4, author GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP (frozen: confirmed)
-Freeze: applied in block 3546 (tx 5a196a20b239ebc510edde63357db393c9b612965c315bd5e65d04ea5e391e45); simulated 45462 cycles, gas limit 68193, fee 369136, 679 bytes; entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --version 9.9.9 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg   # expected to fail
-error: entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J is frozen
+   submitted 9446e0ca030f8f853815a87e6e773b9f756293453561f09faade1231d6ab7805
+   block 4288: APPLIED; 679 bytes, gas limit 68193, fee 369136
+   read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.2.0 revision 4, author 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K (frozen: confirmed)
+Freeze: applied in block 4288 (tx 9446e0ca030f8f853815a87e6e773b9f756293453561f09faade1231d6ab7805); simulated 45462 cycles, gas limit 68193, fee 369136, 679 bytes; entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --version 9.9.9 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg   # expected to fail
+error: entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 is frozen
    -> refused as expected (exit 1)
 
 ######## 9. show: the deployer entry (proven by its address) vs the community entry
-$ lezreg show 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+$ lezreg show Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   deployed     image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082  (upgradeable)
 
 deployer entry  smoke-forwarder v1.2.0  (revision 4)
-  address      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J  (the program's own account: only its header key could write it)
-  program      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+  address      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6  (the program's own account: only its header key could write it)
+  program      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   status       FRESH: the claimed image ac1d4ff2…5ca6b082 is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP  (proven co-signer; the only account that may update)
-  registrant   HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x  (original author; transferred since)
+  author       8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K  (proven co-signer; the only account that may update)
+  registrant   9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb  (original author; transferred since)
   label        "Smoke Labs"  (UNPROVEN free text)
   description  updated by its author
   tags         sample, demo
   idl          zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep  sha256 cbd9ff52…472d2af5  10 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lezreg_forwarder, build hash d4347b42…c5225cc0
+               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)
   image id     ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082
-  registered   2026-11-02 18:24:40Z   updated 2026-11-02 18:25:50Z
+  registered   2026-11-02 19:26:30Z   updated 2026-11-02 19:27:40Z
   flags        born with deploy (registered in the same transaction that deployed the program); FROZEN (can no longer change)
 
 third-party (community) entries: 1
-  community entry by B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB: smoke-forwarder v1.0.0 (revision 1), fresh  [2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN]
-$ lezreg show 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --publisher B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB
+  community entry by ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV: smoke-forwarder v1.0.0 (revision 1), fresh  [9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb]
+$ lezreg show Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --publisher ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV
 third-party entry  smoke-forwarder v1.0.0  (revision 1)
-  address      2DbAmST5KJyoEvxGZ5QTfqi8Ls1nzmJkKMJibBGV1fbN  (T(program, B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB): a community entry, NOT the deployer's)
-  program      4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
+  address      9bazqzby8jNrRC3N8aS2GYi83QVgdve9hzXmgNM12Mrb  (T(program, ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV): a community entry, NOT the deployer's)
+  program      Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
   status       FRESH: the claimed image ac1d4ff2…5ca6b082 is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB  (proven co-signer; the only account that may update)
+  author       ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV  (proven co-signer; the only account that may update)
   label        "a community packager"  (UNPROVEN free text)
   description  community metadata for X
   tags         sample
   idl          zb2rhkN2kgDs3fZriXbGDKAVsLgsqZkbjVDWZWsBscGojiYep  sha256 cbd9ff52…472d2af5  10 B
-  source       https://github.com/jefdiesel/lez-program-registry @ b39edbe713edc4c14e24e6b6509d2bd47bf25df2 (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ 0000000000000000000000000000000000000000 (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lezreg_forwarder, build hash d4347b42…c5225cc0
+               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)
   image id     ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082
-  registered   2026-11-02 18:24:50Z   updated 2026-11-02 18:24:50Z
+  registered   2026-11-02 19:26:40Z   updated 2026-11-02 19:26:40Z
 
 ######## 10. list (paged, newest first)
 $ lezreg list --limit 2
-3 entries in the registry DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7; showing 2 (newest first)
-  #2    smoke-forwarder          v1.0.0      community by B64Zsw…62XB  program 4vTkeY…tS5J  author B64Zsw…62XB
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  frozen
-more: lezreg list --after 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-$ lezreg list --limit 2 --after 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J
-3 entries in the registry DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7; showing 1 (newest first)
-  #0    lez_program_registry     v0.1.0      deployer     program DsnSRe…3qj7  author DsnSRe…3qj7
+3 entries in the registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25; showing 2 (newest first)
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+more: lezreg list --after Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+$ lezreg list --limit 2 --after Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+3 entries in the registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25; showing 1 (newest first)
+  #0    lez_program_registry     v0.1.0      deployer     program 58muci…cc25  author 58muci…cc25  fresh
 
 ######## 11. search by name (exact, then substring) and by proven author
 $ lezreg search name smoke-forwarder
-search name 'smoke-forwarder': 2 found
-  #2    smoke-forwarder          v1.0.0      community by B64Zsw…62XB  program 4vTkeY…tS5J  author B64Zsw…62XB  fresh
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  fresh  frozen
+search name 'smoke-forwarder': 2 found (3 entries examined)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
 $ lezreg search name forward
-search name 'forward': 2 found
-  #2    smoke-forwarder          v1.0.0      community by B64Zsw…62XB  program 4vTkeY…tS5J  author B64Zsw…62XB  fresh
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  fresh  frozen
-$ lezreg search author GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP
-search author GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP (proven co-signer): 1 found
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  fresh  frozen
-$ lezreg search author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x
-search author HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x (proven co-signer): 0 found
-$ lezreg search author B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB
-search author B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB (proven co-signer): 1 found
-  #2    smoke-forwarder          v1.0.0      community by B64Zsw…62XB  program 4vTkeY…tS5J  author B64Zsw…62XB  fresh
+search name 'forward': 2 found (3 entries examined)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
+$ lezreg search author 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K
+search author 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K (proven co-signer): 1 found (1 entries examined)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+$ lezreg search author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb
+search author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (proven co-signer): 0 found (1 entries examined)
+$ lezreg search author ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV
+search author ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV (proven co-signer): 1 found (1 entries examined)
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
 $ lezreg search label smoke
-search author label 'smoke' (UNPROVEN): 1 found
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  fresh  frozen
+search author label 'smoke' (UNPROVEN): 1 found (3 entries examined)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
 $ lezreg search tag demo
-search tag 'demo': 1 found
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  fresh  frozen
+search tag 'demo': 1 found (3 entries examined)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
 
 ######## 12. Mallory (her own wallet) tries to create the deployer entry of a program she does not control
-Transaction hash is 49315795781ab2b616389bf80479adf0a8b728c9fcedcf8d6ca82aeb96494f08
-Transaction is included in block 3549
+Transaction hash is cb1c0e9bedd78a421943822bb0e9d388c292729c1157fa3f78fc575d3783b7ca
+Transaction is included in block 4291
 -- target: a program X3 deployed by someone else (plain loader deploy, no entry)
-new header account (program id) DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, key saved in the wallet
-== deploying 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp
-   writing segment 1/4 (2592 bytes) at AkPgc1RtA5EK5Q8J9pKdJVT2zwRuLYEVgmMbbKuD9QZW
-   writing segment 2/4 (98304 bytes) at F8ZCWPVCGsiAE9rMxzFwkZEjqwJJhvukCYCPXFjUibmA
-   writing segment 3/4 (98304 bytes) at 8Lg9dEDGUhprrJoGGa2FzRZE9RcYpFaYVoAYLCTkLXew
-   writing segment 4/4 (98304 bytes) at 7z2YebqPmeCWcgiv4CoSdAi7HS5thZkyYfYHGHo33o5K
-   wrote the segment chain (297504 bytes of user ELF), first segment 7z2YebqPmeCWcgiv4CoSdAi7HS5thZkyYfYHGHo33o5K
+== deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6: 4 segment writes, then CreateHeader
+   pre-flight: CreateHeader simulated OK (0 cycles, gas limit 30000); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997681863136, the whole deploy reserves up to about 3076146
+   writing segment 1/4 (2592 bytes) at GB4QGa5VGBDPNMvE7FriXR2DPx3chgoUCNfXTk879pJq
+   writing segment 2/4 (98304 bytes) at AArFZwcVVrQrrFosS1Pe7mts7ZNVQrDENuGmShgn3F8z
+   writing segment 3/4 (98304 bytes) at rV9mQHnPAbrg8Pd3rUEwrqPbyR4gHbUr6EJtideaH65
+   writing segment 4/4 (98304 bytes) at 9jJo1yCPSX9jbYef9Lky1DzKjUo96pfJqSnZmRbHcpZD
+   wrote the segment chain (297504 bytes of user ELF), first segment 9jJo1yCPSX9jbYef9Lky1DzKjUo96pfJqSnZmRbHcpZD
 == CreateHeader
-   root (DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp
+   root (8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6
    simulated: OK, 0 cycles -> gas limit 30000
-   submitted 6eec11a49a0075a49366a9f7b64c110e8699a61c443bb6ccdcd1db9d6e26811f
-   block 3561: APPLIED; 607 bytes, gas limit 30000, fee 4864
-   read back header at DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
-X3=DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp
+   submitted cea4f3509d1cc8ec40ad212b9a8703d62564bac5ee7c0b99f4aa6c71f349f5c7
+   block 4303: APPLIED; 607 bytes, gas limit 30000, fee 4864
+   read back header at 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
+note: 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+X3=8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6
 -- (a) RegisterDeployer at (X3, REG) signed only by Mallory: simulation refuses, nothing is sent
-$ lezreg register --program DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp --author 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --payer 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --name smoke-forwarder --version 6.6.6 --label totally\ the\ deployer --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit b39edbe713edc4c14e24e6b6509d2bd47bf25df2 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
-   warning: this wallet holds no key for DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, which must sign; the registry will refuse
+$ lezreg register --program 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6 --author FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --payer FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --name smoke-forwarder --version 6.6.6 --label totally\ the\ deployer --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
+   warning: this wallet holds no key for 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6, which must sign; the registry will refuse
 == RegisterDeployer
-   root (DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, REG); 7 actors declared; 509 message bytes; signing: 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
+   root (8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6, REG); 7 actors declared; 509 message bytes; signing: FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
 reading the registry's bytecode from the chain (once; it is cached next to the wallet)
 
 thread 'main' (1) panicked at program/src/lib.rs:386:1:
@@ -328,22 +352,22 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 error: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
    -> refused as expected (exit 1)
 -- (a) forced on chain (--force-send): the registry reverts it and Mallory pays her whole gas limit
-$ lezreg register --program DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp --author 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --payer 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --name smoke-forwarder --version 6.6.6 --label totally\ the\ deployer --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit b39edbe713edc4c14e24e6b6509d2bd47bf25df2 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder --force-send --gas-limit 400000   # expected to fail
-   warning: this wallet holds no key for DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, which must sign; the registry will refuse
+$ lezreg register --program 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6 --author FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --payer FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --name smoke-forwarder --version 6.6.6 --label totally\ the\ deployer --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder --force-send --gas-limit 400000   # expected to fail
+   warning: this wallet holds no key for 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6, which must sign; the registry will refuse
 == RegisterDeployer
-   root (DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp, REG); 7 actors declared; 509 message bytes; signing: 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
+   root (8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6, REG); 7 actors declared; 509 message bytes; signing: FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
 
 thread 'main' (1) panicked at program/src/lib.rs:386:1:
 register_deployer: `program` (the root account) must sign
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
    --force-send: sending anyway with gas limit 400000 (the payer is charged for a revert)
-   submitted 6d6dba4d1bfbf85057e1e21ca5b1967adf0414ee92a4ba10969798b6e96e578f
-   block 3563: REVERTED; 1290 bytes, gas limit 400000, fee 3210328 charged to 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
-error: 6d6dba4d1bfbf85057e1e21ca5b1967adf0414ee92a4ba10969798b6e96e578f was included in block 3563 but REVERTED: fee 3210328 charged, nothing else applied
+   submitted bbc886a746e254789b9e575d0edffbf1702996995b887c8df8b79f4c95cbe5ec
+   block 4305: REVERTED; 1290 bytes, gas limit 400000, fee 3210328 charged to FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
+error: bbc886a746e254789b9e575d0edffbf1702996995b887c8df8b79f4c95cbe5ec was included in block 4305 but REVERTED: fee 3210328 charged, nothing else applied
    -> refused as expected (exit 1)
-$ lezreg show DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp
-program DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp
+$ lezreg show 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6
+program 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6
   deployed     image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082  (upgradeable)
 
 no deployer entry: the program's header key has not registered it
@@ -351,34 +375,88 @@ no deployer entry: the program's header key has not registered it
 third-party (community) entries: 0
    -> (X3, REG) is still empty
 -- (e) Mallory tries to update X, an entry she is not the author of
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --author 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --payer 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --version 6.6.6   # expected to fail
-error: only the entry's author may change it: entry 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J is held by GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP, not 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --author FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --payer FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --version 6.6.6   # expected to fail
+error: only the entry's author may change it: entry Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 is held by 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K, not FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
    -> refused as expected (exit 1)
-$ lezreg update 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --author 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --payer 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X --version 6.6.6 --force-send --gas-limit 200000   # expected to fail
+$ lezreg update Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --author FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --payer FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --version 6.6.6 --force-send --gas-limit 200000   # expected to fail
 == Update (revision 5)
-   root (2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X, REG); 3 actors declared; 95 message bytes; signing: 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
+   root (FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY, REG); 3 actors declared; 95 message bytes; signing: FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
 
 thread 'main' (1) panicked at program/src/lib.rs:258:5:
 only the entry's author may change it
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: only the entry's author may change it
    --force-send: sending anyway with gas limit 200000 (the payer is charged for a revert)
-   submitted b095d86e44a921a9a17dd396729672bb2ee046ea41e7c8d424f5a775471f748d
-   block 3566: REVERTED; 620 bytes, gas limit 200000, fee 1604968 charged to 2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
-error: b095d86e44a921a9a17dd396729672bb2ee046ea41e7c8d424f5a775471f748d was included in block 3566 but REVERTED: fee 1604968 charged, nothing else applied
+   submitted 86f3bda8876390d5f41c21e954fcb52d8e2c436e34896ed4212512ceb13148d2
+   block 4308: REVERTED; 620 bytes, gas limit 200000, fee 1604968 charged to FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
+error: 86f3bda8876390d5f41c21e954fcb52d8e2c436e34896ed4212512ceb13148d2 was included in block 4308 but REVERTED: fee 1604968 charged, nothing else applied
    -> refused as expected (exit 1)
--- (d) a second deployer entry for X, even by X's own key, is refused
-$ lezreg register --program 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 2.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit b39edbe713edc4c14e24e6b6509d2bd47bf25df2 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
-error: invalid input: 4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J already has a deployer entry; use update
+-- (d) a second deployer entry for X, even by X's own key, is refused: by lezreg ...
+$ lezreg register --program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 2.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
+error: invalid input: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 already has a deployer entry; use update
    -> refused as expected (exit 1)
+-- (d) ... and, forced, by the chain (the registry's init check on (X, REG)); the payer is charged
+$ lezreg register --program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 2.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder --force-send --gas-limit 400000   # expected to fail
+== RegisterDeployer
+   root (Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6, REG); 6 actors declared; 489 message bytes; signing: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
+
+thread 'main' (1) panicked at program/src/lib.rs:386:1:
+register_deployer: `program` already exists
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+   simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` already exists
+   --force-send: sending anyway with gas limit 400000 (the payer is charged for a revert)
+   submitted c5ca07f4ea9964a4af01b47f303e9572d5aee5c7ce5e230b35c8afe32152a9aa
+   block 4310: REVERTED; 1382 bytes, gas limit 400000, fee 3211064 charged to 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
+error: c5ca07f4ea9964a4af01b47f303e9572d5aee5c7ce5e230b35c8afe32152a9aa was included in block 4310 but REVERTED: fee 3211064 charged, nothing else applied
+   -> refused as expected (exit 1)
+   -> X's deployer entry is unchanged (version 1.2.0)
+
+######## 12b. Only the sequencer you choose
+-- the wallet refuses a network with no RPC instead of falling back to the LEZ wallet's default (the public testnet)
+$ lezreg --network testnet wallet check-health   # expected to fail
+error: LEZ testnet 0.4 has not launched yet, so lezreg has no testnet RPC. Use --network local, or pass --rpc and --registry
+   -> refused as expected (exit 1)
+$ lezreg --network bogus wallet check-health   # expected to fail
+error: unknown network 'bogus': use local or testnet, or define it with `lezreg network set bogus --rpc <url> --registry <id>`
+   -> refused as expected (exit 1)
+$ lezreg wallet change-network testnet   # expected to fail
+error: lezreg's wallet always uses lezreg's sequencer: choose it with --network or --rpc (and `lezreg network set`), not change-network
+   -> refused as expected (exit 1)
+-- writes through a sequencer that is not on this machine need --yes; the URL is parsed, not prefix-matched
+$ lezreg --rpc http://127.0.0.1:3062@example.invalid/ register --program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 --name x --version 1 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
+error: http://127.0.0.1:3062@example.invalid/ is not on this machine: writing there spends real funds. Pass --yes to go ahead
+   -> refused as expected (exit 1)
+$ lezreg --rpc http://192.0.2.1:3062 wallet auth-transfer send --from Public/26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --to Public/9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --amount 1   # expected to fail
+error: http://192.0.2.1:3062 is not on this machine: writing there spends real funds. Pass --yes to go ahead
+   -> refused as expected (exit 1)
+
+######## 12c. An entry for an account with no program is marked NO-PROGRAM wherever it is listed, and ranked last among its name
+$ lezreg register --third-party --program FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --publisher ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 9.9.9 --label Smoke\ Labs --description claims\ a\ program\ that\ does\ not\ exist --image-id ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
+== RegisterThirdParty
+   root (ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV, REG); 8 actors declared; 534 message bytes; signing: ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV
+   simulated: OK, 237659 cycles -> gas limit 356489
+   submitted 1ddfbd8a3b0f555e7a78e8ed003da446166e1db3568d2a4b00424453e7331cfa
+   block 4313: APPLIED; 1555 bytes, gas limit 356489, fee 1913720
+   read back 2dfg4RQt5FVTa7F34JmbWGmGikrygetTiEAvKJdaQ9N3: smoke-forwarder v9.9.9 revision 1, author ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV (third-party entry: confirmed)
+RegisterThirdParty: applied in block 4313 (tx 1ddfbd8a3b0f555e7a78e8ed003da446166e1db3568d2a4b00424453e7331cfa); simulated 237659 cycles, gas limit 356489, fee 1913720, 1555 bytes; entry 2dfg4RQt5FVTa7F34JmbWGmGikrygetTiEAvKJdaQ9N3
+$ lezreg list --limit 1
+4 entries in the registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25; showing 1 (newest first)
+  #3    smoke-forwarder          v9.9.9      community by ASi3Y9…p2sV  program FUAp8r…zivY  author ASi3Y9…p2sV  NO-PROGRAM (nothing deployed at this program id)
+more: lezreg list --after 2dfg4RQt5FVTa7F34JmbWGmGikrygetTiEAvKJdaQ9N3
+$ lezreg show smoke-forwarder
+name 'smoke-forwarder': 3 entries (deployed programs' deployer entries first; NO-PROGRAM entries last)
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
+  #3    smoke-forwarder          v9.9.9      community by ASi3Y9…p2sV  program FUAp8r…zivY  author ASi3Y9…p2sV  NO-PROGRAM (nothing deployed at this program id)
 
 ######## 13. Final state
-deployer entry author: GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP (expected B=GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP)
+deployer entry author: 8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K (expected B=8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K)
 $ lezreg list --limit 10
-3 entries in the registry DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7; showing 3 (newest first)
-  #2    smoke-forwarder          v1.0.0      community by B64Zsw…62XB  program 4vTkeY…tS5J  author B64Zsw…62XB
-  #1    smoke-forwarder          v1.2.0      deployer     program 4vTkeY…tS5J  author GSeAsr…tPkP  frozen
-  #0    lez_program_registry     v0.1.0      deployer     program DsnSRe…3qj7  author DsnSRe…3qj7
+4 entries in the registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25; showing 4 (newest first)
+  #3    smoke-forwarder          v9.9.9      community by ASi3Y9…p2sV  program FUAp8r…zivY  author ASi3Y9…p2sV  NO-PROGRAM (nothing deployed at this program id)
+  #2    smoke-forwarder          v1.0.0      community by ASi3Y9…p2sV  program Gi25vn…e8T6  author ASi3Y9…p2sV  fresh
+  #1    smoke-forwarder          v1.2.0      deployer     program Gi25vn…e8T6  author 8vgLo2…3C8K  fresh  frozen
+  #0    lez_program_registry     v0.1.0      deployer     program 58muci…cc25  author 58muci…cc25  fresh
 
-REG=DsnSRetyAdUzxYWjMbC8Z9xjR3GzKezfb2uUwDB13qj7 X=4vTkeY5ScZepnwmFyMQPDnYzGB2ztHepYFP8bN28tS5J A=HhWSbVXJV7EhPySrGWM9ex1cRQLU4SUnphp2SHoEn52x B=GSeAsrv9uzD6gni6FqRiPeBspjp2SLoWymDR2nXntPkP Q=B64ZswcVxoGYBDhdiPNQHn1H2g62AcoZsjMUMfUK62XB X3=DZsg4XsE8Jjj153Wbgg8GqDtYPNcGLgxYmR9pAb1H1Mp M=2QMoWywNw7UXptTuNkty8LF9JEBxnoEA5EC72FYnES3X
+REG=58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 X=Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6 A=9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb B=8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K Q=ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV X3=8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6 M=FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY
 DEMO PASS

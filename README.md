@@ -17,7 +17,9 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 - Every entry joins **on-chain linked lists**: global, per name, per author, and per program
   for third-party entries. Clients list and search with plain sequencer reads, with no indexer.
 - **No server of ours is ever on the path.** The SDK and `lezreg` talk directly to the LEZ
-  sequencer you choose, and later to your Logos Storage node. There are no analytics.
+  sequencer you choose, and later to your Logos Storage node. There are no analytics. Reads
+  refuse HTTP redirects and ignore `HTTP(S)_PROXY` unless you set `LEZREG_USE_PROXY=1`, and
+  `lezreg wallet` never falls back to the LEZ wallet's own default sequencer.
 
 ## Status
 
@@ -48,8 +50,24 @@ install target/release/lezreg ~/.local/bin/    # or anywhere on PATH
 lezreg --help
 ```
 
+**Writes need `r0vm` at run time, not only to build.** Every write is simulated locally with
+the risc0 executor `r0vm` (rzup links it into `~/.cargo/bin`), so keep that directory on PATH
+or set `RISC0_SERVER_PATH` to the binary. Without it a write stops with "simulation needs the
+risc0 executor `r0vm`" before anything is sent. Reads never need it.
+
 There are no release binaries yet. A CLI release workflow for macOS arm64, Linux amd64 and
-arm64, and Windows is planned (DESIGN §7.4).
+arm64, and Windows is planned (DESIGN §7.4); those binaries will need `r0vm` too.
+
+### A local sequencer and the registry ELF
+
+The `local` network is a LEZ v0.4.0-rc1 sequencer in standalone mode on `127.0.0.1:3062`. In a
+LEZ v0.4.0-rc1 checkout, run `just run-sequencer-standalone <home> --rpc-listen-address
+127.0.0.1:3062` (LEZ README, "Standalone mode"), and fund a wallet account from it.
+
+The registry guest is built by `cargo build --release -p lezreg-methods` and lands at
+`target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin`.
+That is the `--elf` for `chain/deploy.sh`. (The CI-reproduced `.bin`s go into `artifacts/` once
+the M1 exit check has run; until then build them yourself.)
 
 ## Use
 
@@ -73,27 +91,51 @@ stderr.
 lezreg show <PROGRAM_ID>                 # deployer entry (fresh/stale) + community entries
 lezreg show <PROGRAM_ID> --publisher Q   # Q's third-party entry for that program
 lezreg show <PROGRAM_ID> --revision 2    # also the write-once release snapshot #2
-lezreg show my-token                     # every entry named exactly my-token
-lezreg list --limit 20                   # newest first; prints the --after cursor for the next page
+lezreg show my-token                     # every entry named exactly my-token (case-insensitive)
+lezreg list --limit 20                   # newest first, with fresh/stale/NO-PROGRAM; prints the --after cursor
 lezreg search name token                 # exact name first, then names containing "token"
 lezreg search author <ACCOUNT>           # entries this account holds now (proven)
 lezreg search label "Acme"               # free-text author label (UNPROVEN)
 lezreg search tag defi
 ```
 
+**Check the status column.** Anyone can register an entry with any name, label and claimed
+image for any account, including one with no program on it. `list`, `search` and `show` mark
+such an entry **NO-PROGRAM** and rank it last among entries of the same name; `stale` means
+the program now runs different code than the entry claims. Only a deployer entry (shown as
+`deployer`) was written by the program's own key.
+
 `Link` records are written once, so `lezreg` caches them in `~/.cache/lez-registry/`, one file
-per registry and sequencer. A later listing reads only the list head and the entries.
+per registry and sequencer. A later listing reads only the list head and the entries (in
+JSON-RPC batches of 100). If the chain was reset under the cache, the sequence numbers no longer
+line up and the cache is dropped and read again. Searches by label, tag and substring examine
+at most `--scan` entries (default 1000) and say when they stopped early.
 
 ### Wallet
 
 Writes sign with the LEZ wallet, which is built in. Its keys live in `LEE_WALLET_HOME_DIR`
-(default `~/.lee/wallet`).
+(default `~/.lee/wallet`; the wallet's own help says that variable "must be set", but lezreg
+uses the default when it is not). `lezreg wallet` always talks to lezreg's network
+(`--network`/`--rpc`): a network with no RPC, such as `testnet` before launch, is refused, and
+so is `change-network`. Commands that send need `--yes` when the sequencer is not on this
+machine.
 
 ```sh
 lezreg wallet account new public          # prints Public/<id> and its pk
 lezreg wallet account ls
-lezreg wallet auth-transfer send --from Public/<funded> --to-pk <pk of a new account> --amount 1000000
+lezreg wallet auth-transfer send --from Public/<funded> --to-pk <pk of a new account> --amount 5000000
+lezreg wallet set-password                # encrypt the wallet
 ```
+
+A new wallet is created **unencrypted** unless the wallet password variable is set; lezreg says
+so when it creates one. Encrypt it with `lezreg wallet set-password` before it holds a
+program's header key. `account ls` on a new wallet also lists a public and a private account
+the wallet derives for itself, with paths like `/0/0/0`; you can ignore them.
+
+**How much to fund.** On the local rc1 sequencer a register reserves about 3–3.5M while it
+runs (it costs about 1.4M), and deploying a 330 KB program plus registering it reserves up to
+about 5.3M (it costs about 3.9M). Run the command with `--dry-run` first: it prints the reserve
+for the payer you chose. A refusal for funds says how much more to send.
 
 ### Writes
 
@@ -103,17 +145,29 @@ Every write runs in four steps:
    chain. A refusal therefore costs nothing.
 2. It is sent with a **gas limit of 1.5 × the simulated cycles** (minimum 30,000). A failed
    transaction is charged its whole limit, so this also caps what any revert can cost.
-3. It **waits** for inclusion and checks that the transaction did not revert.
+3. It **waits** for inclusion (at most `LEZREG_TX_TIMEOUT_SECS`, default 120) and checks that
+   the transaction did not revert.
 4. It **reads the change back** from the chain.
 
+If inclusion cannot be confirmed in time, lezreg reads the chain back anyway: if the change is
+there, the write succeeded ("confirmed by reading the chain back"). Otherwise it fails with
+kind `not_included`, the transaction hash (`tx` in `--json`), and whether the signers' nonces
+moved: unchanged means nothing applied, so a retry is safe; moved means it probably applied, so
+check with `lezreg show` first. Two lezreg writes from the same wallet wait for each other (a
+lock file next to the wallet), so they never race for a nonce.
+
 Any write also takes these options:
-- `--payer <ACCOUNT>`: who pays the fee.
-- `--dry-run`: simulate only, send nothing (not on `deploy`, whose segment writes are real
-  transactions).
-- `--yes`: required before writing through a sequencer that is not on this machine.
+- `--payer <ACCOUNT>`: who pays the fee. For `deploy` it defaults to `--author`, since a new
+  header account holds nothing.
+- `--dry-run`: run every check and the simulation, send nothing, and print the fee reserve.
+  On `deploy` it also checks the payer can cover every segment write.
+- `--yes`: required before writing through a sequencer that is not on this machine (the URL's
+  host must be a loopback address; `http://127.0.0.1:3062@elsewhere/` is elsewhere).
 
 The IDL and source pointers are a Logos Storage CID (`z…`, `b…` or `0x…`) plus the content's
-sha256 and size. `--idl-file` hashes a local copy instead.
+sha256 and size. `--idl-file` hashes a local copy instead. Until Storage upload lands (M3),
+`--idl-cid raw` uses the raw-codec sha2-256 CID of the bytes (`0x01551220<sha256>`), which anyone
+can recompute; a raw CID that names other bytes is refused.
 
 ```sh
 # Deploy a program and register it in the SAME transaction (DeployAndRegister). The entry is
@@ -138,7 +192,18 @@ lezreg freeze <PROGRAM_ID>                                              # irreve
 ```
 
 The build fields default to LEZ's own builder pin (`risczero/risc0-guest-builder:r0.1.91.1@sha256:fafb377a…`,
-risc0-build 3.0.5). `lezreg init --detect` (M8) will fill them in from your project.
+risc0-build 3.0.5), the binary to the entry name, and the Cargo.lock hash to zero. lezreg warns
+when you give no build flags, and `show` marks build info without a Cargo.lock hash as
+UNVERIFIED. Give at least `--binary`, `--manifest-path` and `--lock-file`. `lezreg init --detect`
+(M8) will fill them in from your project.
+
+**Upgradeable by default.** `deploy` makes the code upgradeable unless you pass `--immutable`:
+the header key can later point the program at new code. The entry then shows `stale` until
+its author runs `update --image-id`. A `transfer` hands over the *entry*, not the header key:
+the original deployer can still upgrade the code. `deploy` is also checked end to end before
+it spends anything: the input, that nothing is already deployed or registered at the program,
+that the wallet holds every signer's key, a simulation of the final transaction over the
+segment chain held in memory, and the payer's funds for every write.
 
 `--force-send [--gas-limit N]` sends a transaction even when simulation refuses it, so you can
 watch the chain refuse it too. The payer is charged the whole limit; the demo uses it for the
@@ -154,7 +219,9 @@ The script writes the guest's segments and sends the loader `CreateHeader` at a 
 account `R`. It then sends `RegisterDeployer` at `(R, R)`, signed by `R`'s header key, so the
 registry is registered in itself. Finally it saves `R` as the network's registry. It can resume:
 on a rerun it skips any step that is already on chain. Back up the wallet afterwards, because
-`R`'s key is the registry's upgrade key.
+`R`'s key is the registry's upgrade key. `R` is saved in `chain/.deploy-<network>.env` as soon
+as its key is in the wallet, so a failure part-way is finished at the same `R` on the next run;
+a read that fails stops the script instead of deploying a second registry.
 
 ## SDK
 
@@ -167,9 +234,9 @@ let r = Registry::new(HttpRpc::new("http://127.0.0.1:3062"), registry_id);
 let res = r.resolve(&program_id)?;                  // one getAccount
 if let Some(e) = &res.deployer { println!("{} {} {:?}", e.name, e.version, res.freshness()); }
 let page = r.list(None, 50)?;                       // then r.list(page.next.as_ref(), 50)
-let mine = r.by_author(&author, 20)?;               // proven
-let hits = r.search_name("token", 20, 1000)?;
-let tps  = r.third_party(&program_id, 20)?;
+let mine = r.by_author(&author, 20, 1000)?;         // proven; .items, .scanned, .truncated
+let hits = r.search_name("token", 20, 1000)?;       // exact name first, then substrings
+let tps  = r.third_party(&program_id, 20)?;         // r.third_party_count(&program_id)? for the total
 
 // feature "tx"
 let mut w = lezreg_sdk::tx::Writer::new(wallet_core, registry_lee_id);
@@ -178,21 +245,38 @@ w.register_deployer(program, author, &input, &SendOpts { payer: Some(p), ..Defau
 
 Errors are typed (`lezreg_sdk::Error`): `Transport`, `Rpc`, `BadRecord`, `MissingLink`, `NoEntry`,
 `NotDeployed`, `Invalid`, `NoKey`, `NotAuthor`, `Frozen`, `Refused` (simulation), `Funds`,
-`Rejected`, `NotIncluded`, `Reverted`, `ReadBack`, and others. With `--json`, the CLI reports the
-same kinds as `{"error", "kind"}`.
+`Rejected`, `NotIncluded { hash, detail }`, `Reverted`, `ReadBack`, and others. With `--json`,
+the CLI reports the same kinds as `{"error", "kind"}`, plus `tx` when a transaction was sent and
+`program` when a deploy failed after its header key was saved.
 
 ## Tests
 
 ```sh
 cargo test -p lezreg-types -p lezreg-program            # unit tests
 cargo test --release -p lezreg-engine-test              # the real guest on the rc1 state machine
-cargo test --release -p lezreg-sdk                      # SDK against a mocked sequencer
+cargo test --release -p lezreg-sdk -p lezreg            # SDK against a mocked sequencer; CLI unit tests
+scripts/test-deploy-sh.sh                               # chain/deploy.sh resume/failure cases (stub lezreg)
 # end to end against a local standalone sequencer (writes need a COPY of a funded wallet):
 LEZREG_E2E_RPC=http://127.0.0.1:3062 LEZREG_E2E_REGISTRY=<id> \
   [LEZREG_E2E_PAYER=<funded> LEE_WALLET_HOME_DIR=<wallet copy>] \
   cargo test --release -p lezreg-sdk --test e2e -- --nocapture --test-threads 1
-# the M2 demo (deploys a fresh registry; copies the wallet; transcript in demo-out/):
+# the M2 demo (deploys a fresh registry; copies the wallet; transcript in demo-out/; a
+# previous demo-out/ is moved to demo-out.prev-<time>, since its wallet holds that registry's keys):
 WALLET_SRC=<funded wallet> FUNDER=<account> REG_ELF=<lez_program_registry.bin> SAMPLE_ELF=<program.bin> scripts/demo-m2.sh
+```
+
+Network check (2026-11-02, macOS `sandbox-exec` on the Mini): with outbound network denied
+except `localhost:3062`, `list` and `show` work; a write works with outbound limited to
+loopback (the `r0vm` executor talks to lezreg over a local socket), and the same sandbox blocks
+a request to any other host. lezreg links LEZ crates that contain other URLs (the LEZ wallet's
+default testnet, rzup's download hosts), but no command reached them.
+
+To build and test on another machine, sync the tree **without** the demo output, which holds
+registry keys and exists only where the demo ran:
+
+```sh
+rsync -a --delete --exclude target --exclude .git --exclude _deps \
+  --exclude 'demo-out*' --exclude 'smoke-out*' --exclude 'chain/.deploy-*.env' ./ host:path/
 ```
 
 ## Layout

@@ -219,13 +219,14 @@ pub struct Writer {
     reg: AccountId,
     program: Option<Program>,
     checked: bool,
+    wrote: bool,
     log: Box<dyn Fn(&str) + Send + Sync>,
 }
 
 impl Writer {
     /// A writer for the registry `reg` through wallet `w`. Progress goes to stderr.
     pub fn new(w: WalletCore<SequencerClient>, reg: AccountId) -> Self {
-        Self { w, reg, program: None, checked: false, log: Box::new(|m| eprintln!("{m}")) }
+        Self { w, reg, program: None, checked: false, wrote: false, log: Box::new(|m| eprintln!("{m}")) }
     }
 
     /// Sends progress lines somewhere else.
@@ -360,6 +361,13 @@ impl Writer {
             }
         }
         Err(Error::Wallet("no unused account in the first 1000 derived".into()))
+    }
+
+    /// Whether this writer has saved the wallet and started paid writes (segments): after a
+    /// failed deploy, the header key is in the wallet and the deploy can be resumed there.
+    #[must_use]
+    pub const fn wrote(&self) -> bool {
+        self.wrote
     }
 
     /// Saves the wallet's storage (new accounts).
@@ -706,6 +714,7 @@ impl Writer {
             segs.push(self.new_account().await?);
         }
         self.save_wallet()?;
+        self.wrote = true;
         let saved = self.w.config().clone();
         let mut config = saved.clone();
         config.gas_limit = UNMETERED_GAS_LIMIT;
