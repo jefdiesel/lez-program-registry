@@ -10,7 +10,8 @@ like LEZ's own `artifacts` job.
 | `lez_program_registry.imageid` | its image id (hex of LEZ `Program::id()`, 8 little-endian words) |
 | `build.json` | builder image digest, risc0-build, host rzup Rust, manifest, binary, commit, `Cargo.lock` sha256 |
 
-**Not committed yet (M1).** These come from CI, not from a developer machine: the M1 builds ran on
+**Not committed yet: M1 is code complete, its exit check is pending.** CI (`ci.yml`, `repro.yml`) has
+never run, because nothing has been pushed yet; the smoke runs deployed local, non-reproducible builds. These come from CI, not from a developer machine: the M1 builds ran on
 the Mini with the local rzup toolchain and no Docker, which gives a different image id. `repro.yml`
 builds twice on separate runners, rebuilds once more with `RUN --network=none`, compares
 everything, and uploads `guest-a`/`guest-b`. Commit those files here after the first green run;

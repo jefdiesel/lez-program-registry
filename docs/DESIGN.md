@@ -46,9 +46,9 @@ A registry entry is the **actor state of the registry program at an account**. T
   - In 0.4 a root signature authorizes the signer in *every* program a transaction reaches (`execution_state.rs:1028`, `1431-1470`; test `execution_state/tests.rs:706`).
   - So every registry instruction also requires `input.from.is_none()`: it must be the transaction's own root message.
   - This closes the attack where a malicious program in a composed transaction rewrites your entry.
-  - One narrow exception: a header that is a PDA of program `P`. There the guest recomputes `for_public_pda(P, seed) == X`.
+  - One narrow exception: a header that is a PDA of program `P`. There the guest recomputes `for_public_pda(P, seed) == X`, and **every signer must be `X` itself** (M1 review F1): on that path a co-signer's `is_authorized` only proves it signed *some* transaction that reached `P`, not that it agreed to this registry call. So a PDA-owned entry's author is the header, and it can't be transferred.
 - **Proven authors.**
-  - `author` is an account that co-signs at registration. It may be `X` itself, so a single-key path exists.
+  - `author` is an account that co-signs at registration, in a transaction whose root message is that registry instruction. It may be `X` itself, so a single-key path exists. (On the PDA-header path the author must be `X`, see above.)
   - Search by author, and the "20 distinct author accounts" count, are therefore facts on chain.
   - The free-text `author_label` is shown as unproven.
   - Only the current `author` can update. Transfer needs both signatures.
@@ -181,19 +181,19 @@ Records are borsh, and every record starts with `schema: u8 = 1`. Limits are enf
     updated_at: u64,            // 8
     revision: u32,              // 4   1 at registration
 }
-#[account_type] pub struct ContentRef {
+pub struct ContentRef {        // plain borsh struct (no #[account_type]): the IDL lists it under types[]
     cid: Vec<u8>,               // 4+≤64  binary CIDv1 of the Storage manifest (typ. 38 B: 0x01, varint 0xCD01, 0x12 0x20, 32 B)
     sha256: [u8; 32],           // content hash (independent of filename/mimetype)
     size: u32,
     peer_hint: Option<Vec<u8>>, // 1+(4+≤48) libp2p peer id of a pinning node (optional)
 }
-#[account_type] pub struct SourceRef {
+pub struct SourceRef {
     repo: String,               // 4+≤160  https:// or git URL (may be empty if archive is set)
     commit: Vec<u8>,            // 4+20 (sha1) or 4+32 (sha256 object format)
     docker_root: String,        // 4+≤96   build context path inside the repo
     archive: Option<ContentRef>,// deterministic `git archive` of docker_root at commit, on Storage
 }
-#[account_type] pub struct BuildConfig {
+pub struct BuildConfig {
     schema: u8,
     builder: u8,                // 1 = risc0-build Docker (`cargo risczero build`)
     image_digest: [u8; 32],     // sha256 digest of risczero/risc0-guest-builder (authoritative)
@@ -204,7 +204,7 @@ Records are borsh, and every record starts with `schema: u8 = 1`. Limits are enf
     binary: String,             // 4+≤48 bin target name
     features: Vec<String>,      // 4+≤4×(4+≤32)
     lock_sha256: [u8; 32],      // sha256 of the Cargo.lock the guest build uses
-    docker_env: Vec<(String, String)>, // 4+≤4×(8+≤64) extra ENV lines risc0-build emits from DockerOptions::env (docker.rs ~165); usually empty
+    docker_env: Vec<EnvVar>,    // 4+≤4×(8+key+value), key 1.., key+value ≤ 64; EnvVar{key: String, value: String}: extra ENV lines risc0-build emits from DockerOptions::env (docker.rs ~165); usually empty
 }
 #[account_type] pub struct Release {   // write-once, one per revision
     schema: u8, entry: AccountId, revision: u32, version: String,
@@ -222,14 +222,15 @@ Records are borsh, and every record starts with `schema: u8 = 1`. Limits are enf
 #[account_type] pub struct AuthorNode { schema: u8, entry: AccountId, prev: Option<AccountId> }
 ```
 
-**Sizes (estimate).**
+**Sizes (measured, pinned by `record_sizes_match_the_design_table` in `program/tests/handlers.rs`).** "Typical" is a 13-character name, a 1-sentence description, 2 tags, a 38-byte CID and a source archive; "worst case" is every field at its limit.
 
 | Record | Typical | Worst case |
 |---|---|---|
-| `Entry` | ~800 B | ~2.3 KB |
-| `Release` (full snapshot) | ~650 B | ~1.6 KB |
-| `Link` | ~190 B | |
+| `Entry` | 674 B | 2,400 B |
+| `Release` (full snapshot) | 503 B | 1,510 B |
+| `Link` | 223 B (all four `prev` set) | |
 | `Head` | 42 B | |
+| `AuthorNode` | 66 B | |
 
 Actor state has no fixed cap in 0.4 (`lee/state_machine/core/src/account/actor_state.rs`, test `state_encoding_matches_bytes_beyond_the_former_limit`). Our caps exist to bound cycles and storage gas.
 
@@ -254,13 +255,18 @@ pub enum Instruction {
     Update             { entry_id: [u8;32], revision: u32, revision_seed: [u8;32], /* Option<_> per patchable field */, now: u64, via_pda_seed: Option<[u8;32]> }, // 2
     TransferAuthor     { entry_id: [u8;32], new_author_id: [u8;32], now: u64, via_pda_seed: Option<[u8;32]> },                  // 3
     Freeze             { entry_id: [u8;32], now: u64, via_pda_seed: Option<[u8;32]> },                                          // 4
-    DeployAndRegister  { first_segment: [u8;32], immutable: bool, /* RegisterDeployer fields; via_pda_seed must be None */ },  // 5
+    DeployAndRegister  { first_segment: [u8;32], immutable: bool, /* RegisterDeployer fields, without via_pda_seed */ },     // 5
     // appended post-launch: Attest { entry, image_id, build_hash, source_sha256, verdict, tool, now }                          // 6
 }
-pub enum Effect {   // tags 0xC0.. (RequireSigner = 0xFF), accepted only if input.from_own_program()
-    WriteEntry, PatchEntry{by, patch, now}, WriteRelease, Index, IndexName, IndexAuthor, IndexProgram,
-    WriteLink, RequireSigner, WriteAuthorNode, /* post-launch: */ WriteAttestation, IndexAttestation,
+pub enum Effect {   // tags 0xC0.. (RequireSigner = 0xFF, not a variant), accepted only if input.from_own_program()
+    WriteEntry{entry}, PatchEntry{patch, now /* the author is from.account_id */}, WriteRelease{release},
+    Index{ctx}, IndexName{ctx}, IndexAuthor{ctx}, IndexProgram{ctx}, WriteLink{ctx},
+    WriteAuthorNode{new_author, node}, IndexAuthorTransfer{entry, new_author},   // 0xC8, 0xC9 (wire-tags.lock)
+    /* post-launch: */ WriteAttestation, IndexAttestation,
 }
+// ctx = IndexCtx{entry, kind, program, name, author (the registrant), image_id, idl_sha256,
+//                born_with_deploy, seq, prev_global, prev_name, prev_author, prev_program}:
+// the last three content fields only feed the Registered event.
 ```
 
 **Arguments are flattened** (no `EntryInput` struct), and ids used as seeds are typed `[u8; 32]` (SPEL's `ToSeed` has impls for `[u8;32]`, `u32`, `u64` and `String`, not for `AccountId`). This has two benefits:
@@ -275,6 +281,8 @@ Patchable fields: `version`, `description`, `tags`, `author_label`, `idl`, `sour
 
 **`revision` is an explicit argument everywhere**, together with `revision_seed`. The `Release` PDA is keyed by `revision_seed` (a `[u8;32]`, F3), so it has to be an argument for the client to derive the address; the guest asserts `revision_seed == revision.to_le_bytes()` zero-padded. Register asserts `revision == 1`; Update asserts `revision == stored + 1`. This doubles as optimistic concurrency: the only possible race is an author racing themselves, which fails cleanly.
 
+**The registry is public-only.** It has no way to tell from inside the guest whether the root actor executes privately; a privately executed registration would leave public `Link`/`Release`/list records for an `Entry` that is not public. Readers treat a `Link` whose entry account shows no registry state as "private or unverifiable" (M1 review F5, not testable with the public-only harness).
+
 **Rules shared by every `Instruction`.** The shim generates them into the dispatcher, so no handler can forget them:
 
 1. **Root only:** `assert!(input.from.is_none())`.
@@ -283,6 +291,7 @@ Patchable fields: `version`, `description`, `tags`, `author_label`, `idl`, `sour
      - `input.is_authorized`;
      - `AccountId::for_public_pda(&a.program_account_id, &PdaSeed::new(s)) == X`.
    - The recomputation matters. Inherited authorizations could otherwise let an intermediary program act on `X`; only the real owner program `P` satisfies it.
+   - **On this path every `signer` account must be the root `X`** (shim-generated, before the handler runs). A co-signer's `is_authorized` is "signed this transaction", whoever delivers; on the PDA path the transaction's root is `P`'s message, not the registry instruction, so a user who signed a transaction for a dapp `P` would otherwise be made the author of `P`'s entries (M1 review F1, engine test 13). Consequences: a PDA-owned entry is registered with `author = X`, is updated and frozen through `P`, and can't be transferred (a two-step accept could lift this later).
 2. Validate every length and charset (a panic means a charged revert at the full gas limit, §2.7; the CLI simulates first).
 3. Never trust a client-supplied address. The guest derives every PDA itself from `input.receiver.program_account_id` and the arguments.
 4. Bound time: `timestamp_window([now, now + 10 min))` (pattern `LNS/core/src/lib.rs:501-509`).
@@ -292,8 +301,8 @@ Patchable fields: `version`, `description`, `tags`, `author_label`, `idl`, `sour
 | `RegisterDeployer` | `(X, REG)` | `pre_state.is_empty()`; `is_authorized` (X signed) **or** the PDA-header rule; `revision == 1`. If `author != X`: `RequireSigner` → `(author, REG)` | `set_state(Entry)` on itself; `WriteRelease(1)`; `Index` → global head → `IndexName` → `IndexAuthor` → `WriteLink` |
 | `DeployAndRegister` | `(X, REG)` | as `RegisterDeployer`, but **key-held headers only** (`via_pda_seed` refused): whether a PDA grant would carry into the loader delivery is unverified (Q13). Then sync `program_loader::CreateHeader{first_segment, immutable}` → `(X, LOADER)`, **sent first**. The loader's own `is_authorized` check passes because X signed. It panics if the header already exists, which reverts the whole transaction. Not usable for REG's own self-entry `(REG, REG)` (§2.2, N5) | `CreateHeader`; then as `RegisterDeployer`, with `flags.born_with_deploy = 1` |
 | `RegisterThirdParty` | `(publisher, REG)` | `is_authorized`; `program != publisher`. The guest **forces** `author = registrant = publisher` and ignores any author in the input. The root never writes its own actor | `WriteEntry` → `T` (`pre_state.is_empty()`); `WriteRelease(1)`; `Index` → … → `IndexProgram` → `WriteLink` |
-| `Update` | `(author, REG)` (the signer's actor) | `is_authorized`. **Inline patch** if `author == entry` (a deployer entry whose author is X): patch `set_state` directly. Otherwise `PatchEntry{by: author}` → entry; the handler asserts `stored.author == by`, not frozen, and `revision == stored + 1` | patch; `WriteRelease(revision)`; event |
-| `TransferAuthor` | `(author, REG)` | as `Update`, **plus** `RequireSigner` → `(new_author, REG)`: two signatures in one transaction. If `new_author == entry` (handing a deployer entry back to X), no probe is sent. Instead the `PatchEntry` handler asserts `input.is_authorized` whenever `patch.author == Some(receiver.account_id)`, a condition it reads from the message, so no actor is delivered to twice. Also asserts `new_author != stored.registrant`, and `WriteAuthorNode` asserts `pre_state.is_empty()`: **an entry joins each author's list at most once, and a transfer back to a previous author is refused** with a named error. Without this, A→B→A would make A's walk follow the stale `Link.prev_author` and skip entries | patch `author`; `IndexAuthor(new)` → `WriteAuthorNode` |
+| `Update` | `(author, REG)` (the signer's actor) | `is_authorized`. **Inline patch** if `author == entry` (a deployer entry whose author is X): patch `set_state` directly. Otherwise `PatchEntry{patch, now}` → entry; the handler takes the author from `from.account_id` and asserts the record is an entry that lives at this address (deployer: `program == receiver`; third party: `receiver == T(program, registrant)`), `stored.author == from`, not frozen, and `revision == stored + 1` | patch; `WriteRelease(revision)`; event |
+| `TransferAuthor` | `(author, REG)` | as `Update`, **plus** `RequireSigner` → `(new_author, REG)`: two signatures in one transaction. If `new_author == entry` (handing a deployer entry back to X), no probe is sent. Instead the `PatchEntry` handler asserts `input.is_authorized` whenever `patch.author == Some(receiver.account_id)`, a condition it reads from the message, so no actor is delivered to twice. Also asserts `new_author != stored.registrant`, and `WriteAuthorNode` asserts `pre_state.is_empty()`: **an entry joins each author's list at most once, and a transfer back to a previous author is refused** with a named error. Without this, A→B→A would make A's walk follow the stale `Link.prev_author` and skip entries | patch `author`; `IndexAuthorTransfer{entry, new_author}` → new author's head → `WriteAuthorNode{new_author, node}`. `WriteAuthorNode` checks `pre_state` itself so the refusal reads "a transfer back to a previous author is refused" |
 | `Freeze` | `(author, REG)` | as `Update` | set `flags.frozen`; irreversible |
 | *(post-launch)* `Attest` | `(attester, REG)` | `is_authorized` | `WriteAttestation` (only the same attester may overwrite); `IndexAttestation` on the first write |
 
@@ -309,9 +318,9 @@ Patchable fields: `version`, `description`, `tags`, `author_label`, `idl`, `sour
 - addresses REG derives itself;
 - `(X, REG)` / `(new_author, REG)` for `RequireSigner`, which re-checks `is_authorized` there.
 
-So an effect handler can rely on `from.account_id` (for example `PatchEntry`'s `by`). A unit test sends every effect variant from an outsider actor and from an unauthorized registry actor, and expects a refusal.
+So an effect handler can rely on `from.account_id` (for example `PatchEntry`'s author). `from_own_program` checks only the program id, so the invariant rests on handlers emitting effects only after their guards. Unit tests send every effect variant from outsider actors (refused) and check that an unauthorized root emits no effect.
 
-`RequireSigner` is `assert!(input.is_authorized); keep_state()`. A co-signer is in `authorized_accounts`, so its credential is true in every delivery. It is admitted without evidence because signers are in the evidence set.
+`RequireSigner` is `assert!(input.is_authorized); keep_state()`. The probes are appended **after** the handler's own messages; that is harmless because a failed probe reverts the whole transaction and a charged revert costs the full gas limit either way (M1 review, conformance 11). A probe is skipped when the signer's id equals the root's or another by-id account's (`author == program`; `new_author == entry`), because that account's own delivery checks `is_authorized` and no actor is delivered to twice. An `author` equal to a registry PDA it also indexes (e.g. the global head) gets two deliveries; the probe then fails, so the transaction reverts (review F4). A co-signer is in `authorized_accounts`, so its credential is true in every delivery. It is admitted without evidence because signers are in the evidence set.
 
 **The index chain.** Each forward carries `.with_pda_seeds([seed_of_target])`, so the target is self-admitted. Sync messages run depth-first (`execution_state.rs:1400`).
 
@@ -373,7 +382,7 @@ We rejected a sync `clock::AssertTimestamp`: it costs one more delivery for no g
 - The bulk of a deploy's cost is the `WriteSegment` bytes, not the registration.
 - The two-transaction path (`CreateHeader` + `Register`) cost 70,472 against 83,456 for one transaction, but needs X to sign twice and loses `born_with_deploy`.
 
-The estimates below stand until M5 measures the real guest.
+The estimates below stand until M5 measures the real guest. **Measured in M1** (rc1 local sequencer smoke run and engine tests, real guest): `RegisterDeployer` (REG self-entry, author = X) 168k cycles / 1,445 B; `DeployAndRegister` (author ≠ X) 183k / 1,770 B; `RegisterThirdParty` 227–234k / 1,509 B, above the 110–200k estimate (candidate saving for M5: the per-head `assert_at` address re-derivations); `Update` by `PatchEntry` 88–93k / 899 B; `TransferAuthor` ~97k; `Freeze` ~43k; worst-case-size `RegisterDeployer` ~238k / 2,876 B.
 
 Execution gas = cycles, summed over every delivery. Storage gas = borsh transaction bytes (`lez/chain_state/src/apply.rs:466`, `classify.rs:170`). Built-in handlers measure 8–26k cycles, and a 4 KiB state write ~36–44k (`docs/benchmarks/cycle_bench.md`, pre-actor numbers, indicative only).
 
@@ -719,6 +728,15 @@ mod lez_program_registry {
 - It generates the dispatcher with the root-only and `from_own_program` guards built in, plus `actor_entrypoint!`.
 - It generates a host-side `actors_to_declare(&Instruction) -> Vec<Actor>`. The SDK uses it, so the guest, the SDK and the IDL all derive addresses from one source of truth.
 
+**Deviations in the M1 code from the sketches above (behaviour-safe; the code is authoritative):**
+- `PatchEntry` has no `by` field: the author is `from.account_id` (`program/src/lib.rs`, `patch_entry`). `IndexAuthorTransfer` was added and `WriteAuthorNode` carries `new_author` (§2.4).
+- `DeployAndRegister` has no `via_pda_seed` argument at all (root-only by construction).
+- `docker_env` is `Vec<EnvVar>`; `ContentRef`/`SourceRef`/`BuildConfig` are plain borsh structs (IDL `types[]`).
+- `IndexCtx` carries `image_id`, `idl_sha256` and `born_with_deploy` for the `Registered` event.
+- Validation is stricter or looser than §2.3 in four places (`crates/types/src/validate.rs`): versions are printable ASCII without spaces; a CID is 1..=64 bytes; `commit` may be empty when only an `archive` is given (otherwise 20 or 32 bytes); the repo URL scheme is not checked.
+- The shim skips the co-signer probe when the signer equals the root or any other by-id account, and on the PDA path requires every signer to be the root (§2.4 rule 1).
+- Event layouts in `x-lez04.event_types` are generated from the Rust event structs (`event!` in `crates/types/src/events.rs`), so they can't drift from the borsh layout.
+
 ### 6.3 IDL "generated via SPEL", literally
 
 CI builds the released `spel` **v0.7.0** from its tag (pinned and checksummed) and runs `spel generate-idl program/src/lib.rs` over the **real program source**.
@@ -949,19 +967,20 @@ There is no Worker, no `run_worker_first`, no database and no analytics. If Clou
 
 ## 8. Testing and CI
 
-### 8.1 Unit tests (`cargo test -p lez_program_registry -p lezreg-types`, no zkVM)
+### 8.1 Unit tests (`cargo test -p lezreg-program -p lezreg-types`, no zkVM)
 
 - Every limit and charset; seed vectors (SPEL rule) shared with JS; borsh sizes against §2.3; the shim-generated `Message` decoder (instruction tags, effect tags, and the gap panics).
 - The handler auth matrix, with `ReceiveInput` built by hand:
-  - `is_authorized` × `from ∈ {None, Some(own), Some(other)}` × kind;
-  - the PDA-header rule, including a wrong seed;
+  - `is_authorized` × `from ∈ {None, Some(own), Some(other)}` × every instruction (`auth_matrix_every_instruction`);
+  - the PDA-header rule, including a wrong seed, and "every signer is the root" on that path;
   - frozen entries;
   - a revision mismatch;
   - `RequireSigner` from a foreign program;
-  - every effect variant from an outsider actor and from an unauthorized registry actor;
+  - every effect variant from an outsider actor; an unauthorized root emits no effect;
+  - `PatchEntry` refuses a record that is not an entry living at the receiving address;
   - inline patch vs `PatchEntry`.
 - Index-chain message order, contents and `pda_seeds`.
-- Transfer A→B→A and A→B→C→B are refused; the author-list walk stays correct after A→B→C.
+- Transfer A→B→A and A→B→C→B are refused (named errors); the author-list walk stays correct after A→B→C, and `by_author` stops reading at its limit.
 
 ### 8.2 Engine tests (`tools/engine-test`; the real guest ELF on `V03State` via `transition_from_public_transaction`)
 
@@ -981,6 +1000,8 @@ These are regression pins for the source facts in §2.1:
 9. PDA-owned header through a helper guest.
 10. Self-registration of REG at `(REG, REG)`: `CreateHeader`, then `RegisterDeployer`; `born_with_deploy` unset.
 11. Over-declared but untouched actor: legal (pins the "no unused-actor check" fact).
+12. Third-party entry lifecycle (M1 review): update, transfer and freeze of an entry at `T`, refusals for non-authors, transfer to `T` itself and after freeze, then the third-party and author walks.
+13. The PDA path can't attribute authorship (M1 review F1/F2): a program the user signed for registers its PDA with the user as author, transfers its entry to the user, or names another program's PDA it holds an inherited grant for. All refused, state unchanged.
 
 ### 8.3 End to end against a real standalone sequencer (`e2e.yml`, on push to `main` and on PRs)
 
@@ -1045,7 +1066,7 @@ The prize asks for: 50 programs from 20 independent authors over ≥ 2 months (�
 | Threat | Mitigation | Residual risk |
 |---|---|---|
 | A non-deployer creates a deployer entry | `(X, REG)` creation needs X's authorization and an empty `pre_state` (§3). Demo cases (a) and (d) | None while X's key is safe |
-| **Composed transaction**: a malicious program reached in a transaction X or A signed writes an entry | Root-only rule; effects only from REG; the PDA-header path recomputes the PDA (§2.4). Engine test 3 | A wallet that lets a user sign a *direct* registry instruction they didn't intend. Wallets can render the call from the IDL |
+| **Composed transaction**: a malicious program reached in a transaction X or A signed writes an entry | Root-only rule; effects only from REG; the PDA-header path recomputes the PDA and accepts no signer but the header (§2.4). Engine tests 3 and 13 | A wallet that lets a user sign a *direct* registry instruction they didn't intend. Wallets can render the call from the IDL. A dapp `P` the user signs for can still register or update `P`'s *own* PDA entries, as it may |
 | The same composition against the **loader** (`UpdateHeader` to `(X, LOADER)` in a transaction X signed) | Outside the registry's control (a general 0.4 property). The registry *detects* it: claimed and live `image_id` diverge, the entry shows **stale**, and marks lapse | Wallets should flag any declared `(X, LOADER)` actor |
 | Header key compromise | `Freeze`; deploy immutable; the UI shows **upgradeable** | With author = X, an attacker can rewrite a non-frozen entry. We recommend author ≠ X (cold header key) |
 | Bait-and-switch | `name` is immutable; every revision leaves a write-once `Release` with the full tuple | — |
@@ -1070,7 +1091,7 @@ The prize asks for: 50 programs from 20 independent authors over ≥ 2 months (�
 | # | Milestone | Effort | Exit check |
 |---|---|---|---|
 | M0 | Spikes:<br>(a) **DONE, PASS** (`spikes/spel-idl/RESULT.md`): released `spel generate-idl` v0.7.0 accepts the shim-annotated toy module unchanged, `SpelIdl` round-trips it with `x-lez04`, and the same source builds an rc1 guest through `spel04-shim`. Findings F1–F5 folded into §2.2, §2.4, §5.1, §6;<br>(b) **replaced** by GitHub Actions reproducible builds (`repro.yml`, §8.3): `RUN --network=none` byte-identity is checked there (decision: no local Docker);<br>(c) **replaced** likewise: no local Docker build on the laptop;<br>(d) **DONE, PASS** (`spikes/d-deploy-and-register/RESULT.md`): `DeployAndRegister` of a 427 KB guest in one transaction on the rc1 sequencer, loader 0 cycles, Mallory negatives refused. Findings folded into §2.1, §2.2, §2.7, §3, §7.5 (self-entry via `CreateHeader` + `RegisterDeployer`, N5);<br>(e) **deferred**: no home port forward (decision, security). IDLs ≤ 120 KiB go over the relay, source via the git pointer; a VPS pinner is decided near launch (§4.4, §5.3);<br>**Post the §12 questions in #builder-hub on day 0** | 2 d | (a), (d) passed; (b), (c) moved to CI; (e) deferred |
-| M1 | `crates/types`, `spel04-shim`, program, guest, unit + engine tests 1–11, `artifacts/` repro job | 7 d | engine tests green; `image_id` stable across two CI runs |
+| M1 | `crates/types`, `spel04-shim`, program, guest, unit + engine tests 1–13, `artifacts/` repro job | 7 d | engine tests green; `image_id` stable across two CI runs. **Status 2026-11-02: code complete, exit check pending** (CI has never run: needs a pushed branch, then `repro.yml` twice, then commit `artifacts/`) |
 | M2 | Rust SDK (reads, walks, cache, tx) + CLI `register/update/transfer/freeze/show/list/search/deploy` + `chain/deploy.sh` | 4 d | the demo core passes on the Mini's local rc1 sequencer |
 | M3 | Storage publish/fetch ladder, JCS, `IdlStatus`, `pin`, **`pin-all` pinner**, `storage up` | 3.5 d | two-node fetch and degradation tests; an IDL ≤ 120 KiB fetched over the relay |
 | M4 | `verify` (Dockerfile emitter, three-way compare, `--deep`, releases, marks) | 3 d | `verify <REG> --deep` → `Match` |
