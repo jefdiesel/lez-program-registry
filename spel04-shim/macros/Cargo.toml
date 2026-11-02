@@ -1,0 +1,15 @@
+[package]
+name = "spel04-shim-macros"
+description = "Proc macros for spel04-shim: SPEL attribute syntax compiled for LEZ 0.4 actors."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+proc-macro-crate = "3"

@@ -1,0 +1,20 @@
+[package]
+name = "lezreg-program"
+description = "LEZ Program Registry on-chain program, in SPEL attribute syntax, compiled for LEZ 0.4 by spel04-shim."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lezreg_program"
+
+# `path` dependencies are written out (not `workspace = true`): the released `spel generate-idl`
+# finds `#[account_type]` records by reading this table.
+[dependencies]
+borsh.workspace = true
+# The only backend switch: the source says `use spel::prelude::*`.
+spel = { package = "spel04-shim", path = "../spel04-shim" }
+lezreg-types = { path = "../crates/types" }
+
+[dev-dependencies]
+lee_core.workspace = true

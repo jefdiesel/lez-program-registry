@@ -1,0 +1,12 @@
+[package]
+name = "spel04-shim"
+description = "SPEL attribute syntax (`#[lez_program]`, `#[instruction]`, `#[account]`, `#[account_type]`) compiled for LEZ v0.4 actors."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+spel04-shim-macros = { path = "macros" }
+lee_core.workspace = true
+risc0-zkvm.workspace = true
+borsh.workspace = true

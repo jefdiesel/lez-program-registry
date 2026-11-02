@@ -1,0 +1,20 @@
+[package]
+name = "reg_client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reg_core.workspace = true
+lee_core.workspace = true
+lee.workspace = true
+common.workspace = true
+sequencer_service_rpc.workspace = true
+wallet.workspace = true
+borsh.workspace = true
+program_loader_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
+risc0-binfmt = "3.0.5"
+anyhow = "1.0.98"
+clap = { version = "4.5.42", features = ["derive", "env"] }
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
+hex = "0.4.3"

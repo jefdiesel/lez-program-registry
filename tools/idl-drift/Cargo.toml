@@ -1,0 +1,18 @@
+[package]
+name = "lezreg-idl"
+description = "IDL tools for the registry: `lezreg-idl-extend` (adds x-lez04, fills discriminator/spec/metadata) and the IDL drift tests."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "lezreg-idl-extend"
+path = "src/main.rs"
+
+[dependencies]
+lezreg-program = { path = "../../program" }
+lezreg-types = { path = "../../crates/types" }
+lee_core.workspace = true
+borsh.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }

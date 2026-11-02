@@ -1,0 +1,1 @@
+13170:[2026-11-02T15:27:15Z WARN  sequencer_core] Transaction with hash 0cce10325c08fd60a5617f80228134500a2842c77a2a313e9166829af09a215d failed settlement: Transaction 0 failed fee classification: fee action failed: Unknown program, skipping it

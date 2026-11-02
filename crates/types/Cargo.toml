@@ -1,0 +1,16 @@
+[package]
+name = "lezreg-types"
+description = "LEZ Program Registry: records, limits, SPEL-rule PDA derivation and list walkers. No LEZ dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lezreg_types"
+
+[dependencies]
+# Only for `#[account_type]` (adds the borsh derives); a proc-macro crate with no LEZ dependency.
+spel04-shim-macros = { path = "../../spel04-shim/macros" }
+borsh.workspace = true
+sha2.workspace = true
+bs58.workspace = true

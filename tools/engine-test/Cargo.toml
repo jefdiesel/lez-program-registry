@@ -1,0 +1,18 @@
+[package]
+name = "lezreg-engine-test"
+description = "Engine tests (DESIGN §8.2): the real registry guest ELF on LEZ's real state machine (V03State), no chain or network."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+lezreg-program = { path = "../../program" }
+lezreg-types = { path = "../../crates/types" }
+lezreg-methods = { path = "../../methods" }
+lezreg-helper-methods = { path = "helper-methods" }
+lee_core.workspace = true
+lee.workspace = true
+program_loader_core.workspace = true
+risc0-binfmt.workspace = true
+borsh.workspace = true

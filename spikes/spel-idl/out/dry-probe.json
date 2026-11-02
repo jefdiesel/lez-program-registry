@@ -1,0 +1,54 @@
+{
+  "accounts": [
+    {
+      "flags": [
+        "signer"
+      ],
+      "id": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "name": "author"
+    },
+    {
+      "flags": [
+        "writable"
+      ],
+      "id": "7oS5b5cWo6iM46LfbvBdrAVgkM74XL6svxmEuHotKyPr",
+      "is_pda": true,
+      "name": "head",
+      "seeds": [
+        {
+          "kind": "const",
+          "value": "toyreg/v1/head"
+        }
+      ]
+    },
+    {
+      "flags": [
+        "writable"
+      ],
+      "id": "DYxSzNmxQy8KPZJahuVvnnSPQhijPTKyUCzJU4T6Zpok",
+      "is_pda": true,
+      "name": "name_head",
+      "seeds": [
+        {
+          "kind": "const",
+          "value": "toyreg/v1/name"
+        },
+        {
+          "kind": "arg",
+          "path": "name"
+        }
+      ]
+    }
+  ],
+  "arguments": {
+    "name": "\"alice\""
+  },
+  "instruction": "probe",
+  "instruction_data": "0300000005000000616c696365000000",
+  "program_id": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+  "signers": {
+    "author": {
+      "nonce": null
+    }
+  }
+}

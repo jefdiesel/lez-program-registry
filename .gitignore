@@ -1,0 +1,5 @@
+target/
+_deps/
+**/wallet/
+/smoke-out/
+.DS_Store

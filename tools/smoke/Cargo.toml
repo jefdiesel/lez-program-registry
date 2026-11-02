@@ -1,0 +1,23 @@
+[package]
+name = "lezreg-smoke"
+description = "M1 smoke client: deploys the registry guest on a LOCAL rc1 sequencer and runs DeployAndRegister, a third-party register, an update and the Mallory negative. The full CLI is M2."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+lezreg-program = { path = "../../program" }
+lezreg-types = { path = "../../crates/types" }
+lee_core.workspace = true
+lee.workspace = true
+common.workspace = true
+sequencer_service_rpc.workspace = true
+wallet.workspace = true
+program_loader_core.workspace = true
+risc0-binfmt.workspace = true
+borsh.workspace = true
+hex.workspace = true
+anyhow = "1.0.98"
+clap = { version = "4.5.42", features = ["derive", "env"] }
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }

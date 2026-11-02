@@ -1,0 +1,405 @@
+{
+  "version": "0.1.0",
+  "name": "toy_registry",
+  "instructions": [
+    {
+      "name": "register",
+      "accounts": [
+        {
+          "name": "program",
+          "writable": true,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "program"
+              },
+              {
+                "kind": "arg",
+                "path": "revision"
+              }
+            ]
+          }
+        },
+        {
+          "name": "head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/head"
+              }
+            ]
+          }
+        },
+        {
+          "name": "name_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/name"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u64"
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": true,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": false
+        },
+        {
+          "name": "release",
+          "writable": true,
+          "signer": false,
+          "init": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/rel"
+              },
+              {
+                "kind": "account",
+                "path": "entry"
+              },
+              {
+                "kind": "arg",
+                "path": "revision"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u64"
+        },
+        {
+          "name": "version",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "freeze",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "signer": false,
+          "init": false
+        }
+      ],
+      "args": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "probe",
+      "accounts": [
+        {
+          "name": "author",
+          "writable": false,
+          "signer": true,
+          "init": false
+        },
+        {
+          "name": "head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/head"
+              }
+            ]
+          }
+        },
+        {
+          "name": "name_head",
+          "writable": true,
+          "signer": false,
+          "init": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": "toyreg/v1/name"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Entry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "flags",
+            "type": "u8"
+          },
+          {
+            "name": "program",
+            "type": "account_id"
+          },
+          {
+            "name": "author",
+            "type": "account_id"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "type": "string"
+          },
+          {
+            "name": "idl",
+            "type": {
+              "defined": "ContentRef"
+            }
+          },
+          {
+            "name": "image_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registered_at",
+            "type": "u64"
+          },
+          {
+            "name": "updated_at",
+            "type": "u64"
+          },
+          {
+            "name": "revision",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Release",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "schema",
+            "type": "u8"
+          },
+          {
+            "name": "entry",
+            "type": "account_id"
+          },
+          {
+            "name": "revision",
+            "type": "u64"
+          },
+          {
+            "name": "version",
+            "type": "string"
+          },
+          {
+            "name": "image_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "at",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "ContentRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cid",
+          "type": {
+            "vec": "u8"
+          }
+        },
+        {
+          "name": "sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        }
+      ]
+    }
+  ],
+  "instruction_type": "Instruction"
+}

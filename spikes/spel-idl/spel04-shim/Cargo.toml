@@ -1,0 +1,11 @@
+[package]
+name = "spel04-shim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+spel04-shim-macros = { path = "../spel04-shim-macros" }
+lee_core.workspace = true
+risc0-zkvm.workspace = true
+borsh.workspace = true

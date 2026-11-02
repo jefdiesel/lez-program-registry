@@ -1,0 +1,19 @@
+# Wire tags of lez_program_registry. spel04-shim refuses to compile if the #[instruction] or
+# #[effect] fns no longer start with these lines: new ones may only be appended. A test checks
+# this file equals the generated WIRE_TAGS, so appending also means appending here.
+instruction 0 register_deployer
+instruction 1 register_third_party
+instruction 2 update
+instruction 3 transfer_author
+instruction 4 freeze
+instruction 5 deploy_and_register
+effect 192 write_entry
+effect 193 patch_entry
+effect 194 write_release
+effect 195 index
+effect 196 index_name
+effect 197 index_author
+effect 198 index_program
+effect 199 write_link
+effect 200 write_author_node
+effect 201 index_author_transfer

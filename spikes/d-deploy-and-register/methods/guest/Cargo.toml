@@ -1,0 +1,10 @@
+[package]
+name = "lezreg_spike_reg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reg_core.workspace = true
+lee_core.workspace = true
+risc0-zkvm.workspace = true

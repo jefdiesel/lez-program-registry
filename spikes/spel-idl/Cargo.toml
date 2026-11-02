@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["program", "spel04-shim", "spel04-shim-macros", "methods", "methods/guest"]
+exclude = ["idl-check", "_deps"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+lee_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
+risc0-zkvm = { version = "3.0.5", default-features = false, features = ["std"] }
+borsh = { version = "1.5.7", features = ["derive"] }
+
+[patch.crates-io]
+keccak = { git = "https://github.com/logos-blockchain/sponges", rev = "3a56e99771beedf04946eab21a4a62adc2951377" }

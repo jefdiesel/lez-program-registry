@@ -1,0 +1,10 @@
+[package]
+name = "toy_registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+borsh.workspace = true
+# The only backend switch: the source says `use spel::prelude::*`.
+spel = { package = "spel04-shim", path = "../spel04-shim" }

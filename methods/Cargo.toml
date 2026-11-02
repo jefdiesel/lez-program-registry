@@ -1,0 +1,15 @@
+[package]
+name = "lezreg-methods"
+description = "Embeds the lez_program_registry guest (local risc0 toolchain build)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lezreg_methods"
+
+[build-dependencies]
+risc0-build = "3.0.5"
+
+[package.metadata.risc0]
+methods = ["guest"]

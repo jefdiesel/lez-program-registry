@@ -1,0 +1,192 @@
+
+===== encoding check
+encoding OK: CreateHeader = 00
+REG    /Volumes/exos162/logos/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin total=316008 user_elf=283584 segments=3 image_id=bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764
+TARGET /Volumes/exos162/logos/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin total=459452 user_elf=427028 segments=5 image_id=a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a
+
+===== accounts
+P=HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R M=EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx R=BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN X=AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE X3=3ZQ8MQK1Cf945v8VTmH8hcPYC4VE8AsMWtE7TygP8XSv X4=7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK X5=9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN R2=De7yr6sosKNHgPJ73n77vRcAL1DH8cepRT35Pn5tChPG
+RS=(BBDksmsQ2DFi5SZS13wPpHGTGRgCMtWiNct2X53rHCyc 37KdSVTR4anri89BrWCD3X4HcMFTTGVWzeaa54N4yrP5 Ff5vCXZSnM3oJd1AiZQR9kosJAjFu5CixpCkCg21Q3AQ)
+TS=(4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno CA77ZYu6xJmV8xw2KaSswdE4887eJjfvsmmcxyGk57DM 5bbtjyao2dLhcXCxQUQVdV4MvYb4gURprAJ9ECQzKywa DHSwDvGx1NLGQXY9mY9ZZX2GDZg5Rn6JpwPJgtJfEBBs EfStWqNBWjV5dAqvKPCa7TWNgAwrzYYSEMubXhEV7u28)
+
+===== fund payer P (200M) and Mallory M (20M) from the lp0023 funder
+funded HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R with 200000000 in block 1351; balance 200000000
+funded EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx with 20000000 in block 1353; balance 20000000
+
+===== deploy REG: segments then plain CreateHeader (also = standalone CreateHeader cost)
+elf /Volumes/exos162/logos/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin: 316008 bytes total, user_elf 283584 bytes, 3 chunks
+expected image_id bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764
+segment 2 -> Ff5vCXZSnM3oJd1AiZQR9kosJAjFu5CixpCkCg21Q3AQ (86976 bytes) block 1356 fee 700448
+segment 1 -> 37KdSVTR4anri89BrWCD3X4HcMFTTGVWzeaa54N4yrP5 (98304 bytes) block 1358 fee 791328
+segment 0 -> BBDksmsQ2DFi5SZS13wPpHGTGRgCMtWiNct2X53rHCyc (98304 bytes) block 1361 fee 791328
+segments written; total fee 2283104
+variant CreateHeader header BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 34 bytes; declared actors: 1
+simulated: OK, 0 cycles
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted f4c71a4251eae41da6422ee0e28be44848710a989e3e6057067b9517d73558bb gas_limit 30000
+included block 1363; tx 607 bytes; reverted=false; fee charged 4864
+RESULT: APPLIED
+(X, LOADER): header image_id bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764 first_segment BBDksmsQ2DFi5SZS13wPpHGTGRgCMtWiNct2X53rHCyc immutable false
+
+===== write ~400 KB target segments (one chain, reused by every header below)
+elf /Volumes/exos162/logos/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin: 459452 bytes total, user_elf 427028 bytes, 5 chunks
+expected image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a
+segment 4 -> EfStWqNBWjV5dAqvKPCa7TWNgAwrzYYSEMubXhEV7u28 (33812 bytes) block 1365 fee 275136
+segment 3 -> DHSwDvGx1NLGQXY9mY9ZZX2GDZg5Rn6JpwPJgtJfEBBs (98304 bytes) block 1368 fee 791328
+segment 2 -> 5bbtjyao2dLhcXCxQUQVdV4MvYb4gURprAJ9ECQzKywa (98304 bytes) block 1370 fee 791328
+segment 1 -> CA77ZYu6xJmV8xw2KaSswdE4887eJjfvsmmcxyGk57DM (98304 bytes) block 1373 fee 791328
+segment 0 -> 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno (98304 bytes) block 1375 fee 791328
+segments written; total fee 3440448
+
+===== T1 POSITIVE: DeployAndRegister for X in ONE tx (X signs, P pays)
+variant Dar header AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 56 bytes; declared actors: 2
+simulated: OK, 9738 cycles
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted df3019d45730f1555ec64fd4d092e483771ffc975d47581afcd33e030760d428 gas_limit 30000
+included block 1377; tx 693 bytes; reverted=false; fee charged 83456
+RESULT: APPLIED
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+(X, REG): schema 1 born_with_deploy 1 record "x-born-with-deploy"
+
+===== T1 read-back: ONE getAccount(X)
+getAccount AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE nonce 1 actor_states:
+   BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN 24 bytes 010112000000782d...
+   JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ 65 bytes a48b16bf0fb4e7e2...
+
+===== T2/T3 two-tx fallback on X3: CreateHeader, then Register
+variant CreateHeader header 3ZQ8MQK1Cf945v8VTmH8hcPYC4VE8AsMWtE7TygP8XSv signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 34 bytes; declared actors: 1
+simulated: OK, 0 cycles
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted 47d68ee80c0fbebc61b630a309a12d096ee4577fe4f76d5408a474a7762980f6 gas_limit 30000
+included block 1380; tx 607 bytes; reverted=false; fee charged 4864
+RESULT: APPLIED
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+variant Register header 3ZQ8MQK1Cf945v8VTmH8hcPYC4VE8AsMWtE7TygP8XSv signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 14 bytes; declared actors: 1
+simulated: OK, 7613 cycles
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted 1be73d079d9460e6175ee02fe10cba73eaa0a1b243e6915661ad5e081b5dd4ad gas_limit 30000
+included block 1382; tx 587 bytes; reverted=false; fee charged 65608
+RESULT: APPLIED
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+(X, REG): schema 1 born_with_deploy 0 record "x3-two-tx"
+getAccount 3ZQ8MQK1Cf945v8VTmH8hcPYC4VE8AsMWtE7TygP8XSv nonce 2 actor_states:
+   BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN 15 bytes 0100090000007833...
+   JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ 65 bytes a48b16bf0fb4e7e2...
+
+===== N1 NEGATIVE: Mallory registers (X4, REG) for X4 she doesn't control (X4 has a header, no entry: the two-tx squat window)
+variant CreateHeader header 7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 34 bytes; declared actors: 1
+simulated: OK, 0 cycles
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted c0005d0111f37ca4f7b2fa0e63c5a3cb326117588e70a5a23f88c536f72720b4 gas_limit 30000
+included block 1385; tx 607 bytes; reverted=false; fee charged 4864
+RESULT: APPLIED
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+variant Register header 7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
+message 12 bytes; declared actors: 1
+
+thread 'main' (1) panicked at core/src/lib.rs:58:13:
+REG: X must sign (is_authorized false at (X, REG))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Error: simulated: REFUSED: Failed to execute program: Guest panicked: REG: X must sign (is_authorized false at (X, REG))
+variant Register header 7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
+message 12 bytes; declared actors: 1
+
+thread 'main' (1) panicked at core/src/lib.rs:58:13:
+REG: X must sign (is_authorized false at (X, REG))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+simulated: REFUSED: Failed to execute program: Guest panicked: REG: X must sign (is_authorized false at (X, REG)); sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted cb786dd6b93949aa2975dd8c3e6e1c1ebb4544c6fb41ef4d79d6af8887793091 gas_limit 100000
+included block 1387; tx 409 bytes; reverted=true; fee charged 803280
+RESULT: REVERTED (charged)
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+(X, REG): empty
+getAccount 7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK nonce 1 actor_states:
+   JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ 65 bytes a48b16bf0fb4e7e2...
+
+===== N2 NEGATIVE: Mallory DeployAndRegister on fresh, non-existent X5 (X5 does not sign)
+variant Dar header 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
+message 45 bytes; declared actors: 2
+
+thread 'main' (1) panicked at core/src/lib.rs:51:13:
+REG: X must sign (is_authorized false at (X, REG))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+simulated: REFUSED: Failed to execute program: Guest panicked: REG: X must sign (is_authorized false at (X, REG)); sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted 648408a30c82155605dec4458ef87eaf6ed5b631173356ca68d36fa56c9987d8 gas_limit 100000
+included block 1390; tx 539 bytes; reverted=true; fee charged 804320
+RESULT: REVERTED (charged)
+(X, LOADER): 0 bytes, no header
+(X, REG): empty
+
+===== N2b: same after X5 exists (funded 1 unit), so admission is not the reason
+funded 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN with 1 in block 1392; balance 1
+variant Dar header 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
+message 45 bytes; declared actors: 2
+
+thread 'main' (1) panicked at core/src/lib.rs:51:13:
+REG: X must sign (is_authorized false at (X, REG))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+simulated: REFUSED: Failed to execute program: Guest panicked: REG: X must sign (is_authorized false at (X, REG)); sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted c47bfe4669cf09fcd10ca1efd0fa9c8e1e2eb1a94a07639eeea881abdb177ab4 gas_limit 100000
+included block 1394; tx 506 bytes; reverted=true; fee charged 804056
+RESULT: REVERTED (charged)
+(X, LOADER): 0 bytes, no header
+(X, REG): empty
+
+===== N3 NEGATIVE: REG check removed (dar-nocheck): the loader's own is_authorized must refuse
+variant DarNocheck header 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
+message 45 bytes; declared actors: 2
+
+thread 'tokio-rt-worker' (351427622) panicked at /Users/minim4/.cargo/git/checkouts/logos-execution-zone-6bae42d7c9cadfe7/1806e87/lez/programs/program_loader/core/src/lib.rs:79:13:
+CreateHeader target must be an authorized account
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+simulated: REFUSED: Failed to execute program: CreateHeader target must be an authorized account; sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted 05f5267bed6ac851b65516c04e99098dfae4dc9906941cc344428b15eba4e03b gas_limit 100000
+included block 1397; tx 506 bytes; reverted=true; fee charged 804056
+RESULT: REVERTED (charged)
+(X, LOADER): 0 bytes, no header
+(X, REG): empty
+getAccount 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN nonce 0 actor_states:
+   11111111111111111111111111111111 16 bytes 0100000000000000...
+
+===== N4: honest DeployAndRegister again on X (already deployed + registered) must revert
+variant Dar header AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 43 bytes; declared actors: 2
+
+thread 'main' (1) panicked at core/src/lib.rs:70:5:
+REG: entry already exists at (X, REG)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+simulated: REFUSED: Failed to execute program: Guest panicked: REG: entry already exists at (X, REG); sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted e96f78eb7e087b1fac949c0bdede35ba4a3218ff71591be755c9269af1409e4c gas_limit 100000
+included block 1399; tx 680 bytes; reverted=true; fee charged 805448
+RESULT: REVERTED (charged)
+(X, LOADER): header image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a first_segment 4QFexsDCqJocdygJsfB8ZMAk96Cin1nS1fBzFc6S7Nno immutable false
+(X, REG): schema 1 born_with_deploy 1 record "x-born-with-deploy"
+getAccount AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE nonce 2 actor_states:
+   BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN 24 bytes 010112000000782d...
+   JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ 65 bytes a48b16bf0fb4e7e2...
+
+===== N5: self-entry (R2, R2) by DeployAndRegister: root program not deployed yet
+variant Dar header De7yr6sosKNHgPJ73n77vRcAL1DH8cepRT35Pn5tChPG signs=true payer HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R
+message 42 bytes; declared actors: 2
+simulated: REFUSED: Program violated execution rules; sending anyway with gas 100000
+fee state: base_fee_exec 8 base_fee_stor 8 max_gas_exec 10000000 max_gas_stor 1000000
+submitted 0cce10325c08fd60a5617f80228134500a2842c77a2a313e9166829af09a215d gas_limit 100000
+Error: not included
+
+Caused by:
+    Transaction not found in preconfigured amount of blocks
+
+===== sequencer log: panics from this run
+   2 CreateHeader target must be an authorized account
+   2 REG: entry already exists at (X, REG)
+   6 REG: X must sign (is_authorized false at (X, REG))
