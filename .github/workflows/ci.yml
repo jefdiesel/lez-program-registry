@@ -41,7 +41,8 @@ jobs:
           rustup toolchain install 1.94.0 --profile minimal
           cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --rev 4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b spel --root _deps/spel-root
           # A tag can move; the commit cannot. Fail unless cargo recorded exactly this commit.
-          grep -q 'spel 0.7.0 (git+https://github.com/logos-co/spel.git?rev=4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b#4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b)' _deps/spel-root/.crates.toml
+          grep -q '"spel 0.7.0 (git+https://github.com/logos-co/spel.git' _deps/spel-root/.crates.toml
+          grep -q '4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b' _deps/spel-root/.crates.toml
           sha256sum _deps/spel-root/bin/spel
       - name: Regenerate and compare idl/
         run: scripts/idl.sh --check
