@@ -1,0 +1,49 @@
+# Unit, engine and IDL drift tests (DESIGN §8.1, §8.2, §6.3). The guests are built with the
+# local risc0 toolchain here; repro.yml does the reproducible Docker build.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rzup (risc0 toolchain for the guests)
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.risc0/bin:$PATH"
+          rzup install cargo-risczero 3.0.5
+          rzup install rust
+      - uses: Swatinem/rust-cache@v2
+      - name: Unit tests
+        run: cargo test -p lezreg-types -p lezreg-program
+      - name: Engine tests (real guest on the rc1 state machine)
+        run: cargo test --release -p lezreg-engine-test -- --nocapture --test-threads 1
+
+  idl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rzup (the drift tests link the program crate)
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+      - name: Install the released spel v0.7.0 (its own toolchain)
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal
+          cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --tag v0.7.0 spel --root _deps/spel-root
+      - name: Regenerate and compare idl/
+        run: scripts/idl.sh --check
+      - name: Drift tests
+        run: LEZREG_REQUIRE_SPEL=1 cargo test -p lezreg-idl
+      - name: SpelIdl parse (SPEL v0.7.0 types)
+        working-directory: tools/idl-check
+        run: cargo run --release -- ../../idl/lez_program_registry.idl.json

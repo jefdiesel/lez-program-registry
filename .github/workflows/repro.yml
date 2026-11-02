@@ -1,0 +1,165 @@
+# Reproducible guest build (DESIGN §8.3 step 6; replaces M0 spikes b and c).
+#
+# 1. Two independent runners build methods/guest with the stock `cargo risczero build`
+#    (risc0-build 3.0.5 Docker, builder image pinned by digest). Both must give the same bytes:
+#    the M1 exit check "image_id stable across two CI runs".
+# 2. Each runner rebuilds once more with the Dockerfile risc0-build 3.0.5 writes, changed only
+#    by `FROM …@sha256:<digest>` and `RUN --network=none` on the compile step (the `lezreg
+#    verify` recipe, §4.2). Its ELF must equal the stock build's.
+# 3. The image id is compared with artifacts/lez_program_registry.imageid when that file exists
+#    (like LEZ's `artifacts` job); otherwise it is printed and uploaded for committing.
+# 4. Golden check: rebuilding LEZ rc1's `clock` program gives image id 6f7b8745…b378.
+name: repro
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BUILDER_TAG: r0.1.91.1
+  BUILDER_DIGEST: sha256:fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0
+  CARGO_RISCZERO_VERSION: 3.0.5
+  GUEST_MANIFEST: methods/guest/Cargo.toml
+  GUEST_BIN: lez_program_registry
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        run: [a, b]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rzup and cargo-risczero
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.risc0/bin:$PATH"
+          rzup install cargo-risczero "$CARGO_RISCZERO_VERSION"
+          rzup install rust
+          rzup show
+
+      - name: Pull the builder image by digest and pin its tag to it
+        run: |
+          docker pull "risczero/risc0-guest-builder@${BUILDER_DIGEST}"
+          docker tag "risczero/risc0-guest-builder@${BUILDER_DIGEST}" "risczero/risc0-guest-builder:${BUILDER_TAG}"
+          got=$(docker image inspect --format '{{index .RepoDigests 0}}' "risczero/risc0-guest-builder:${BUILDER_TAG}")
+          echo "local image: $got"
+          [[ "$got" == *"@${BUILDER_DIGEST}" ]]
+
+      - name: Stock build (cargo risczero build)
+        run: |
+          RISC0_DOCKER_CONTAINER_TAG="$BUILDER_TAG" cargo risczero build --manifest-path "$GUEST_MANIFEST"
+          bin=$(find target -path '*docker*' -name "${GUEST_BIN}.bin" | head -1)
+          elf=$(find target -path '*docker*' -name "${GUEST_BIN}" -type f | head -1)
+          test -n "$bin" && test -n "$elf"
+          mkdir -p out
+          cp "$bin" "out/${GUEST_BIN}.bin"
+          cp "$elf" "out/${GUEST_BIN}.elf"
+
+      - name: Offline rebuild (--network=none on the compile step)
+        run: |
+          # The Dockerfile risc0-build 3.0.5 writes (docker.rs create_dockerfile), with two changes.
+          # CARGO_ENCODED_RUSTFLAGS = encode_rust_flags(): elements joined by 0x1f, each escape_default'ed.
+          US=$'\x1f'
+          FLAGS="-C${US}passes=lower-atomic${US}-C${US}link-arg=-Ttext=0x00200800${US}-C${US}link-arg=--fatal-warnings${US}-C${US}panic=abort${US}--cfg${US}getrandom_backend=\\\"custom\\\""
+          ctx=$(mktemp -d)
+          cat > "$ctx/Dockerfile" <<EOF
+          FROM risczero/risc0-guest-builder:${BUILDER_TAG}@${BUILDER_DIGEST} AS build
+          WORKDIR /src
+          COPY . .
+          ENV CARGO_MANIFEST_PATH="${GUEST_MANIFEST}"
+          ENV CARGO_ENCODED_RUSTFLAGS="${FLAGS}"
+          ENV CARGO_TARGET_DIR="target"
+          ENV RISC0_FEATURE_bigint2=""
+          ENV CC_riscv32im_risc0_zkvm_elf="/root/.risc0/cpp/bin/riscv32-unknown-elf-gcc"
+          ENV CFLAGS_riscv32im_risc0_zkvm_elf="-march=rv32im -nostdlib"
+          RUN cargo +risc0 fetch --locked --target riscv32im-risc0-zkvm-elf --manifest-path \$CARGO_MANIFEST_PATH
+          RUN --network=none cargo +risc0 build --release --locked --target riscv32im-risc0-zkvm-elf --manifest-path \$CARGO_MANIFEST_PATH
+          FROM scratch AS export
+          COPY --from=build /src/target/riscv32im-risc0-zkvm-elf/release /
+          EOF
+          printf '**/Dockerfile\n**/.git\n**/node_modules\n**/target\n**/tmp\n' > "$ctx/Dockerfile.dockerignore"
+          cat -A "$ctx/Dockerfile" | sed -n '5p'
+          docker buildx build -f "$ctx/Dockerfile" --output "type=local,dest=out/offline" .
+          cmp "out/offline/${GUEST_BIN}" "out/${GUEST_BIN}.elf"
+          echo "offline rebuild: identical ELF"
+
+      - name: Image id
+        run: |
+          cargo run -q --release -p lezreg-engine-test --bin lezreg-imageid -- "out/${GUEST_BIN}.bin" | tee out/imageid.txt
+          cut -d' ' -f1 out/imageid.txt > "out/${GUEST_BIN}.imageid"
+          {
+            echo "{"
+            echo "  \"builder_image\": \"risczero/risc0-guest-builder:${BUILDER_TAG}@${BUILDER_DIGEST}\","
+            echo "  \"risc0_build\": \"$(grep -A1 'name = "risc0-build"' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')\","
+            echo "  \"host_risc0_rust\": \"$(rzup show | sed -n 's/.*rust *\([0-9.]*\).*/\1/p' | head -1)\","
+            echo "  \"manifest_path\": \"${GUEST_MANIFEST}\","
+            echo "  \"binary\": \"${GUEST_BIN}\","
+            echo "  \"commit\": \"${GITHUB_SHA}\","
+            echo "  \"lock_sha256\": \"$(sha256sum Cargo.lock | cut -d' ' -f1)\","
+            echo "  \"bin_sha256\": \"$(sha256sum "out/${GUEST_BIN}.bin" | cut -d' ' -f1)\","
+            echo "  \"image_id\": \"$(cat "out/${GUEST_BIN}.imageid")\""
+            echo "}"
+          } > out/build.json
+          cat out/build.json
+          if [ -f "artifacts/${GUEST_BIN}.imageid" ]; then
+            diff "artifacts/${GUEST_BIN}.imageid" "out/${GUEST_BIN}.imageid"
+            echo "image id matches artifacts/"
+          else
+            echo "::notice::artifacts/${GUEST_BIN}.imageid not committed yet; this run built $(cat "out/${GUEST_BIN}.imageid")"
+          fi
+          if [ -f "artifacts/${GUEST_BIN}.bin" ]; then
+            cmp "artifacts/${GUEST_BIN}.bin" "out/${GUEST_BIN}.bin"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guest-${{ matrix.run }}
+          path: |
+            out/${{ env.GUEST_BIN }}.bin
+            out/${{ env.GUEST_BIN }}.imageid
+            out/build.json
+
+  stable:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Both runs built the same bytes
+        run: |
+          cmp guest-a/lez_program_registry.bin guest-b/lez_program_registry.bin
+          diff guest-a/lez_program_registry.imageid guest-b/lez_program_registry.imageid
+          echo "stable image id: $(cat guest-a/lez_program_registry.imageid)"
+
+  golden-clock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rzup and cargo-risczero
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.risc0/bin:$PATH"
+          rzup install cargo-risczero "$CARGO_RISCZERO_VERSION"
+          rzup install rust
+      - name: Rebuild LEZ v0.4.0-rc1 programs and check clock's image id
+        run: |
+          docker pull "risczero/risc0-guest-builder@${BUILDER_DIGEST}"
+          docker tag "risczero/risc0-guest-builder@${BUILDER_DIGEST}" "risczero/risc0-guest-builder:${BUILDER_TAG}"
+          git clone --depth 1 --branch v0.4.0-rc1 https://github.com/logos-blockchain/logos-execution-zone.git lez
+          cd lez
+          # Same command as LEZ's `just build-artifact lez/programs programs`.
+          RISC0_DOCKER_CONTAINER_TAG="$BUILDER_TAG" CARGO_TARGET_DIR=target/lez/programs \
+            cargo risczero build --no-default-features --features programs --manifest-path lez/programs/Cargo.toml
+          bin=target/lez/programs/riscv32im-risc0-zkvm-elf/docker/clock.bin
+          cmp "$bin" artifacts/lez/programs/clock.bin
+          id=$(cd .. && cargo run -q --release -p lezreg-engine-test --bin lezreg-imageid -- "lez/$bin" | cut -d' ' -f1)
+          echo "clock image id: $id"
+          [[ "$id" == 6f7b8745* && "$id" == *b378 ]]
+          echo "clock.bin matches LEZ's committed artifact"

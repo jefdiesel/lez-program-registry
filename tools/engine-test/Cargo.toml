@@ -15,4 +15,10 @@ lee_core.workspace = true
 lee.workspace = true
 program_loader_core.workspace = true
 risc0-binfmt.workspace = true
+risc0-zkos-v1compat = "2.2.2"
+sha2.workspace = true
 borsh.workspace = true
+
+[[bin]]
+name = "lezreg-imageid"
+path = "src/bin/imageid.rs"
