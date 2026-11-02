@@ -10,40 +10,52 @@ pub const UPDATED: &str = "lez_program_registry::Updated";
 pub const AUTHOR_TRANSFERRED: &str = "lez_program_registry::AuthorTransferred";
 pub const FROZEN: &str = "lez_program_registry::Frozen";
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Registered {
-    pub entry: AccountId,
-    pub program: AccountId,
-    pub kind: u8,
-    pub author: AccountId,
-    pub name: String,
-    pub seq: u64,
-    pub image_id: [u8; 32],
-    pub idl_sha256: [u8; 32],
-    pub born_with_deploy: bool,
+/// Defines an event struct and its `FIELDS` (name, Rust type) in declaration order, so the IDL's
+/// event layouts are derived from the same tokens as the borsh layout and cannot drift from it.
+macro_rules! event {
+    ($(#[$m:meta])* $name:ident { $($f:ident : $t:ty),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
+        pub struct $name { $(pub $f: $t),* }
+        impl $name {
+            /// `(field, Rust type)` in borsh order.
+            pub const FIELDS: &'static [(&'static str, &'static str)] = &[$((stringify!($f), stringify!($t))),*];
+        }
+    };
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Updated {
-    pub entry: AccountId,
-    pub revision: u32,
-    pub version: String,
-    pub image_id: [u8; 32],
-    pub idl_sha256: [u8; 32],
-    pub build_hash: [u8; 32],
-}
+event!(Registered {
+    entry: AccountId,
+    program: AccountId,
+    kind: u8,
+    author: AccountId,
+    name: String,
+    seq: u64,
+    image_id: [u8; 32],
+    idl_sha256: [u8; 32],
+    born_with_deploy: bool,
+});
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct AuthorTransferred {
-    pub entry: AccountId,
-    pub from: AccountId,
-    pub to: AccountId,
-}
+event!(Updated {
+    entry: AccountId,
+    revision: u32,
+    version: String,
+    image_id: [u8; 32],
+    idl_sha256: [u8; 32],
+    build_hash: [u8; 32],
+});
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Frozen {
-    pub entry: AccountId,
-}
+event!(AuthorTransferred { entry: AccountId, from: AccountId, to: AccountId });
+
+event!(Frozen { entry: AccountId });
+
+/// Every event: `(short name, full selector name, FIELDS)`.
+pub const ALL: [(&str, &str, &[(&str, &str)]); 4] = [
+    ("Registered", REGISTERED, Registered::FIELDS),
+    ("Updated", UPDATED, Updated::FIELDS),
+    ("AuthorTransferred", AUTHOR_TRANSFERRED, AuthorTransferred::FIELDS),
+    ("Frozen", FROZEN, Frozen::FIELDS),
+];
 
 /// `sha256(name)[..8]`.
 #[must_use]

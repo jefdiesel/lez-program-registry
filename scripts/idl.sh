@@ -11,9 +11,15 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 SPEL=${SPEL_BIN:-$ROOT/_deps/spel-root/bin/spel}
+SPEL_REV=4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b  # v0.7.0
 if [ ! -x "$SPEL" ]; then
-  echo "installing spel v0.7.0 (4107dcb) into _deps/spel-root" >&2
-  cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --tag v0.7.0 spel --root "$ROOT/_deps/spel-root"
+  echo "installing spel v0.7.0 ($SPEL_REV) into _deps/spel-root" >&2
+  cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --rev "$SPEL_REV" spel --root "$ROOT/_deps/spel-root"
+fi
+# The generator must be v0.7.0 (its --version prints nothing useful; cargo's install record does).
+if [ -z "${SPEL_BIN:-}" ]; then
+  grep -q '"spel 0.7.0 (' "$ROOT/_deps/spel-root/.crates.toml" || { echo "_deps/spel-root is not spel 0.7.0" >&2; exit 1; }
+  grep -q "$SPEL_REV" "$ROOT/_deps/spel-root/.crates.toml" || echo "warning: _deps/spel-root was not installed from commit $SPEL_REV (local path install?)" >&2
 fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

@@ -36,14 +36,17 @@ jobs:
         run: |
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
-      - name: Install the released spel v0.7.0 (its own toolchain)
+      - name: Install the released spel v0.7.0, pinned by commit (its own toolchain)
         run: |
           rustup toolchain install 1.94.0 --profile minimal
-          cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --tag v0.7.0 spel --root _deps/spel-root
+          cargo +1.94.0 install --locked --git https://github.com/logos-co/spel.git --rev 4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b spel --root _deps/spel-root
+          # A tag can move; the commit cannot. Fail unless cargo recorded exactly this commit.
+          grep -q 'spel 0.7.0 (git+https://github.com/logos-co/spel.git?rev=4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b#4107dcb14ec0eb64e9e80a9691a3df0b9acd3c2b)' _deps/spel-root/.crates.toml
+          sha256sum _deps/spel-root/bin/spel
       - name: Regenerate and compare idl/
         run: scripts/idl.sh --check
       - name: Drift tests
-        run: LEZREG_REQUIRE_SPEL=1 cargo test -p lezreg-idl
+        run: cargo test -p lezreg-idl
       - name: SpelIdl parse (SPEL v0.7.0 types)
         working-directory: tools/idl-check
         run: cargo run --release -- ../../idl/lez_program_registry.idl.json

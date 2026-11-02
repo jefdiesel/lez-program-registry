@@ -1,6 +1,6 @@
 //! IDL drift tests (DESIGN §6.3):
 //! 1. the committed generator output equals a fresh run of the released `spel generate-idl`
-//!    v0.7.0 (when the binary is available; `LEZREG_REQUIRE_SPEL=1` makes it mandatory), and the
+//!    v0.7.0 (mandatory; `LEZREG_SKIP_SPEL=1` skips it explicitly), and the
 //!    committed IDL equals `lezreg-idl-extend` of it, which only adds;
 //! 2. `SpelIdl` parse: separate workspace `tools/idl-check` (SPEL v0.7.0 pins LEZ 0.2.5);
 //! 3. our IDL-driven borsh codec reproduces `borsh::to_vec(&Instruction)` for every variant,
@@ -44,10 +44,19 @@ fn extend_only_adds() {
 fn regenerate_with_released_spel() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
     let bin = std::env::var("SPEL_BIN").unwrap_or_else(|_| format!("{root}/_deps/spel-root/bin/spel"));
+    // This is the only check that catches drift in records and instructions, so a missing
+    // generator fails unless the skip is explicit.
     if !std::path::Path::new(&bin).exists() {
-        assert!(std::env::var("LEZREG_REQUIRE_SPEL").is_err(), "LEZREG_REQUIRE_SPEL is set but {bin} is missing");
-        eprintln!("SKIPPED: no spel v0.7.0 binary at {bin} (scripts/idl.sh installs it)");
+        assert!(
+            std::env::var("LEZREG_SKIP_SPEL").is_ok_and(|v| v == "1"),
+            "no spel v0.7.0 binary at {bin}: run scripts/idl.sh to install it, or set LEZREG_SKIP_SPEL=1 to skip this check"
+        );
+        eprintln!("SKIPPED (LEZREG_SKIP_SPEL=1): no spel v0.7.0 binary at {bin}");
         return;
+    }
+    if std::env::var("SPEL_BIN").is_err() {
+        let record = std::fs::read_to_string(format!("{root}/_deps/spel-root/.crates.toml")).unwrap_or_default();
+        assert!(record.contains("\"spel 0.7.0 ("), "_deps/spel-root is not spel 0.7.0:\n{record}");
     }
     let out = std::process::Command::new(&bin).args(["generate-idl", "program/src/lib.rs"]).current_dir(root).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -185,8 +194,56 @@ fn idl_codec_reads_records_and_events() {
         let j = codec.decode_named(name, &bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(codec.encode_named(name, &j).unwrap(), bytes, "{name}");
     }
-    let j = codec.decode_named("Entry", &borsh::to_vec(&entry).unwrap()).unwrap();
-    assert_eq!((j["program"].clone(), j["revision"].clone()), (json!(id(1).to_base58()), json!(7)));
+    // Every field by name, with distinct values: a reordered Rust field (records or events)
+    // lands under the wrong IDL name and fails here even when the byte widths still match.
+    let b58 = |b: u8| json!(id(b).to_base58());
+    let h32 = |b: u8| json!(hex(&[b; 32]));
+    let named = |name: &str, bytes: Vec<u8>, expect: Value| {
+        let j = codec.decode_named(name, &bytes).unwrap();
+        for (k, v) in expect.as_object().unwrap() {
+            assert_eq!(j[k], *v, "{name}.{k}");
+        }
+        assert_eq!(j.as_object().unwrap().len(), expect.as_object().unwrap().len(), "{name}: field count");
+    };
+    named("Entry", borsh::to_vec(&entry).unwrap(), json!({
+        "schema": 1, "kind": 1, "flags": 3, "program": b58(1), "author": b58(2), "registrant": b58(3), "name": "n",
+        "version": "v", "author_label": "l", "description": "d", "tags": ["a"],
+        "idl": codec.decode_named("ContentRef", &borsh::to_vec(&content(1)).unwrap()).unwrap(),
+        "source": codec.decode_named("SourceRef", &borsh::to_vec(&source()).unwrap()).unwrap(),
+        "build": codec.decode_named("BuildConfig", &borsh::to_vec(&build()).unwrap()).unwrap(),
+        "image_id": h32(4), "registered_at": 5, "updated_at": 6, "revision": 7,
+    }));
+    named("Release", borsh::to_vec(&release).unwrap(), json!({
+        "schema": 1, "entry": b58(1), "revision": 2, "version": "v",
+        "idl": codec.decode_named("ContentRef", &borsh::to_vec(&content(2)).unwrap()).unwrap(),
+        "source": codec.decode_named("SourceRef", &borsh::to_vec(&source()).unwrap()).unwrap(),
+        "build": codec.decode_named("BuildConfig", &borsh::to_vec(&build()).unwrap()).unwrap(),
+        "image_id": h32(3), "build_hash": h32(4), "at": 5,
+    }));
+    named("Link", borsh::to_vec(&link).unwrap(), json!({
+        "schema": 1, "seq": 9, "kind": 0, "program": b58(1), "name": "n", "author": b58(2), "prev_global": b58(3),
+        "prev_name": null, "prev_author": b58(4), "prev_program": null,
+    }));
+    named("Head", borsh::to_vec(&head).unwrap(), json!({"schema": 1, "count": 2, "newest": b58(5)}));
+    named("AuthorNode", borsh::to_vec(&node).unwrap(), json!({"schema": 1, "entry": b58(6), "prev": null}));
+    named("ContentRef", borsh::to_vec(&content(1)).unwrap(), json!({"cid": hex(&[1, 0x55, 1]), "sha256": h32(1), "size": 78, "peer_hint": hex(&[9, 1])}));
+    named("Registered", borsh::to_vec(&t::events::Registered {
+        entry: id(1), program: id(2), kind: 7, author: id(3), name: "n".into(), seq: 4, image_id: [5; 32], idl_sha256: [6; 32], born_with_deploy: true,
+    }).unwrap(), json!({
+        "entry": b58(1), "program": b58(2), "kind": 7, "author": b58(3), "name": "n", "seq": 4, "image_id": h32(5), "idl_sha256": h32(6),
+        "born_with_deploy": true,
+    }));
+    named("Updated", borsh::to_vec(&t::events::Updated { entry: id(1), revision: 2, version: "v".into(), image_id: [3; 32], idl_sha256: [4; 32], build_hash: [5; 32] }).unwrap(),
+        json!({"entry": b58(1), "revision": 2, "version": "v", "image_id": h32(3), "idl_sha256": h32(4), "build_hash": h32(5)}));
+    named("AuthorTransferred", borsh::to_vec(&t::events::AuthorTransferred { entry: id(1), from: id(2), to: id(3) }).unwrap(),
+        json!({"entry": b58(1), "from": b58(2), "to": b58(3)}));
+    named("Frozen", borsh::to_vec(&t::events::Frozen { entry: id(1) }).unwrap(), json!({"entry": b58(1)}));
+    // The IDL's event layouts are the Rust structs' fields, in order.
+    for (name, _, fields) in t::events::ALL {
+        let def = v["x-lez04"]["event_types"].as_array().unwrap().iter().find(|d| d["name"] == name).unwrap();
+        let idl_names: Vec<&str> = def["fields"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+        assert_eq!(idl_names, fields.iter().map(|(f, _)| *f).collect::<Vec<_>>(), "{name}: IDL event fields");
+    }
     // Event selectors in x-lez04 are the ones the program emits.
     for e in v["x-lez04"]["events"].as_array().unwrap() {
         let sel = t::events::selector(e["selector_of"].as_str().unwrap());
@@ -263,11 +320,29 @@ fn x_lez04_describes_every_instruction() {
     for ix in v["instructions"].as_array().unwrap() {
         let n = ix["name"].as_str().unwrap();
         let e = &v["x-lez04"]["instructions"][n];
-        assert_eq!(e["root"]["account"], ix["accounts"][0]["name"], "{n}: root");
-        for s in e["signers"].as_array().unwrap() {
-            let acc = ix["accounts"].as_array().unwrap().iter().find(|a| a["name"] == *s).unwrap();
-            assert_eq!(acc["signer"], true, "{n}.{s} is a signer in the IDL");
-        }
+        let accounts = ix["accounts"].as_array().unwrap();
+        assert_eq!(e["root"]["account"], accounts[0]["name"], "{n}: root");
+        // signers == the accounts marked signer, both ways.
+        let mut listed: Vec<&str> = e["signers"].as_array().unwrap().iter().map(|s| s.as_str().unwrap()).collect();
+        let mut marked: Vec<&str> = accounts.iter().filter(|a| a["signer"] == true).map(|a| a["name"].as_str().unwrap()).collect();
+        listed.sort_unstable();
+        marked.sort_unstable();
+        assert_eq!(listed, marked, "{n}: x-lez04.signers vs accounts[].signer");
+        // root_only <=> no via_pda_seed arg; pda_header <=> a via_pda_seed arg.
+        let has_via = ix["args"].as_array().unwrap().iter().any(|a| a["name"] == "via_pda_seed");
+        assert_eq!(e["root_only"] == true, !has_via, "{n}: root_only");
+        assert_eq!(e.get("pda_header").is_some(), has_via, "{n}: pda_header");
+        // loader_actors == the non-root accounts that are neither PDAs nor <name>_id pairs.
+        let pairs = &v["x-lez04"]["account_id_args"]["pairs"];
+        let mut other: Vec<&str> = accounts[1..]
+            .iter()
+            .filter(|a| a.get("pda").is_none_or(Value::is_null) && pairs.get(a["name"].as_str().unwrap()).is_none())
+            .map(|a| a["name"].as_str().unwrap())
+            .collect();
+        let mut loader: Vec<&str> = e.get("loader_actors").and_then(Value::as_object).map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
+        other.sort_unstable();
+        loader.sort_unstable();
+        assert_eq!(other, loader, "{n}: loader_actors");
         assert_eq!(e["time"]["arg"], "now");
         assert!(ix["args"].as_array().unwrap().iter().any(|a| a["name"] == "now"), "{n} is time-bounded");
     }

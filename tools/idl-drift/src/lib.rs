@@ -38,14 +38,14 @@ fn instruction_ext(name: &str) -> Value {
     let time = json!({"arg": "now", "window_ms": lezreg_types::TIME_WINDOW_MS});
     let pda_path = json!({
         "arg": "via_pda_seed",
-        "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant)"
+        "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant); every signer account must then be the root itself (a co-signer's signature there only proves it signed some transaction that reached P)"
     });
     let evidence = "none: registry PDAs self-admit via pda_seeds; signers are always admitted";
     match name {
         "register_deployer" => json!({
             "root": {"account": "program", "program": "self"},
             "signers": ["program", "author"],
-            "signers_note": "author may equal program: declare and sign once. The root's signature may be replaced by the PDA-header path",
+            "signers_note": "author may equal program: declare and sign once. The root's signature may be replaced by the PDA-header path, which requires author == program",
             "pda_header": pda_path,
             "evidence": evidence,
             "time": time,
@@ -71,7 +71,7 @@ fn instruction_ext(name: &str) -> Value {
         "transfer_author" => json!({
             "root": {"account": "author", "program": "self"},
             "signers": ["author", "new_author"],
-            "signers_note": "if new_author == entry, no probe is sent: the entry's own delivery checks new_author signed",
+            "signers_note": "if new_author == entry, no probe is sent: the entry's own delivery checks new_author signed. Not possible on the PDA-header path (new_author would be a non-root signer)",
             "inline_if": "author == entry",
             "pda_header": pda_path,
             "evidence": evidence,
@@ -101,32 +101,36 @@ fn instruction_ext(name: &str) -> Value {
     }
 }
 
-/// Event payload layouts in SPEL `IdlTypeDef` form.
+/// IDL type of an event field, from its Rust type token.
+fn idl_type(rust: &str) -> Value {
+    match rust {
+        "AccountId" => json!("account_id"),
+        "String" => json!("string"),
+        "[u8; 32]" => json!({"array": ["u8", 32]}),
+        "u8" | "u32" | "u64" | "bool" => json!(rust),
+        other => panic!("event field type {other} has no IDL mapping"),
+    }
+}
+
+/// Event payload layouts in SPEL `IdlTypeDef` form, derived from `lezreg_types::events`.
 fn event_types() -> Value {
-    let f = |n: &str, t: Value| json!({"name": n, "type": t});
-    let id = || json!("account_id");
-    let b32 = || json!({"array": ["u8", 32]});
-    json!([
-        {"name": "Registered", "kind": "struct", "fields": [
-            f("entry", id()), f("program", id()), f("kind", json!("u8")), f("author", id()), f("name", json!("string")),
-            f("seq", json!("u64")), f("image_id", b32()), f("idl_sha256", b32()), f("born_with_deploy", json!("bool"))
-        ]},
-        {"name": "Updated", "kind": "struct", "fields": [
-            f("entry", id()), f("revision", json!("u32")), f("version", json!("string")), f("image_id", b32()),
-            f("idl_sha256", b32()), f("build_hash", b32())
-        ]},
-        {"name": "AuthorTransferred", "kind": "struct", "fields": [f("entry", id()), f("from", id()), f("to", id())]},
-        {"name": "Frozen", "kind": "struct", "fields": [f("entry", id())]}
-    ])
+    let defs: Vec<Value> = lezreg_types::events::ALL
+        .iter()
+        .map(|(name, _, fields)| {
+            let fields: Vec<Value> = fields.iter().map(|(f, t)| json!({"name": f, "type": idl_type(t)})).collect();
+            json!({"name": name, "kind": "struct", "fields": fields})
+        })
+        .collect();
+    Value::Array(defs)
 }
 
 /// The `x-lez04` block.
 #[must_use]
 pub fn x_lez04(instruction_names: &[&str]) -> Value {
     use lezreg_types::events as ev;
-    let events: Vec<Value> = [("Registered", ev::REGISTERED), ("Updated", ev::UPDATED), ("AuthorTransferred", ev::AUTHOR_TRANSFERRED), ("Frozen", ev::FROZEN)]
+    let events: Vec<Value> = ev::ALL
         .iter()
-        .map(|(n, full)| json!({"name": n, "selector": hex8(&ev::selector(full)), "selector_of": full, "type": n}))
+        .map(|(n, full, _)| json!({"name": n, "selector": hex8(&ev::selector(full)), "selector_of": full, "type": n}))
         .collect();
     let mut ixs = Map::new();
     for n in instruction_names {

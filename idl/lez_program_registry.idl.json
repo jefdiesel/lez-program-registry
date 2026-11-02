@@ -1384,10 +1384,10 @@
           "program",
           "author"
         ],
-        "signers_note": "author may equal program: declare and sign once. The root's signature may be replaced by the PDA-header path",
+        "signers_note": "author may equal program: declare and sign once. The root's signature may be replaced by the PDA-header path, which requires author == program",
         "pda_header": {
           "arg": "via_pda_seed",
-          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant)"
+          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant); every signer account must then be the root itself (a co-signer's signature there only proves it signed some transaction that reached P)"
         },
         "evidence": "none: registry PDAs self-admit via pda_seeds; signers are always admitted",
         "time": {
@@ -1423,7 +1423,7 @@
         "inline_if": "author == entry (the root actor is the entry: patched in place)",
         "pda_header": {
           "arg": "via_pda_seed",
-          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant)"
+          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant); every signer account must then be the root itself (a co-signer's signature there only proves it signed some transaction that reached P)"
         },
         "evidence": "none: registry PDAs self-admit via pda_seeds; signers are always admitted",
         "time": {
@@ -1441,11 +1441,11 @@
           "author",
           "new_author"
         ],
-        "signers_note": "if new_author == entry, no probe is sent: the entry's own delivery checks new_author signed",
+        "signers_note": "if new_author == entry, no probe is sent: the entry's own delivery checks new_author signed. Not possible on the PDA-header path (new_author would be a non-root signer)",
         "inline_if": "author == entry",
         "pda_header": {
           "arg": "via_pda_seed",
-          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant)"
+          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant); every signer account must then be the root itself (a co-signer's signature there only proves it signed some transaction that reached P)"
         },
         "evidence": "none: registry PDAs self-admit via pda_seeds; signers are always admitted",
         "time": {
@@ -1464,7 +1464,7 @@
         "inline_if": "author == entry",
         "pda_header": {
           "arg": "via_pda_seed",
-          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant)"
+          "rule": "None: must be the transaction's root message. Some(s): the sender's program P must satisfy for_public_pda(P, s) == root account, and the root must be authorized (P's grant); every signer account must then be the root itself (a co-signer's signature there only proves it signed some transaction that reached P)"
         },
         "evidence": "none: registry PDAs self-admit via pda_seeds; signers are always admitted",
         "time": {
