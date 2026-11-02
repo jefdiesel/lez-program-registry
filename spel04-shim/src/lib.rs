@@ -17,7 +17,9 @@
 //!   program's own actors; `#[effect(init)]` also requires an empty `pre_state`;
 //! - every instruction is root-only (`from == None`), except with an arg
 //!   `via_pda_seed: Option<[u8; 32]>` = `Some(s)` where the sender's program `P` satisfies
-//!   `for_public_pda(P, s) == receiver` and the receiver is authorized;
+//!   `for_public_pda(P, s) == receiver` and the receiver is authorized; on that path every
+//!   `signer` account must be the root (a co-signer's `is_authorized` there only proves it
+//!   signed *some* transaction that reached `P`, not that it consented to this call);
 //! - an arg `now: u64` bounds the transaction to blocks with timestamp in
 //!   `[now, now + TIME_WINDOW_MS)`;
 //! - `wire-tags.lock` beside the program's Cargo.toml pins tag order: new instructions and

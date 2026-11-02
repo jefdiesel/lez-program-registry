@@ -1,5 +1,5 @@
-//! Engine tests 1–11 (DESIGN §8.2): the real registry guest on `V03State`. Regression pins for
-//! the source facts in DESIGN §2.1. Run with `--release` (the risc0 executor is slow in debug).
+//! Engine tests 1–13 (DESIGN §8.2; 12 and 13 come from the M1 review): the real registry guest
+//! on `V03State`. Regression pins for the source facts in DESIGN §2.1. Run with `--release` (the risc0 executor is slow in debug).
 
 use lee_core::{
     account::{AccountId, Actor},
@@ -174,7 +174,7 @@ fn t05_update_transfer_freeze() {
     e.ok("alice → bob (both sign)", alice.id, &transfer(&x.id, &bob.id), &[&alice, &bob]);
     e.refuse("bob → alice (back to the registrant)", "back to a previous author", bob.id, &transfer(&x.id, &alice.id), &[&bob, &alice]);
     e.ok("bob → carol", bob.id, &transfer(&x.id, &carol.id), &[&bob, &carol]);
-    e.refuse("carol → bob (bob's list already has it)", "already exists (write-once)", carol.id, &transfer(&x.id, &bob.id), &[&carol, &bob]);
+    e.refuse("carol → bob (bob's list already has it)", "a transfer back to a previous author is refused", carol.id, &transfer(&x.id, &bob.id), &[&carol, &bob]);
     e.refuse("alice can no longer update", "only the entry's author", alice.id, &update(&x.id, 3, "3.0.0"), &[&alice]);
     e.ok("carol updates", carol.id, &update(&x.id, 3, "3.0.0"), &[&carol]);
     {
@@ -275,6 +275,10 @@ fn t08_deploy_and_register() {
         &[&x2],
     );
     assert!(e.entry(&x2.id).is_none(), "the whole transaction reverted");
+    // An author who did not sign: the probe refuses and the CreateHeader reverts with it.
+    let x4 = key(9);
+    e.refuse("DeployAndRegister on X4 naming alice, alice not signing", "co-signer did not sign", x4.id, &deploy_and_register("forwarder", &alice.id, first, false, [0; 32]), &[&x4]);
+    assert!(e.header(&x4.id).is_none(), "no header: the whole transaction reverted");
     // Mallory: DeployAndRegister for a key she does not hold.
     let (x3, mallory) = (key(8), key(5));
     e.fund(&[x3.id]);
@@ -284,7 +288,9 @@ fn t08_deploy_and_register() {
 }
 
 /// 9. PDA-owned header through a helper guest: the owner program creates the header and
-/// registers it with `via_pda_seed`; a wrong seed or another program is refused.
+/// registers it with `via_pda_seed` (author = the header itself: on the PDA path every signer
+/// must be the root, security review F1); a wrong seed or another program is refused; the owner
+/// program updates and freezes it the same way; a root message may not claim the PDA path.
 #[test]
 fn t09_pda_owned_header() {
     let mut e = engine();
@@ -295,12 +301,12 @@ fn t09_pda_owned_header() {
     let first = e.write_segments(forwarder_elf(), 0xB0);
     let loader = Actor::new(x, PROGRAM_LOADER_ACCOUNT_ID);
     let create = program_loader_core::Message::CreateHeader { first_segment: first, immutable: false };
-    let ix = register_deployer("pda-program", &alice.id, [1; 32], Some(s));
+    let ix = register_deployer("pda-program", &x, [1; 32], Some(s));
     let mut actors = actors_to_declare(x, e.reg, &ix);
     actors.push(loader);
     let root = Actor::new(alice.id, p);
 
-    let bad = register_deployer("pda-program", &alice.id, [1; 32], Some([0x5F; 32]));
+    let bad = register_deployer("pda-program", &x, [1; 32], Some([0x5F; 32]));
     let sends = vec![Send::to(loader, borsh::to_vec(&create).unwrap(), vec![s]), Send::to(e.actor(x), borsh::to_vec(&bad).unwrap(), vec![s])];
     let err = e.try_tx(root, borsh::to_vec(&sends).unwrap(), actors.clone(), &[&alice], false, T0).unwrap_err();
     assert!(err.contains("does not derive"), "wrong seed: {err}");
@@ -311,17 +317,34 @@ fn t09_pda_owned_header() {
     println!("ok      owner program P creates the header at X = pda(P, s) and registers it");
     assert!(e.header(&x).is_some());
     let ent = e.entry(&x).unwrap();
-    assert_eq!((ent.program, ent.author, ent.flags), (tid(&x), tid(&alice.id), 0));
+    assert_eq!((ent.program, ent.author, ent.flags), (tid(&x), tid(&x), 0));
 
     // Another program holding no grant for X relays the same instruction.
     let p2 = key(FWD2_SEED).id;
-    let ix2 = register_deployer("pda-program", &alice.id, [1; 32], Some(s));
-    let sends = vec![Send::to(e.actor(x), borsh::to_vec(&ix2).unwrap(), vec![s])];
+    let sends = vec![Send::to(e.actor(x), borsh::to_vec(&ix).unwrap(), vec![s])];
     let err = e
-        .try_tx(Actor::new(alice.id, p2), borsh::to_vec(&sends).unwrap(), actors_to_declare(x, e.reg, &ix2), &[&alice], false, T0)
+        .try_tx(Actor::new(alice.id, p2), borsh::to_vec(&sends).unwrap(), actors_to_declare(x, e.reg, &ix), &[&alice], false, T0)
         .unwrap_err();
     assert!(err.contains("must authorize"), "other program: {err}");
     println!("refused a program that does not own X");
+
+    // A root-level update claiming the PDA path is refused.
+    let mut up = update(&x, 2, "2.0.0");
+    if let Instruction::Update { via_pda_seed, .. } = &mut up {
+        *via_pda_seed = Some(s);
+    }
+    e.refuse("root-level update with via_pda_seed", "via_pda_seed is only for", x, &up, &[&alice]);
+
+    // The owner program updates (inline: author == entry == X) and freezes through the PDA path.
+    let sends = vec![Send::to(e.actor(x), borsh::to_vec(&up).unwrap(), vec![s])];
+    e.try_tx(root, borsh::to_vec(&sends).unwrap(), actors_to_declare(x, e.reg, &up), &[&alice], false, T0).expect("P updates X");
+    assert_eq!(e.entry(&x).unwrap().revision, 2);
+    println!("ok      owner program P updates X's entry (revision 2)");
+    let fr = Instruction::Freeze { entry_id: *x.value(), now: T0, via_pda_seed: Some(s) };
+    let sends = vec![Send::to(e.actor(x), borsh::to_vec(&fr).unwrap(), vec![s])];
+    e.try_tx(root, borsh::to_vec(&sends).unwrap(), actors_to_declare(x, e.reg, &fr), &[&alice], false, T0).expect("P freezes X");
+    assert!(e.entry(&x).unwrap().is_frozen());
+    println!("ok      owner program P freezes X's entry");
 }
 
 /// 10. Self-registration of REG at (REG, REG): `CreateHeader`, then `RegisterDeployer`;
@@ -333,7 +356,8 @@ fn t10_registry_registers_itself() {
     let first = e.write_segments(registry_elf(), 0xC0);
     // N5: before REG's code exists, (REG, REG) cannot dispatch.
     let early = deploy_and_register("lez_program_registry", &reg_key.id, first, false, [0; 32]);
-    assert!(e.try_ix(reg_key.id, &early, &[&reg_key], T0).is_err(), "an undeployed root program cannot run");
+    let err = e.try_ix(reg_key.id, &early, &[&reg_key], T0).unwrap_err();
+    assert!(err.contains("UnknownProgram"), "an undeployed root program cannot run: {err}");
     println!("refused DeployAndRegister rooted at undeployed (REG, REG)");
     let a = e.create_header(&reg_key, first, false).expect("CreateHeader for REG");
     println!("ok      CreateHeader REG ({} cycles, {} tx bytes)", a.cycles, a.tx_bytes);
@@ -383,8 +407,116 @@ fn timestamp_window_is_enforced() {
     let mut e = engine();
     let x = key(1);
     let ix = register_deployer("token", &x.id, [7; 32], None);
-    assert!(e.try_ix(x.id, &ix, &[&x], T0 + t::TIME_WINDOW_MS).is_err(), "block 10 min after now");
-    assert!(e.try_ix(x.id, &ix, &[&x], T0 - 1).is_err(), "block before now");
+    let before = e.state.clone();
+    for (what, block_time) in [("block 10 min after now", T0 + t::TIME_WINDOW_MS), ("block before now", T0 - 1)] {
+        let err = e.try_ix(x.id, &ix, &[&x], block_time).unwrap_err();
+        assert!(err.contains("OutOfValidityWindow"), "{what}: {err}");
+        assert!(e.state == before, "{what}: state changed");
+    }
     e.try_ix(x.id, &ix, &[&x], T0 + t::TIME_WINDOW_MS - 1).expect("last millisecond of the window");
-    let _ = Instruction::Freeze { entry_id: [0; 32], now: 0, via_pda_seed: None };
+}
+
+/// 12. Third-party entry lifecycle on the real engine: update, transfer and freeze through
+/// `PatchEntry` to the REG-PDA entry `T`, then the walks.
+#[test]
+fn t12_third_party_lifecycle() {
+    let mut e = engine();
+    let (x, alice, bob, carol) = (key(1), key(3), key(4), key(6));
+    e.ok("X registers", x.id, &register_deployer("token", &x.id, [7; 32], None), &[&x]);
+    e.ok("alice publishes a third-party entry for X", alice.id, &register_third_party(&x.id, "token-community"), &[&alice]);
+    let tp = lid(&addr::third_party_entry(&e.treg(), &tid(&x.id), &tid(&alice.id)));
+
+    e.refuse("bob updates alice's third-party entry", "only the entry's author", bob.id, &update(&tp, 2, "0.2.0"), &[&bob]);
+    e.refuse("X updates alice's third-party entry for X", "only the entry's author", x.id, &update(&tp, 2, "0.2.0"), &[&x]);
+    e.ok("alice updates it (revision 2)", alice.id, &update(&tp, 2, "0.2.0"), &[&alice]);
+    let te = e.entry(&tp).unwrap();
+    assert_eq!((te.revision, te.version.as_str(), te.kind), (2, "0.2.0", t::KIND_THIRD_PARTY));
+    let r2: t::Release = borsh::from_slice(&e.reg_state(&lid(&addr::release(&e.treg(), &tid(&tp), 2)))).unwrap();
+    assert_eq!((r2.entry, r2.version.as_str()), (tid(&tp), "0.2.0"));
+
+    // Handing it to its own address is refused (nobody can sign for a PDA): never orphaned.
+    e.refuse("alice → T itself", "new author must sign", alice.id, &transfer(&tp, &tp), &[&alice]);
+    e.refuse("bob transfers alice's entry", "only the entry's author", bob.id, &transfer(&tp, &carol.id), &[&bob, &carol]);
+    e.ok("alice → carol (both sign)", alice.id, &transfer(&tp, &carol.id), &[&alice, &carol]);
+    e.refuse("alice updates after the transfer", "only the entry's author", alice.id, &update(&tp, 3, "0.3.0"), &[&alice]);
+    e.refuse("bob freezes carol's entry", "only the entry's author", bob.id, &freeze(&tp), &[&bob]);
+    e.ok("carol updates (revision 3)", carol.id, &update(&tp, 3, "0.3.0"), &[&carol]);
+    e.ok("carol freezes it", carol.id, &freeze(&tp), &[&carol]);
+    assert!(e.entry(&tp).unwrap().is_frozen());
+    e.refuse("update after freeze", "frozen", carol.id, &update(&tp, 4, "0.4.0"), &[&carol]);
+    e.refuse("transfer after freeze", "frozen", carol.id, &transfer(&tp, &bob.id), &[&carol, &bob]);
+
+    // A freeze aimed at a registry record that is not an entry.
+    e.refuse("freeze aimed at the global head", "a registry entry", carol.id, &freeze(&lid(&addr::global_head(&e.treg()))), &[&carol]);
+
+    let r = e.reader();
+    let tps = walk::third_party(&r, &e.treg(), &tid(&x.id), 10).unwrap();
+    assert_eq!(ids(&tps), vec![tp]);
+    assert_eq!(tps[0].1.author, tid(&alice.id), "the link keeps the registrant");
+    assert!(walk::by_author(&r, &e.treg(), &tid(&alice.id), 10).unwrap().is_empty());
+    let held = walk::by_author(&r, &e.treg(), &tid(&carol.id), 10).unwrap();
+    assert_eq!((held.len(), held[0].0, held[0].1.revision), (1, tid(&tp), 3));
+    assert_eq!(walk::author_list(&r, &e.treg(), &tid(&alice.id), 10).unwrap(), vec![tid(&tp)], "history keeps the registration");
+    let ent = e.entry(&tp).unwrap();
+    assert_eq!((ent.author, ent.registrant, ent.program), (tid(&carol.id), tid(&alice.id), tid(&x.id)));
+    e.report("t12");
+}
+
+/// Security review F1: a program the user signed for cannot make them an entry's author.
+/// (A1) Program M registers its own PDA X' naming alice as author, in a transaction alice
+/// signed for M. (A1b) M transfers an entry it holds to alice the same way. (A2) Program Q,
+/// handed X''s grant by P, names X' as author of Q's own PDA. All refused, state unchanged.
+#[test]
+fn t13_pda_path_cannot_attribute_authorship() {
+    let mut e = engine();
+    let (alice, mallory) = (key(3), key(5));
+    let m = key(FWD_SEED).id;
+    let rule = "on the PDA-header path every signer must be the root";
+    let alice_in_m = Actor::new(alice.id, m);
+
+    // A1
+    let s = [0x66; 32];
+    let xp = pda(&m, s);
+    let ix = register_deployer("wallet-drainer", &alice.id, [0xEE; 32], Some(s));
+    let sends = vec![Send::to(e.actor(xp), borsh::to_vec(&ix).unwrap(), vec![s])];
+    let before = e.state.clone();
+    let err = e.try_tx(alice_in_m, borsh::to_vec(&sends).unwrap(), actors_to_declare(xp, e.reg, &ix), &[&alice], false, T0).unwrap_err();
+    assert!(err.contains(rule), "A1: {err}");
+    assert!(e.state == before && e.entry(&xp).is_none());
+    assert!(walk::by_author(&e.reader(), &e.treg(), &tid(&alice.id), 10).unwrap().is_empty());
+    println!("refused A1: M registers its PDA with author = alice in a tx alice signed for M");
+
+    // A1b
+    let s2 = [0x67; 32];
+    let xq = pda(&m, s2);
+    let own = register_deployer("spam", &xq, [0xEF; 32], Some(s2));
+    let sends = vec![Send::to(e.actor(xq), borsh::to_vec(&own).unwrap(), vec![s2])];
+    e.try_tx(Actor::new(mallory.id, m), borsh::to_vec(&sends).unwrap(), actors_to_declare(xq, e.reg, &own), &[&mallory], false, T0)
+        .expect("M registers its own PDA with author = the PDA");
+    let tr = Instruction::TransferAuthor { entry_id: *xq.value(), new_author_id: *alice.id.value(), now: T0, via_pda_seed: Some(s2) };
+    let sends = vec![Send::to(e.actor(xq), borsh::to_vec(&tr).unwrap(), vec![s2])];
+    let before = e.state.clone();
+    let err = e.try_tx(alice_in_m, borsh::to_vec(&sends).unwrap(), actors_to_declare(xq, e.reg, &tr), &[&alice], false, T0).unwrap_err();
+    assert!(err.contains(rule), "A1b: {err}");
+    assert!(e.state == before);
+    assert_eq!(e.entry(&xq).unwrap().author, tid(&xq));
+    assert!(e.reg_state(&lid(&addr::author_node(&e.treg(), &tid(&alice.id), &tid(&xq)))).is_empty(), "alice's author node stays free");
+    println!("refused A1b: M transfers its entry to alice in a tx alice signed for M");
+
+    // A2
+    let q = key(FWD2_SEED).id;
+    let (sp, sq) = ([0x11; 32], [0x22; 32]);
+    let xp2 = pda(&m, sp);
+    let yq = pda(&q, sq);
+    let ix = register_deployer("attributed", &xp2, [1; 32], Some(sq));
+    let inner = vec![Send::to(e.actor(yq), borsh::to_vec(&ix).unwrap(), vec![sq])];
+    let outer = vec![Send::to(Actor::new(xp2, q), borsh::to_vec(&inner).unwrap(), vec![sp])];
+    let mut actors = actors_to_declare(yq, e.reg, &ix);
+    actors.push(Actor::new(xp2, q));
+    actors.push(e.actor(xp2));
+    let before = e.state.clone();
+    let err = e.try_tx(Actor::new(mallory.id, m), borsh::to_vec(&outer).unwrap(), actors, &[&mallory], false, T0).unwrap_err();
+    assert!(err.contains(rule), "A2: {err}");
+    assert!(e.state == before && e.entry(&yq).is_none());
+    println!("refused A2: Q names P's PDA (an inherited grant) as author of Q's PDA");
 }

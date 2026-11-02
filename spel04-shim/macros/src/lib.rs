@@ -475,6 +475,13 @@ fn expand(module: &mut ItemMod, enum_name: &Ident) -> syn::Result<TS2> {
                 // delivery checks `is_authorized` (never two deliveries to one actor).
                 let others = ix.accs[1..].iter().filter(|o| o.by_id() && o.name != *n).map(|o| &o.name);
                 let pv = format_ident!("__probe_{}", n);
+                if has("via_pda_seed") {
+                    // On the PDA-header path `is_authorized` only says "signed this transaction",
+                    // which the owner program's caller may have done for any reason: only the
+                    // header's own PDA (the root, authorized by its owner program) may sign.
+                    let msg = format!("{fname}: on the PDA-header path every signer must be the root (`{n}` is not)");
+                    probes_pre.push(quote!(assert!(input.from.is_none() || #n.account_id == #root.account_id, #msg);));
+                }
                 probes_pre.push(quote!(
                     let #pv = if #n.account_id == #root.account_id #(|| #n.account_id == #others.account_id)* {
                         None
@@ -540,6 +547,7 @@ fn expand(module: &mut ItemMod, enum_name: &Ident) -> syn::Result<TS2> {
         quote!(#v { #(#fields),* })
     });
     let eff_names: Vec<String> = effs.iter().map(|e| e.fn_name.to_string()).collect();
+    let init_names: Vec<String> = effs.iter().filter(|e| e.init).map(|e| e.fn_name.to_string()).collect();
     let eff_arms = effs.iter().map(|e| {
         let v = camel(&e.fn_name);
         let f = &e.fn_name;
@@ -621,6 +629,8 @@ fn expand(module: &mut ItemMod, enum_name: &Ident) -> syn::Result<TS2> {
         pub const INSTRUCTION_NAMES: &[&str] = &[#(#ix_names),*];
         /// Effect fn names in wire-tag order (tag = 0xC0 + index).
         pub const EFFECT_NAMES: &[&str] = &[#(#eff_names),*];
+        /// The `#[effect(init)]` fns: each refuses a target that already has state.
+        pub const INIT_EFFECTS: &[&str] = &[#(#init_names),*];
         /// What `wire-tags.lock` must contain.
         pub const WIRE_TAGS: &str = #wire_tags;
 

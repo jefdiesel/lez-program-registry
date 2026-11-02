@@ -246,9 +246,17 @@ fn apply_patch(
     p: Patch,
     now: u64,
 ) -> (t::Entry, Vec<SyncMessage>, Vec<ProgramEvent>) {
+    let entry_at = tid(at);
+    // The record must be an entry that lives at this address, not another record type that
+    // happens to decode as one (records share `schema = 1` as their first byte).
+    let home = match e.kind {
+        t::KIND_DEPLOYER => e.program == entry_at,
+        t::KIND_THIRD_PARTY => third_party_of(reg, &e.program, &e.registrant).account_id == *at,
+        _ => false,
+    };
+    assert!(e.schema == t::SCHEMA && home, "not a registry entry at this address");
     assert!(e.author == tid(by), "only the entry's author may change it");
     assert!(!e.is_frozen(), "the entry is frozen");
-    let entry_at = tid(at);
     let mut msgs = Vec::new();
     let mut events = Vec::new();
     e.updated_at = now;
@@ -675,9 +683,14 @@ mod lez_program_registry {
         Response::set_state(borsh::to_vec(&link).expect("borsh")).event(spel::event(t::events::REGISTERED, &ev))
     }
 
-    /// An author node, once: an entry joins each author's list at most once.
-    #[effect(init)]
+    /// An author node, once: an entry joins each author's list at most once, so a transfer
+    /// back to any previous author (A→B→C→B) is refused here with a named error.
+    #[effect]
     pub fn write_author_node(input: &ReceiveInput, new_author: t::AccountId, node: t::AuthorNode) -> Response {
+        assert!(
+            input.pre_state.is_empty(),
+            "write_author_node: a transfer back to a previous author is refused (the entry is already in their list; write-once)"
+        );
         assert_at(input, &author_node_of(input.receiver.program_account_id, &new_author, &node.entry), "write_author_node");
         Response::set_state(borsh::to_vec(&node).expect("borsh"))
     }

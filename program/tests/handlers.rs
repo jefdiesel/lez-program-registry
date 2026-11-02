@@ -475,13 +475,21 @@ fn require_signer_probe() {
 
 #[test]
 fn write_once_effects_refuse_existing_state() {
+    // The write-once set comes from the macro (`INIT_EFFECTS`), plus `write_author_node`, which
+    // checks `pre_state` itself to name the A→B→C→B refusal.
+    assert_eq!(lezreg_program::INIT_EFFECTS, &["write_entry", "write_release", "write_link"]);
     let from = Some(Actor::new(x(), reg()));
-    for e in one_of_each_effect() {
-        let init = matches!(e, Effect::WriteEntry { .. } | Effect::WriteRelease { .. } | Effect::WriteLink { .. } | Effect::WriteAuthorNode { .. });
-        if init {
-            refused(&input(Actor::new(bob(), reg()), from, true, vec![1], emsg(&e)), "already exists (write-once)");
+    let mut checked = 0;
+    for (e, name) in one_of_each_effect().into_iter().zip(lezreg_program::EFFECT_NAMES) {
+        if lezreg_program::INIT_EFFECTS.contains(name) || *name == "write_author_node" {
+            refused(&input(Actor::new(bob(), reg()), from, true, vec![1], emsg(&e)), "write-once");
+            checked += 1;
         }
     }
+    assert_eq!(checked, 4);
+    // The author-node refusal is the named "transfer back" error.
+    let node = Effect::WriteAuthorNode { new_author: tid(&bob()), node: t::AuthorNode { schema: 1, entry: tid(&x()), prev: None } };
+    refused(&input(Actor::new(bob(), reg()), from, true, vec![1], emsg(&node)), "a transfer back to a previous author is refused");
 }
 
 // ---- index chain ----
@@ -714,3 +722,234 @@ fn declared_actors_match_types_addresses() {
     let d = actors_to_declare(alice(), reg(), &update(&x(), 3));
     assert_eq!(d[2], a(addr::release(&treg, &tid(&x()), 3)));
 }
+
+// ---- review fixes (M1 review) ----
+
+fn entry_for(program: &AccountId, author: &AccountId) -> t::Entry {
+    t::Entry { program: tid(program), ..stored_entry(author, 0) }
+}
+
+fn with_via(mut ix: Instruction, via: Option<[u8; 32]>) -> Instruction {
+    match &mut ix {
+        Instruction::RegisterDeployer { via_pda_seed, .. }
+        | Instruction::Update { via_pda_seed, .. }
+        | Instruction::TransferAuthor { via_pda_seed, .. }
+        | Instruction::Freeze { via_pda_seed, .. } => *via_pda_seed = via,
+        _ => panic!("{} has no via_pda_seed", ix.name()),
+    }
+    ix
+}
+
+fn deploy_and_register(author: &AccountId) -> Instruction {
+    Instruction::DeployAndRegister {
+        first_segment: [0x44; 32],
+        immutable: false,
+        name: "token".into(),
+        version: "1.0.0".into(),
+        author_label: String::new(),
+        description: String::new(),
+        tags: vec![],
+        idl: content(),
+        source: source(),
+        build: build(),
+        image_id: [9; 32],
+        author_id: *author.value(),
+        revision: 1,
+        revision_seed: t::pda::revision_seed(1),
+        now: NOW,
+    }
+}
+
+/// §8.1 auth matrix: every instruction × `from ∈ {None, Some(own), Some(other)}` ×
+/// `is_authorized`, and for the four with `via_pda_seed`, the PDA path too.
+#[test]
+fn auth_matrix_every_instruction() {
+    let stored = borsh::to_vec(&stored_entry(&x(), 0)).unwrap();
+    let cases: Vec<(AccountId, Vec<u8>, Instruction)> = vec![
+        (x(), vec![], register_deployer(&x(), "token", None)),
+        (alice(), vec![], register_third_party(&x())),
+        (x(), stored.clone(), update(&x(), 2)),
+        (x(), stored.clone(), Instruction::TransferAuthor { entry_id: *x().value(), new_author_id: *bob().value(), now: NOW, via_pda_seed: None }),
+        (x(), stored.clone(), Instruction::Freeze { entry_id: *x().value(), now: NOW, via_pda_seed: None }),
+        (x(), vec![], deploy_and_register(&x())),
+    ];
+    assert_eq!(cases.len(), INSTRUCTION_NAMES.len());
+    let own = Actor::new(bob(), reg());
+    let other = Actor::new(alice(), other_program());
+    let s = [7; 32];
+    for (root, pre, ix) in cases {
+        let at = Actor::new(root, reg());
+        let n = ix.name();
+        let m = msg(&ix);
+        run(&input(at, None, true, pre.clone(), m.clone())).unwrap_or_else(|e| panic!("{n}: a signed root message: {e}"));
+        refused(&input(at, None, false, pre.clone(), m.clone()), "must sign");
+        for from in [own, other] {
+            for auth in [true, false] {
+                refused(&input(at, Some(from), auth, pre.clone(), m.clone()), "root message");
+            }
+        }
+        let has_via = matches!(ix, Instruction::RegisterDeployer { .. } | Instruction::Update { .. } | Instruction::TransferAuthor { .. } | Instruction::Freeze { .. });
+        if !has_via {
+            continue;
+        }
+        // The PDA path on an account that is not a PDA of the sender's program.
+        let v = msg(&with_via(ix.clone(), Some(s)));
+        refused(&input(at, None, true, pre.clone(), v.clone()), "via_pda_seed is only for");
+        for from in [own, other] {
+            refused(&input(at, Some(from), true, pre.clone(), v.clone()), "does not derive");
+            refused(&input(at, Some(from), false, pre.clone(), v.clone()), "must authorize");
+        }
+    }
+}
+
+/// Security review F1/F2: on the PDA-header path a co-signer's `is_authorized` only proves it
+/// signed *a* transaction that reached the owner program, so every signer must be the root.
+#[test]
+fn pda_path_signers_must_be_the_root() {
+    let owner = other_program();
+    let s = [7; 32];
+    let h = AccountId::for_public_pda(&owner, &PdaSeed::new(s));
+    let at = Actor::new(h, reg());
+    let sender = Some(Actor::new(alice(), owner));
+    let rule = "on the PDA-header path every signer must be the root";
+    // Registration naming any other author (alice signed the tx for the owner program).
+    let ix = msg(&register_deployer(&alice(), "token", Some(s)));
+    refused(&input(at, sender, true, vec![], ix), rule);
+    // With author == the header: accepted, and no probe.
+    let r = run(&input(at, sender, true, vec![], msg(&register_deployer(&h, "token", Some(s))))).unwrap();
+    assert!(r.sync_messages.iter().all(|m| m.message != vec![0xFF]));
+    // Update and freeze of the header's entry (inline) work through the owner program.
+    let pre = borsh::to_vec(&entry_for(&h, &h)).unwrap();
+    let up = with_via(update(&h, 2), Some(s));
+    let out = run(&input(at, sender, true, pre.clone(), msg(&up))).unwrap();
+    let n: t::Entry = borsh::from_slice(out.post_state.as_deref().unwrap()).unwrap();
+    assert_eq!(n.revision, 2);
+    let fr = Instruction::Freeze { entry_id: *h.value(), now: NOW, via_pda_seed: Some(s) };
+    assert!(run(&input(at, sender, true, pre.clone(), msg(&fr))).is_ok());
+    // A transfer away from the header on the PDA path names a non-root signer: refused (A1b).
+    let tr = |to: &AccountId| Instruction::TransferAuthor { entry_id: *h.value(), new_author_id: *to.value(), now: NOW, via_pda_seed: Some(s) };
+    refused(&input(at, sender, true, pre.clone(), msg(&tr(&alice()))), rule);
+    refused(&input(at, sender, true, pre, msg(&tr(&bob()))), rule);
+    // The same transfer as a root message, signed by both, is unaffected.
+    let pre = borsh::to_vec(&stored_entry(&x(), 0)).unwrap();
+    let tr = Instruction::TransferAuthor { entry_id: *x().value(), new_author_id: *bob().value(), now: NOW, via_pda_seed: None };
+    assert!(run(&input(Actor::new(x(), reg()), None, true, pre, msg(&tr))).is_ok());
+}
+
+/// Security review F3: `PatchEntry` checks the record is an entry living at this address.
+#[test]
+fn patch_checks_the_entry_address() {
+    let upd = Patch { revision: Some(2), version: Some("2.0.0".into()), ..Patch::default() };
+    // A deployer entry for Y stored at X.
+    let y = AccountId::new([0x44; 32]);
+    let err = patch_at(x(), alice(), &entry_for(&y, &alice()), upd.clone(), false).unwrap_err();
+    assert!(err.contains("not a registry entry at this address"), "{err}");
+    // A third-party entry at the wrong PDA, and at the right one.
+    let mut tp = stored_entry(&alice(), 0);
+    tp.kind = t::KIND_THIRD_PARTY;
+    let tp_at = lid(&addr::third_party_entry(&tid(&reg()), &tid(&x()), &tid(&alice())));
+    assert!(patch_at(x(), alice(), &tp, upd.clone(), false).unwrap_err().contains("not a registry entry"));
+    let out = patch_at(tp_at, alice(), &tp, upd.clone(), false).unwrap();
+    assert_eq!(out.sync_messages[0].to, Actor::new(lid(&addr::release(&tid(&reg()), &tid(&tp_at), 2)), reg()));
+    // After a transfer the registrant still keys the address.
+    tp.author = tid(&bob());
+    assert!(patch_at(tp_at, bob(), &tp, upd.clone(), false).is_ok());
+    // Unknown kind or schema.
+    let mut bad = stored_entry(&alice(), 0);
+    bad.kind = 7;
+    assert!(patch_at(x(), alice(), &bad, upd.clone(), false).unwrap_err().contains("not a registry entry"));
+    let mut bad = stored_entry(&alice(), 0);
+    bad.schema = 2;
+    assert!(patch_at(x(), alice(), &bad, upd, false).unwrap_err().contains("not a registry entry"));
+}
+
+/// §8.1 / §2.3: borsh sizes of typical and worst-case records (the §2.3 size table).
+#[test]
+fn record_sizes_match_the_design_table() {
+    let typical_content = ContentRef { cid: vec![1; 38], sha256: [2; 32], size: 1000, peer_hint: None };
+    let max_content = ContentRef { cid: vec![1; 64], sha256: [2; 32], size: 1000, peer_hint: Some(vec![3; 48]) };
+    let typical_source = SourceRef { repo: "https://github.com/example-org/example-program.git".into(), commit: vec![3; 20], docker_root: ".".into(), archive: Some(typical_content.clone()) };
+    let max_source = SourceRef { repo: "r".repeat(160), commit: vec![3; 32], docker_root: "d".repeat(96), archive: Some(max_content.clone()) };
+    let max_build = BuildConfig {
+        image_tag: "i".repeat(48),
+        risc0_build: "r".repeat(16),
+        host_risc0_rust: "h".repeat(16),
+        manifest_path: "m".repeat(96),
+        binary: "b".repeat(48),
+        features: vec!["f".repeat(32); 4],
+        docker_env: vec![t::EnvVar { key: "K".repeat(16), value: "v".repeat(48) }; 4],
+        ..build()
+    };
+    let typical = t::Entry {
+        name: "token-program".into(),
+        version: "1.2.3".into(),
+        author_label: "Example Labs".into(),
+        description: "A fungible token program with mint, burn and transfer, deployed on LEZ.".into(),
+        tags: vec!["token".into(), "defi".into()],
+        idl: typical_content.clone(),
+        source: typical_source.clone(),
+        ..stored_entry(&x(), 0)
+    };
+    let worst = t::Entry {
+        name: "a".repeat(32),
+        version: "v".repeat(32),
+        author_label: "é".repeat(32),
+        description: "d".repeat(512),
+        tags: vec!["t".repeat(24); 8],
+        idl: max_content.clone(),
+        source: max_source.clone(),
+        build: max_build.clone(),
+        ..stored_entry(&x(), 0)
+    };
+    let rel = |e: &t::Entry| t::Release {
+        schema: 1,
+        entry: e.program,
+        revision: 1,
+        version: e.version.clone(),
+        idl: e.idl.clone(),
+        source: e.source.clone(),
+        build: e.build.clone(),
+        image_id: e.image_id,
+        build_hash: [0; 32],
+        at: NOW,
+    };
+    let link = t::Link {
+        schema: 1,
+        seq: 1,
+        kind: 1,
+        program: tid(&x()),
+        name: "token-program".into(),
+        author: tid(&alice()),
+        prev_global: Some(tid(&x())),
+        prev_name: Some(tid(&x())),
+        prev_author: Some(tid(&x())),
+        prev_program: Some(tid(&x())),
+    };
+    let len = |v: Vec<u8>| v.len();
+    let sizes = [
+        ("Entry typical", len(borsh::to_vec(&typical).unwrap())),
+        ("Entry worst", len(borsh::to_vec(&worst).unwrap())),
+        ("Release typical", len(borsh::to_vec(&rel(&typical)).unwrap())),
+        ("Release worst", len(borsh::to_vec(&rel(&worst)).unwrap())),
+        ("Link typical (13-char name, all prevs)", len(borsh::to_vec(&link).unwrap())),
+        ("Head", len(borsh::to_vec(&t::Head { schema: 1, count: 1, newest: Some(tid(&x())) }).unwrap())),
+        ("AuthorNode", len(borsh::to_vec(&t::AuthorNode { schema: 1, entry: tid(&x()), prev: Some(tid(&x())) }).unwrap())),
+    ];
+    for (n, b) in sizes {
+        println!("{n}: {b} B");
+    }
+    // Pinned to the measured values in the DESIGN §2.3 table.
+    assert_eq!(sizes.map(|(_, b)| b), [EXPECTED_SIZES[0], EXPECTED_SIZES[1], EXPECTED_SIZES[2], EXPECTED_SIZES[3], EXPECTED_SIZES[4], 42, 66]);
+    // And the worst case fits the validator's limits (it is a valid registration).
+    let ix = Instruction::RegisterDeployer {
+        name: worst.name.clone(), version: worst.version.clone(), author_label: worst.author_label.clone(),
+        description: worst.description.clone(), tags: worst.tags.clone(), idl: worst.idl.clone(), source: worst.source.clone(),
+        build: worst.build.clone(), image_id: [9; 32], author_id: *x().value(), revision: 1, revision_seed: t::pda::revision_seed(1),
+        now: NOW, via_pda_seed: None,
+    };
+    let r = run(&input(Actor::new(x(), reg()), None, true, vec![], msg(&ix))).unwrap();
+    assert_eq!(r.post_state.unwrap().len(), EXPECTED_SIZES[1]);
+}
+
+/// Entry typical, Entry worst, Release typical, Release worst, Link: DESIGN §2.3.
+const EXPECTED_SIZES: [usize; 5] = [674, 2400, 503, 1510, 223];
