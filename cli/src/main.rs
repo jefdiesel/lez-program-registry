@@ -87,6 +87,17 @@ struct WriteOpts {
     yes: bool,
 }
 
+/// Search options.
+#[derive(clap::Args, Clone, Copy)]
+struct SearchOpts {
+    #[arg(long, default_value_t = 20)]
+    limit: usize,
+    /// How many entries the search may examine (newest first) before it stops; a search that
+    /// stops early says so.
+    #[arg(long, default_value_t = 1000)]
+    scan: usize,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Show a program's registry entries: the deployer entry (fresh/stale against the live
@@ -100,7 +111,8 @@ enum Command {
         #[arg(long)]
         revision: Option<u32>,
     },
-    /// List every entry, newest first, a page at a time.
+    /// List every entry, newest first, a page at a time, with each program's status
+    /// (fresh, stale, or NO-PROGRAM when nothing is deployed at the claimed program).
     List {
         #[arg(long, default_value_t = 20)]
         limit: usize,
@@ -135,7 +147,10 @@ enum Command {
         opts: WriteOpts,
     },
     /// Deploy a program binary (segments, then the loader header) and register it in the same
-    /// transaction (DeployAndRegister), unless --no-register.
+    /// transaction (DeployAndRegister), unless --no-register. Everything that could refuse is
+    /// checked before the first (paid) segment write; --dry-run stops there and prints the
+    /// estimate. The payer defaults to --author (a new header account holds nothing). The code
+    /// is upgradeable by the header key unless --immutable.
     Deploy {
         /// The risc0 program binary (`*.bin`).
         elf: std::path::PathBuf,
@@ -208,33 +223,26 @@ enum SearchBy {
     /// By name: exact matches first, then names containing the query.
     Name {
         query: String,
-        #[arg(long, default_value_t = 20)]
-        limit: usize,
-        /// How many of the newest entries a substring search scans.
-        #[arg(long, default_value_t = 1000)]
-        scan: usize,
+        #[command(flatten)]
+        o: SearchOpts,
     },
     /// By proven author account: the entries it holds now.
     Author {
         account: String,
-        #[arg(long, default_value_t = 20)]
-        limit: usize,
+        #[command(flatten)]
+        o: SearchOpts,
     },
     /// By free-text author label (UNPROVEN: anyone can write any label).
     Label {
         query: String,
-        #[arg(long, default_value_t = 20)]
-        limit: usize,
-        #[arg(long, default_value_t = 1000)]
-        scan: usize,
+        #[command(flatten)]
+        o: SearchOpts,
     },
     /// By tag.
     Tag {
         tag: String,
-        #[arg(long, default_value_t = 20)]
-        limit: usize,
-        #[arg(long, default_value_t = 1000)]
-        scan: usize,
+        #[command(flatten)]
+        o: SearchOpts,
     },
 }
 
@@ -242,13 +250,17 @@ enum SearchBy {
 enum NetworkCmd {
     /// Print the network in use (and where its settings come from).
     Show,
-    /// Save a network's RPC and/or registry id in the lezreg config file.
+    /// Save a network's RPC and/or registry id in the lezreg config file. A registry id is
+    /// checked first (a program with the self-entry `lez_program_registry`).
     Set {
         name: String,
         #[arg(long)]
         rpc: Option<String>,
         #[arg(long)]
         registry: Option<String>,
+        /// Save the registry id even if it cannot be checked or does not look like a registry.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -259,13 +271,49 @@ fn reader(net: &Net) -> Result<Registry<HttpRpc>> {
     Ok(Registry::with_cache(HttpRpc::new(&rpc), reg, cache))
 }
 
+/// Whether `rpc` is a sequencer on this machine: an http(s) URL whose host is a loopback
+/// address or `localhost`, with no user info (`http://127.0.0.1:1@evil.example/` is
+/// evil.example).
+fn is_local(rpc: &str) -> bool {
+    let Ok(u) = url::Url::parse(rpc) else { return false };
+    if !matches!(u.scheme(), "http" | "https") || !u.username().is_empty() || u.password().is_some() {
+        return false;
+    }
+    match u.host() {
+        Some(url::Host::Ipv4(a)) => a.is_loopback(),
+        Some(url::Host::Ipv6(a)) => a.is_loopback(),
+        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        None => false,
+    }
+}
+
 /// Writes go through a sequencer on this machine unless `--yes`: on any other one they spend
-/// real funds.
-fn check_write_target(rpc: &str, opts: &WriteOpts) -> Result<()> {
-    let local = ["http://127.0.0.1:", "http://localhost:", "http://[::1]:"].iter().any(|p| rpc.starts_with(p));
-    if !local && !opts.yes {
+/// real funds. A dry run spends nothing.
+fn check_write_target(rpc: &str, yes: bool, dry_run: bool) -> Result<()> {
+    if !is_local(rpc) && !yes && !dry_run {
         bail!("{rpc} is not on this machine: writing there spends real funds. Pass --yes to go ahead");
     }
+    Ok(())
+}
+
+/// Holds an exclusive lock on the wallet for the rest of the process, so two lezreg writes
+/// from one wallet never race for the same nonce (the sequencer silently drops the loser).
+fn lock_wallet() -> Result<()> {
+    use std::os::fd::AsRawFd as _;
+    static LOCK: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+    if LOCK.get().is_some() {
+        return Ok(());
+    }
+    let path = fetch_persistent_storage_path()?.with_file_name("lezreg.lock");
+    let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path).with_context(|| format!("cannot open {}", path.display()))?;
+    // SAFETY: flock on a descriptor we own.
+    if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        eprintln!("waiting for another lezreg write that uses this wallet ({})", path.display());
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            bail!("cannot lock {}", path.display());
+        }
+    }
+    let _ = LOCK.set(f);
     Ok(())
 }
 
@@ -284,7 +332,8 @@ async fn open_wallet(rpc: &str) -> Result<WalletCore<sequencer_service_rpc::Sequ
         seq_tx_poll_max_blocks: Some(60),
         ..Default::default()
     });
-    write_default_wallet_files()?;
+    write_default_wallet_files(rpc)?;
+    lock_wallet()?;
     let storage_path = fetch_persistent_storage_path()?;
     if storage_path.exists() {
         let password = read_password(&storage_path)?;
@@ -294,17 +343,24 @@ async fn open_wallet(rpc: &str) -> Result<WalletCore<sequencer_service_rpc::Sequ
     bail!("there is no wallet at {} yet: make one with `lezreg wallet account new public`", storage_path.display())
 }
 
-/// Writes the wallet's default config if missing (the wallet would, but announces it on stdout).
-fn write_default_wallet_files() -> Result<()> {
+/// Writes the wallet's default config if missing (the wallet would, but announces it on
+/// stdout), pointed at `rpc`: never at the LEZ wallet's built-in default sequencer, which the
+/// user did not choose. lezreg overrides the sequencer on every run anyway.
+fn write_default_wallet_files(rpc: &str) -> Result<()> {
     let config_path = fetch_config_path()?;
     if let Some(home) = config_path.parent() {
         std::fs::create_dir_all(home).with_context(|| format!("failed to create the wallet home {}", home.display()))?;
     }
     if !config_path.exists() {
-        std::fs::write(&config_path, serde_json::to_vec_pretty(&serde_json::to_value(wallet::config::WalletConfig::default())?)?)?;
+        let mut config = wallet::config::WalletConfig::default();
+        config.sequencer = SequencerConnectionData { sequencer_addr: rpc.parse().map_err(|_| anyhow!("{rpc} is not a URL"))?, basic_auth: None };
+        std::fs::write(&config_path, serde_json::to_vec_pretty(&serde_json::to_value(config)?)?)?;
     }
     Ok(())
 }
+
+/// Wallet subcommands that never send a transaction.
+const WALLET_READ_ONLY: &[&str] = &["account", "chain-info", "check-health", "config", "set-password", "restore-keys", "help"];
 
 async fn writer(net: &Net, opts: &WriteOpts) -> Result<Writer> {
     writer_for(net, opts, true).await
@@ -313,25 +369,47 @@ async fn writer(net: &Net, opts: &WriteOpts) -> Result<Writer> {
 /// `need_registry` false: a plain loader deploy, which needs no registry id.
 async fn writer_for(net: &Net, opts: &WriteOpts, need_registry: bool) -> Result<Writer> {
     let rpc = net.rpc()?;
-    check_write_target(&rpc, opts)?;
+    check_write_target(&rpc, opts.yes, opts.dry_run)?;
     let reg = if need_registry { net.registry()? } else { net.registry().unwrap_or_default() };
     let w = out::quietly(|| async { open_wallet(&rpc).await }).await?;
     Ok(Writer::new(w, lid(&reg)))
 }
 
-/// Runs the bundled LEZ wallet CLI (LNS pattern).
-async fn run_wallet(args: Vec<String>, rpc: Option<String>) -> Result<()> {
+/// Runs the bundled LEZ wallet CLI (LNS pattern), always against the network's sequencer:
+/// a network with no RPC is refused rather than falling back to whatever the wallet's own
+/// config names. `--yes` (anywhere in the arguments) allows sending through a sequencer that
+/// is not on this machine. `change-network` is refused: the sequencer is lezreg's
+/// `--network`/`--rpc`.
+async fn run_wallet(mut args: Vec<String>, net: Result<Net>) -> Result<()> {
     use clap::CommandFactory as _;
     use wallet::{
         ExecutionFailureKind,
         cli::{Args, execute_continuous_run, execute_subcommand},
     };
+    let yes = args.iter().any(|a| a == "--yes");
+    args.retain(|a| a != "--yes");
+    // The subcommand (a flag's value can land here too; that only makes the guard stricter).
+    let sub = args.iter().find(|a| !a.starts_with('-')).cloned().unwrap_or_default();
+    let help = sub.is_empty() && !args.iter().any(|a| a == "-c" || a == "--continuous-run") || sub == "help";
+    let mut rpc = String::new();
+    if !help {
+        if sub == "change-network" {
+            bail!("lezreg's wallet always uses lezreg's sequencer: choose it with --network or --rpc (and `lezreg network set`), not change-network");
+        }
+        rpc = net?.rpc()?;
+        if !WALLET_READ_ONLY.contains(&sub.as_str()) {
+            check_write_target(&rpc, yes, args.iter().any(|a| a == "--dry-run"))?;
+            lock_wallet()?;
+        }
+    }
     let Args { continuous_run, dry_run, fee_headroom, fee_payer, refund_to, command } =
         Args::parse_from(std::iter::once("lezreg wallet".to_owned()).chain(args.iter().cloned()));
-    let mut overrides = WalletConfigOverrides { seq_tx_poll_max_blocks: Some(60), ..Default::default() };
-    if let Some(rpc) = rpc {
-        overrides.sequencer = Some(SequencerConnectionData { sequencer_addr: rpc.parse().map_err(|_| anyhow!("{rpc} is not a URL"))?, basic_auth: None });
+    if help || (command.is_none() && !continuous_run) {
+        println!("{}", Args::command().name("lezreg wallet").render_long_help());
+        return Ok(());
     }
+    let mut overrides = WalletConfigOverrides { seq_tx_poll_max_blocks: Some(60), ..Default::default() };
+    overrides.sequencer = Some(SequencerConnectionData { sequencer_addr: rpc.parse().map_err(|_| anyhow!("{rpc} is not a URL"))?, basic_auth: None });
     // Native transfers meter no cycles and the whole limit is reserved: keep it tiny.
     if args.iter().any(|a| a == "auth-transfer") {
         overrides.gas_limit = Some(1_000);
@@ -340,7 +418,7 @@ async fn run_wallet(args: Vec<String>, rpc: Option<String>) -> Result<()> {
         overrides.private_fee_headroom_blocks = fee_headroom;
     }
     let overrides = Some(overrides);
-    write_default_wallet_files()?;
+    write_default_wallet_files(&rpc)?;
     let config_path = fetch_config_path()?;
     let storage_path = fetch_persistent_storage_path()?;
     if let Some(command) = command {
@@ -353,6 +431,12 @@ async fn run_wallet(args: Vec<String>, rpc: Option<String>) -> Result<()> {
             wallet.start_at_chain_tip().await.ok();
             eprintln!("Created a new wallet. Write down its recovery phrase and keep it safe; it is the only way to get the wallet back:\n");
             eprintln!("  {mnemonic}\n");
+            if password.is_empty() {
+                eprintln!(
+                    "The wallet is NOT encrypted (no password set). Its keys, including any program's upgrade (header) key, are readable by anyone who can read {}. Encrypt it with `lezreg wallet set-password`.\n",
+                    fetch_persistent_storage_path().map(|p| p.display().to_string()).unwrap_or_default()
+                );
+            }
             wallet.store_persistent_data()?;
             wallet
         };
@@ -365,18 +449,21 @@ async fn run_wallet(args: Vec<String>, rpc: Option<String>) -> Result<()> {
                 result?;
             }
         }
-    } else if continuous_run {
+    } else {
         let password = read_password(&storage_path)?;
         let mut wallet = WalletCore::new_update_chain(config_path, storage_path, overrides, &password)?;
         execute_continuous_run(&mut wallet).await?;
-    } else {
-        println!("{}", Args::command().name("lezreg wallet").render_long_help());
     }
     Ok(())
 }
 
-/// The entry address a write targets, resolving a name through the name list.
-fn target_address(net: &Net, target: &Target) -> Result<AccountId> {
+/// How many entries of a name list a write resolves a name over.
+const NAME_WALK: usize = 10_000;
+
+/// The entry address a write targets, resolving a name through the whole name list: names are
+/// not unique (anyone can register any name), so among the deployer entries with that name it
+/// picks the one whose author's key this wallet holds.
+fn target_address(net: &Net, target: &Target, w: &Writer) -> Result<AccountId> {
     if let Some(e) = &target.entry {
         return parse_account(e);
     }
@@ -385,12 +472,16 @@ fn target_address(net: &Net, target: &Target) -> Result<AccountId> {
         Ok(p) => p,
         Err(_) => {
             let r = reader(net)?;
-            let found = r.by_name(name, 10)?;
+            let name = name.to_ascii_lowercase();
+            let found = r.by_name(&name, NAME_WALK)?;
             let deployers: Vec<_> = found.iter().filter(|i| i.kind == Some(lezreg_sdk::Kind::Deployer)).collect();
-            match (deployers.as_slice(), target.publisher.is_some()) {
-                ([one], _) => lid(&one.entry.as_ref().expect("checked").program),
-                ([], _) if found.len() == 1 => lid(&found[0].link.program),
-                _ => bail!("'{name}' names {} entries; give the program id instead", found.len()),
+            let mine: Vec<_> = deployers.iter().copied().filter(|i| i.entry.as_ref().is_some_and(|e| w.holds(lid(&e.author)))).collect();
+            match (mine.as_slice(), deployers.as_slice()) {
+                ([one], _) | ([], [one]) => lid(&one.entry.as_ref().expect("checked").program),
+                ([], []) if found.len() == 1 => lid(&found[0].link.program),
+                ([], []) => bail!("'{name}' names no deployer entry ({} entries in all); give the program id instead", found.len()),
+                ([], many) => bail!("'{name}' names {} deployer entries and this wallet is the author of none; give the program id instead", many.len()),
+                (many, _) => bail!("'{name}' names {} deployer entries this wallet is the author of; give the program id instead", many.len()),
             }
         }
     };
@@ -398,6 +489,20 @@ fn target_address(net: &Net, target: &Target) -> Result<AccountId> {
         Some(p) => lid(&addr::third_party_entry(&net.registry()?, &tid(&program), &tid(&parse_account(p)?))),
         None => program,
     })
+}
+
+/// Checks that `registry` on `rpc` is a LEZ Program Registry: a deployed program whose
+/// self-entry `(R, R)` is named `lez_program_registry`.
+fn check_registry(rpc: &str, registry: &lezreg_types::AccountId) -> Result<()> {
+    let r = Registry::new(HttpRpc::new(rpc), *registry);
+    let res = r.resolve(registry)?;
+    if res.header.is_none() {
+        bail!("{registry} is not a LEZ Program Registry on {rpc}: no program is deployed there (--force saves it anyway)");
+    }
+    match res.deployer {
+        Some(e) if e.name == "lez_program_registry" => Ok(()),
+        _ => bail!("{registry} is not a LEZ Program Registry on {rpc}: it has no self-entry named lez_program_registry (--force saves it anyway)"),
+    }
 }
 
 async fn run(cli: Cli, out: &mut Out) -> Result<()> {
@@ -415,7 +520,15 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 ));
                 out.json(json!({"network": net.name, "rpc": net.rpc, "registry": net.registry.map(|r| r.to_base58())}));
             }
-            NetworkCmd::Set { name, rpc, registry } => {
+            NetworkCmd::Set { name, rpc, registry, force } => {
+                if let Some(reg) = &registry
+                    && !force
+                {
+                    let reg = config::parse_registry(reg)?;
+                    let target = config::resolve(&name, rpc.as_deref(), None).ok().and_then(|n| n.rpc).or_else(|| rpc.clone());
+                    let target = target.ok_or_else(|| anyhow!("network '{name}' has no RPC to check the registry on: pass --rpc (or --force)"))?;
+                    check_registry(&target, &reg)?;
+                }
                 let p = config::set(&name, rpc.as_deref(), registry.as_deref())?;
                 out.text(&format!("saved network '{name}' in {}", p.display()));
                 out.json(json!({"saved": name, "file": p.display().to_string()}));
@@ -426,28 +539,33 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             let r = reader(&net)?;
             let after = after.as_deref().map(parse_account).transpose()?.map(|a| tid(&a));
             let page = r.list(after.as_ref(), limit)?;
-            render::list(out, &r, &page);
+            render::list(out, &r, &page)?;
             r.cache().save().ok();
         }
         Command::Search { by } => {
             let r = reader(&net)?;
-            let (title, items, proven) = match by {
-                SearchBy::Name { query, limit, scan } => (format!("name '{query}'"), r.search_name(&query, limit, scan)?, true),
-                SearchBy::Author { account, limit } => {
-                    let a = tid(&parse_account(&account)?);
-                    (format!("author {a} (proven co-signer)"), r.by_author(&a, limit)?, true)
+            let mut exact = None;
+            let (title, found, proven) = match by {
+                SearchBy::Name { query, o } => {
+                    exact = Some(query.to_ascii_lowercase());
+                    (format!("name '{query}'"), r.search_name(&query, o.limit, o.scan)?, true)
                 }
-                SearchBy::Label { query, limit, scan } => (format!("author label '{query}' (UNPROVEN)"), r.search_label(&query, limit, scan)?, false),
-                SearchBy::Tag { tag, limit, scan } => (format!("tag '{tag}'"), r.search_tag(&tag, limit, scan)?, true),
+                SearchBy::Author { account, o } => {
+                    let a = tid(&parse_account(&account)?);
+                    (format!("author {a} (proven co-signer)"), r.by_author(&a, o.limit, o.scan)?, true)
+                }
+                SearchBy::Label { query, o } => (format!("author label '{query}' (UNPROVEN)"), r.search_label(&query, o.limit, o.scan)?, false),
+                SearchBy::Tag { tag, o } => (format!("tag '{tag}'"), r.search_tag(&tag, o.limit, o.scan)?, true),
             };
-            render::search(out, &r, &title, &items, proven);
+            render::search(out, &r, &title, &found, proven, exact.as_deref())?;
             r.cache().save().ok();
         }
         Command::Register { program, author, third_party, publisher, entry, opts } => {
-            let mut w = writer(&net, &opts).await?;
             let program = parse_account(&program)?;
             let so = send_opts(&opts)?;
             let input = entry.input(None)?;
+            note_build_defaults(&entry);
+            let mut w = writer(&net, &opts).await?;
             let receipt = if third_party {
                 let publisher = parse_account(publisher.as_deref().ok_or_else(|| anyhow!("--third-party needs --publisher"))?)?;
                 if author.as_deref().is_some_and(|a| parse_account(a).ok() != Some(publisher)) {
@@ -461,54 +579,71 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             render::receipt(out, &receipt);
         }
         Command::Deploy { elf, program, immutable, no_register, author, entry, opts } => {
-            let mut w = writer_for(&net, &opts, !no_register).await?;
+            // Everything that can be checked offline first: no account is made for a bad
+            // command line.
             let bytes = std::fs::read(&elf).with_context(|| format!("cannot read {}", elf.display()))?;
-            let program = match program {
-                Some(p) => parse_account(&p)?,
-                None => {
-                    let p = w.new_account().await?;
-                    out::quietly(|| async { w.save_wallet() }).await?;
-                    eprintln!("new header account (program id) {p}, key saved in the wallet");
-                    p
-                }
-            };
+            let input = if no_register { None } else { Some(entry.input(Some(&bytes))?) };
+            if !no_register {
+                note_build_defaults(&entry);
+            }
+            let given = program.as_deref().map(parse_account).transpose()?;
+            let author = author.as_deref().map(parse_account).transpose()?;
             let so = send_opts(&opts)?;
-            let receipt = if no_register {
-                w.deploy(&bytes, program, immutable, None, &so).await?
-            } else {
-                let author = author.as_deref().map(parse_account).transpose()?.unwrap_or(program);
-                let input = entry.input(Some(&bytes))?;
-                w.deploy(&bytes, program, immutable, Some((author, &input)), &so).await?
+            let mut w = writer_for(&net, &opts, !no_register).await?;
+            // A new header account lives only in memory until the first segment write saves
+            // the wallet: a refusal before that leaves nothing behind.
+            let program = match given {
+                Some(p) => p,
+                None => w.new_account().await?,
             };
+            out.context("program", json!(program.to_string()));
+            let register = input.as_ref().map(|i| (author.unwrap_or(program), i));
+            let receipt = w.deploy(&bytes, program, immutable, register, &so).await?;
             out.text(&format!("program {program}"));
             render::receipt(out, &receipt);
             out.json_merge(json!({"program": program.to_string()}));
+            if given.is_none() && receipt.hash.is_some() {
+                eprintln!(
+                    "note: {program}'s header key is in the wallet at {}. It is the program's upgrade key{}: back the wallet up (and encrypt it with `lezreg wallet set-password`)",
+                    fetch_persistent_storage_path().map(|p| p.display().to_string()).unwrap_or_default(),
+                    if immutable { " (the code is immutable, but the key still signs as the program)" } else { "" }
+                );
+            }
         }
         Command::Update { target, author, patch, opts } => {
-            let at = target_address(&net, &target)?;
-            let stored = reader(&net)?.entry(&tid(&at))?.ok_or(SdkError::NoEntry(tid(&at)))?;
             let mut w = writer(&net, &opts).await?;
+            let at = target_address(&net, &target, &w)?;
+            let stored = reader(&net)?.entry(&tid(&at))?.ok_or(SdkError::NoEntry(tid(&at)))?;
             let author = author.as_deref().map(parse_account).transpose()?;
             let p = patch.input(&stored)?;
             let receipt = w.update(at, author, &p, &send_opts(&opts)?).await?;
             render::receipt(out, &receipt);
         }
         Command::Transfer { target, to, author, opts } => {
-            let at = target_address(&net, &target)?;
             let mut w = writer(&net, &opts).await?;
+            let at = target_address(&net, &target, &w)?;
             let author = author.as_deref().map(parse_account).transpose()?;
             let receipt = w.transfer(at, author, parse_account(&to)?, &send_opts(&opts)?).await?;
             render::receipt(out, &receipt);
         }
         Command::Freeze { target, author, opts } => {
-            let at = target_address(&net, &target)?;
             let mut w = writer(&net, &opts).await?;
+            let at = target_address(&net, &target, &w)?;
             let author = author.as_deref().map(parse_account).transpose()?;
             let receipt = w.freeze(at, author, &send_opts(&opts)?).await?;
             render::receipt(out, &receipt);
         }
     }
     Ok(())
+}
+
+/// Says when an entry gets lezreg's default build settings rather than the author's.
+fn note_build_defaults(entry: &args::EntryArgs) {
+    if !entry.build.any() {
+        eprintln!(
+            "note: no build flags given, so the entry records lezreg's default build settings (risc0-guest-builder r0.1.91.1, binary = the name) and no Cargo.lock hash; `show` marks such build info as unverified"
+        );
+    }
 }
 
 /// Error kind names for `--json` (stable).
@@ -529,7 +664,7 @@ fn error_kind(e: &anyhow::Error) -> &'static str {
         Some(SdkError::Refused(_)) => "refused",
         Some(SdkError::Funds(_)) => "funds",
         Some(SdkError::Rejected(_)) => "rejected",
-        Some(SdkError::NotIncluded(_)) => "not_included",
+        Some(SdkError::NotIncluded { .. }) => "not_included",
         Some(SdkError::Reverted { .. }) => "reverted",
         Some(SdkError::ReadBack(_)) => "read_back",
         Some(SdkError::Wallet(_)) => "wallet",
@@ -539,10 +674,15 @@ fn error_kind(e: &anyhow::Error) -> &'static str {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
+    // `lezreg list | head` ends quietly instead of panicking on the closed pipe.
+    // SAFETY: setting a signal disposition before any other thread writes to stdout.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     if let Command::Wallet { args } = &cli.command {
-        let rpc = config::resolve(&cli.network, cli.rpc.as_deref(), cli.registry.as_deref()).ok().and_then(|n| n.rpc);
-        if let Err(e) = run_wallet(args.clone(), rpc).await {
+        let net = config::resolve(&cli.network, cli.rpc.as_deref(), cli.registry.as_deref());
+        if let Err(e) = run_wallet(args.clone(), net).await {
             eprintln!("error: {e:#}");
             std::process::exit(1);
         }
@@ -552,6 +692,9 @@ async fn main() {
     let result = run(cli, &mut out).await;
     if let Err(e) = &result {
         out.error(error_kind(e), &format!("{e:#}"));
+        if let Some(h) = e.downcast_ref::<SdkError>().and_then(SdkError::tx_hash) {
+            out.error_field("tx", json!(h));
+        }
     }
     out.finish();
     if result.is_err() {
@@ -559,3 +702,48 @@ async fn main() {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review fix (conformance 6, robustness 9): the write guard parses the URL.
+    #[test]
+    fn local_means_a_loopback_host() {
+        for ok in ["http://127.0.0.1:3062", "http://localhost/", "https://127.0.0.1:3062/", "http://[::1]:3062", "http://LOCALHOST:1", "http://127.0.0.2:5/"] {
+            assert!(is_local(ok), "{ok}");
+        }
+        for no in [
+            "http://127.0.0.1:3062@evil.example/",
+            "http://127.0.0.1:1@example.invalid:3062",
+            "http://user@127.0.0.1:3062",
+            "http://192.168.1.50:3062",
+            "https://testnet.lez.logos.co/",
+            "http://127.0.0.1.evil.example/",
+            "file:///tmp/x",
+            "not a url",
+        ] {
+            assert!(!is_local(no), "{no}");
+        }
+        assert!(check_write_target("http://192.168.1.50:3062", false, false).is_err());
+        assert!(check_write_target("http://192.168.1.50:3062", true, false).is_ok());
+        assert!(check_write_target("http://192.168.1.50:3062", false, true).is_ok(), "a dry run spends nothing");
+    }
+
+    /// Review fix (conformance 1, outsider 2): `lezreg wallet` never falls back to the wallet
+    /// config's sequencer (the LEZ default is the public testnet).
+    #[tokio::test]
+    async fn wallet_needs_a_network_with_an_rpc() {
+        let net = Net { name: "testnet".into(), rpc: None, registry: None };
+        let e = run_wallet(vec!["check-health".into()], Ok(net)).await.unwrap_err();
+        assert!(e.to_string().contains("testnet 0.4 has not launched"), "{e}");
+        let e = run_wallet(vec!["check-health".into()], Err(anyhow!("unknown network 'bogus'"))).await.unwrap_err();
+        assert!(e.to_string().contains("unknown network"), "{e}");
+        let net = Net { name: "local".into(), rpc: Some("http://127.0.0.1:3062".into()), registry: None };
+        let e = run_wallet(vec!["change-network".into(), "testnet".into()], Ok(net)).await.unwrap_err();
+        assert!(e.to_string().contains("change-network"), "{e}");
+        let net = Net { name: "x".into(), rpc: Some("http://192.168.1.50:3062".into()), registry: None };
+        let e = run_wallet(vec!["auth-transfer".into(), "send".into()], Ok(net)).await.unwrap_err();
+        assert!(e.to_string().contains("--yes"), "{e}");
+    }
+}

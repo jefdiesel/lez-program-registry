@@ -39,7 +39,7 @@ use std::path::PathBuf;
 
 pub use error::{Error, Result};
 pub use lezreg_types as types;
-pub use read::{Freshness, Header, Kind, LOADER, LinkCache, Listed, Located, Page, Registry, Resolved};
+pub use read::{Found, Freshness, Header, Kind, LOADER, LinkCache, Listed, Located, Page, Registry, Resolved};
 pub use rpc::{AccountStates, HttpRpc, MockRpc, Rpc};
 
 /// A network: a sequencer and the registry's program id on it.

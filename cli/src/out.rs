@@ -10,6 +10,8 @@ pub struct Out {
     json: bool,
     saved: Option<i32>,
     value: Value,
+    /// Keys every result carries, an error included (e.g. a deploy's program id).
+    context: serde_json::Map<String, Value>,
 }
 
 /// Points stdout at /dev/null; returns the saved descriptor.
@@ -50,7 +52,7 @@ pub async fn quietly<T, F: std::future::Future<Output = T>>(f: impl FnOnce() -> 
 impl Out {
     pub fn new(json: bool) -> Self {
         let saved = if json { silence() } else { None };
-        Self { json, saved, value: Value::Null }
+        Self { json, saved, value: Value::Null, context: serde_json::Map::new() }
     }
 
     /// A line of text (text mode only).
@@ -72,9 +74,25 @@ impl Out {
         }
     }
 
+    /// A key the result carries whatever happens next, an error included.
+    pub fn context(&mut self, key: &str, v: Value) {
+        self.context.insert(key.to_owned(), v);
+    }
+
     pub fn error(&mut self, kind: &str, message: &str) {
         eprintln!("error: {message}");
-        self.value = json!({"error": message, "kind": kind});
+        let mut v = json!({"error": message, "kind": kind});
+        if let Value::Object(o) = &mut v {
+            o.extend(self.context.clone());
+        }
+        self.value = v;
+    }
+
+    /// Adds a key to the error object.
+    pub fn error_field(&mut self, key: &str, v: Value) {
+        if let Value::Object(o) = &mut self.value {
+            o.insert(key.to_owned(), v);
+        }
     }
 
     pub fn finish(mut self) {

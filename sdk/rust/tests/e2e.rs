@@ -54,7 +54,7 @@ fn e2e_reads() {
     let oldest = last.unwrap();
     assert_eq!((oldest.address, oldest.link.seq, oldest.kind), (reg, 0, Some(Kind::Deployer)));
     assert!(r.by_name("lez_program_registry", 10).unwrap().iter().any(|i| i.address == reg));
-    assert!(r.by_author(&reg, 10).unwrap().iter().any(|i| i.address == reg));
+    assert!(r.by_author(&reg, 10, 1000).unwrap().items.iter().any(|i| i.address == reg));
 }
 
 #[tokio::test(flavor = "multi_thread")]

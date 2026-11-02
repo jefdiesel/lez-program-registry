@@ -1,8 +1,10 @@
 //! Text and JSON rendering for reads and receipts.
 
 use anyhow::Result;
+use std::collections::HashMap;
+
 use lezreg_sdk::{
-    Freshness, Header, HttpRpc, Kind, Listed, Page, Registry, cid, json as j,
+    Found, Freshness, Header, HttpRpc, Kind, Listed, Page, Registry, cid, json as j,
     tx::Receipt,
 };
 use lezreg_types::{AccountId, Entry};
@@ -72,12 +74,13 @@ fn entry_text(out: &Out, title: &str, address: &AccountId, kind: &Kind, e: &Entr
         out.text(&format!("  archive      {}  sha256 {}  {} B", cid::to_string(&a.cid), short(&a.sha256), a.size));
     }
     out.text(&format!(
-        "  build        {} (digest {}), risc0-build {}, binary {}, build hash {}",
+        "  build        {} (digest {}), risc0-build {}, binary {}, build hash {}{}",
         e.build.image_tag,
         short(&e.build.image_digest),
         e.build.risc0_build,
         e.build.binary,
-        short(&lezreg_types::pda::build_hash(&e.build))
+        short(&lezreg_types::pda::build_hash(&e.build)),
+        if e.build.lock_sha256 == [0; 32] { "\n               (UNVERIFIED: no Cargo.lock hash given; these may be lezreg's defaults, not the author's build, until `lezreg verify` checks them)" } else { "" }
     ));
     out.text(&format!("  image id     {}", hex::encode(e.image_id)));
     out.text(&format!("  registered   {}   updated {}", readable(e.registered_at), readable(e.updated_at)));
@@ -109,7 +112,8 @@ pub fn show(out: &mut Out, r: &Registry<HttpRpc>, target: &str, publisher: Optio
     }
     // One getAccount: the deployer entry and the program header together.
     let resolved = r.resolve(&program)?;
-    let tps = r.third_party(&program, 50)?;
+    let tps = r.third_party(&program, SHOWN)?;
+    let tp_total = r.third_party_count(&program)?;
     out.text(&format!("program {program}"));
     match &resolved.header {
         Some(h) => out.text(&format!("  deployed     image {}  ({})", hex::encode(h.image_id), if h.immutable { "immutable" } else { "upgradeable" })),
@@ -124,7 +128,7 @@ pub fn show(out: &mut Out, r: &Registry<HttpRpc>, target: &str, publisher: Optio
         }
         None => out.text("\nno deployer entry: the program's header key has not registered it"),
     }
-    out.text(&format!("\nthird-party (community) entries: {}", tps.len()));
+    out.text(&format!("\nthird-party (community) entries: {tp_total}{}", more(tp_total, tps.len())));
     let mut tj = Vec::new();
     for i in &tps {
         let Some(e) = &i.entry else {
@@ -143,8 +147,34 @@ pub fn show(out: &mut Out, r: &Registry<HttpRpc>, target: &str, publisher: Optio
         tj.push(x);
     }
     v["third_party"] = json!(tj);
+    v["third_party_count"] = json!(tp_total);
     out.json(v);
     Ok(())
+}
+
+/// How many entries `show` prints from one list.
+const SHOWN: usize = 50;
+
+fn more(total: u64, shown: usize) -> String {
+    let shown = shown as u64;
+    if total > shown { format!(" (newest {shown} shown; {} more)", total - shown) } else { String::new() }
+}
+
+/// Each listed entry's program status, from one batched header read.
+fn statuses(r: &Registry<HttpRpc>, items: &[Listed]) -> anyhow::Result<Vec<Option<Freshness>>> {
+    let mut programs: Vec<_> = items.iter().filter_map(|i| i.entry.as_ref().map(|e| e.program)).collect();
+    programs.sort_unstable();
+    programs.dedup();
+    let headers: HashMap<_, _> = programs.iter().copied().zip(r.headers(&programs)?).collect();
+    Ok(items.iter().map(|i| i.entry.as_ref().map(|e| Freshness::of(e, headers.get(&e.program).and_then(Option::as_ref)))).collect())
+}
+
+fn listed_json(i: &Listed, f: Option<&Freshness>) -> serde_json::Value {
+    let mut x = j::listed(i);
+    if let Some(f) = f {
+        x["freshness"] = j::freshness(f);
+    }
+    x
 }
 
 fn release(out: &Out, r: &Registry<HttpRpc>, entry: &AccountId, revision: Option<u32>, v: &mut serde_json::Value) -> Result<()> {
@@ -169,25 +199,37 @@ fn release(out: &Out, r: &Registry<HttpRpc>, entry: &AccountId, revision: Option
     Ok(())
 }
 
-fn show_name(out: &mut Out, r: &Registry<HttpRpc>, name: &str) -> Result<()> {
-    let items = r.by_name(name, 50)?;
-    out.text(&format!("name '{name}': {} entries (newest first)", items.len()));
-    let mut v = Vec::new();
-    for i in &items {
-        let header = i.entry.as_ref().map(|e| r.header(&e.program)).transpose()?.flatten();
-        out.text(&format!("  {}", line(i, header.as_ref())));
-        let mut x = j::listed(i);
-        if let Some(e) = &i.entry {
-            x["freshness"] = j::freshness(&Freshness::of(e, header.as_ref()));
-        }
-        v.push(x);
+/// Orders entries that share a name: deployer entries of a deployed program first, then other
+/// entries of deployed programs, then entries whose program does not exist (anyone can claim
+/// any name for any account). Otherwise newest first.
+fn rank(i: &Listed, f: Option<&Freshness>) -> u8 {
+    let deployed = matches!(f, Some(Freshness::Fresh | Freshness::Stale { .. }));
+    match (deployed, i.kind == Some(Kind::Deployer)) {
+        (true, true) => 0,
+        (true, false) => 1,
+        (false, _) => 2,
     }
-    out.json(json!({"name": name, "entries": v}));
+}
+
+fn show_name(out: &mut Out, r: &Registry<HttpRpc>, name: &str) -> Result<()> {
+    let name = name.to_ascii_lowercase();
+    let items = r.by_name(&name, SHOWN)?;
+    let total = r.name_count(&name)?;
+    let fs = statuses(r, &items)?;
+    let mut rows: Vec<_> = items.iter().zip(fs).collect();
+    rows.sort_by_key(|(i, f)| rank(i, f.as_ref()));
+    out.text(&format!("name '{name}': {total} entries{} (deployed programs' deployer entries first; NO-PROGRAM entries last)", more(total, items.len())));
+    let mut v = Vec::new();
+    for (i, f) in &rows {
+        out.text(&format!("  {}", line(i, f.as_ref())));
+        v.push(listed_json(i, f.as_ref()));
+    }
+    out.json(json!({"name": name, "count": total, "entries": v}));
     Ok(())
 }
 
-/// One line per listed entry.
-fn line(i: &Listed, header: Option<&Header>) -> String {
+/// One line per listed entry. `f`: the program's status (`None` for a link with no entry).
+fn line(i: &Listed, f: Option<&Freshness>) -> String {
     let Some(e) = &i.entry else {
         return format!("#{:<4} {}  {}  (no public entry: private or unverifiable)", i.link.seq, i.link.name, i.address);
     };
@@ -196,7 +238,11 @@ fn line(i: &Listed, header: Option<&Header>) -> String {
         Some(Kind::ThirdParty { publisher }) => format!("community by {}", short_id(publisher)),
         None => "UNVERIFIED ".to_owned(),
     };
-    let fresh = header.map_or_else(String::new, |h| format!("  {}", Freshness::of(e, Some(h)).label()));
+    let fresh = match f {
+        Some(Freshness::NoProgram) => "  NO-PROGRAM (nothing deployed at this program id)".to_owned(),
+        Some(f) => format!("  {}", f.label()),
+        None => String::new(),
+    };
     let frozen = if e.is_frozen() { "  frozen" } else { "" };
     format!("#{:<4} {:<24} v{:<10} {kind}  program {}  author {}{fresh}{frozen}", i.link.seq, e.name, e.version, short_id(&e.program), short_id(&e.author))
 }
@@ -206,10 +252,11 @@ fn short_id(a: &AccountId) -> String {
     if s.len() > 12 { format!("{}…{}", &s[..6], &s[s.len() - 4..]) } else { s }
 }
 
-pub fn list(out: &mut Out, r: &Registry<HttpRpc>, page: &Page) {
+pub fn list(out: &mut Out, r: &Registry<HttpRpc>, page: &Page) -> Result<()> {
     out.text(&format!("{} entries in the registry {}; showing {} (newest first)", page.total, r.registry(), page.items.len()));
-    for i in &page.items {
-        out.text(&format!("  {}", line(i, None)));
+    let fs = statuses(r, &page.items)?;
+    for (i, f) in page.items.iter().zip(&fs) {
+        out.text(&format!("  {}", line(i, f.as_ref())));
     }
     if let Some(n) = page.next {
         out.text(&format!("more: lezreg list --after {n}"));
@@ -217,22 +264,44 @@ pub fn list(out: &mut Out, r: &Registry<HttpRpc>, page: &Page) {
     out.json(json!({
         "registry": r.registry().to_base58(),
         "total": page.total,
-        "items": page.items.iter().map(j::listed).collect::<Vec<_>>(),
+        "items": page.items.iter().zip(&fs).map(|(i, f)| listed_json(i, f.as_ref())).collect::<Vec<_>>(),
         "next": page.next.map(|n| n.to_base58()),
     }));
+    Ok(())
 }
 
-pub fn search(out: &mut Out, r: &Registry<HttpRpc>, title: &str, items: &[Listed], proven: bool) {
-    out.text(&format!("search {title}: {} found", items.len()));
-    for i in items {
-        let header = i.entry.as_ref().and_then(|e| r.header(&e.program).ok().flatten());
-        out.text(&format!("  {}", line(i, header.as_ref())));
+/// `exact`: for a name search, the query; exact matches stay first, and within each group
+/// entries of deployed programs come before NO-PROGRAM ones.
+pub fn search(out: &mut Out, r: &Registry<HttpRpc>, title: &str, found: &Found, proven: bool, exact: Option<&str>) -> Result<()> {
+    let fs = statuses(r, &found.items)?;
+    let mut rows: Vec<_> = found.items.iter().zip(fs).collect();
+    if let Some(q) = exact {
+        rows.sort_by_key(|(i, f)| (i.link.name != q, rank(i, f.as_ref())));
     }
-    out.json(json!({"query": title, "proven": proven, "items": items.iter().map(j::listed).collect::<Vec<_>>()}));
+    out.text(&format!("search {title}: {} found ({} entries examined)", rows.len(), found.scanned));
+    for (i, f) in &rows {
+        out.text(&format!("  {}", line(i, f.as_ref())));
+    }
+    if found.truncated {
+        out.text("  (the search stopped at its --scan bound; older entries were not examined: raise --scan to look further)");
+    }
+    out.json(json!({
+        "query": title,
+        "proven": proven,
+        "items": rows.iter().map(|(i, f)| listed_json(i, f.as_ref())).collect::<Vec<_>>(),
+        "scanned": found.scanned,
+        "truncated": found.truncated,
+    }));
+    Ok(())
 }
 
 pub fn receipt(out: &mut Out, r: &Receipt) {
     match (&r.hash, r.block) {
+        (Some(h), None) => out.text(&format!(
+            "{}: applied (tx {h}), confirmed by reading the chain back; its block was not found in time, so the fee was not measured{}",
+            r.what,
+            r.entry.map_or_else(String::new, |e| format!("; entry {e}"))
+        )),
         (Some(h), Some(b)) => out.text(&format!(
             "{}: applied in block {b} (tx {h}); simulated {} cycles, gas limit {}, fee {}, {} bytes{}",
             r.what,
@@ -243,10 +312,12 @@ pub fn receipt(out: &mut Out, r: &Receipt) {
             r.entry.map_or_else(String::new, |e| format!("; entry {e}"))
         )),
         _ => out.text(&format!(
-            "{}: dry run, nothing sent; simulated {} cycles, gas limit would be {}",
+            "{}: dry run, nothing sent; simulated {} cycles, gas limit would be {}; the payer {} must hold about {} for the fee reserve",
             r.what,
             r.cycles.map_or_else(|| "refused".into(), |c| c.to_string()),
-            r.gas_limit
+            r.gas_limit,
+            r.payer,
+            r.reserve
         )),
     }
     out.json(r.json());

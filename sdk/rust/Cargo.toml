@@ -31,7 +31,7 @@ wallet = { workspace = true, optional = true }
 program_loader_core = { workspace = true, optional = true }
 clock_core = { workspace = true, optional = true }
 risc0-binfmt = { workspace = true, optional = true }
-tokio = { version = "1.50", features = ["macros", "rt-multi-thread"], optional = true }
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread", "time"], optional = true }
 sequencer_service_rpc = { workspace = true, optional = true }
 
 [dev-dependencies]

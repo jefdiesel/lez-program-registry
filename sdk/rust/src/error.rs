@@ -35,8 +35,11 @@ pub enum Error {
     Funds(String),
     /// The sequencer did not accept the transaction.
     Rejected(String),
-    /// The transaction was not included in time.
-    NotIncluded(String),
+    /// The sequencer accepted the transaction, but it could not be confirmed in time. `hash` is
+    /// the transaction; `detail` says whether its nonce was used (it may have applied, or another
+    /// transaction from the same signer took the slot: check before retrying) or not (nothing
+    /// applied: safe to retry).
+    NotIncluded { hash: String, detail: String },
     /// Included but reverted: its fee was charged and nothing else applied.
     Reverted { hash: String, block: u64, fee: u128 },
     /// Applied, but reading the chain back did not show the expected change.
@@ -65,7 +68,7 @@ impl std::fmt::Display for Error {
             Self::Refused(m) => write!(f, "simulation refused the transaction (nothing was sent): {m}"),
             Self::Funds(m) => write!(f, "{m}"),
             Self::Rejected(m) => write!(f, "the sequencer did not accept the transaction: {m}"),
-            Self::NotIncluded(m) => write!(f, "the transaction was not included: {m}"),
+            Self::NotIncluded { hash, detail } => write!(f, "transaction {hash} was not confirmed: {detail}"),
             Self::Reverted { hash, block, fee } => {
                 write!(f, "{hash} was included in block {block} but REVERTED: fee {fee} charged, nothing else applied")
             }
@@ -76,5 +79,16 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    /// The transaction hash, for errors about a transaction that was sent.
+    #[must_use]
+    pub fn tx_hash(&self) -> Option<&str> {
+        match self {
+            Self::NotIncluded { hash, .. } | Self::Reverted { hash, .. } => Some(hash),
+            _ => None,
+        }
+    }
+}
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

@@ -28,7 +28,6 @@ pub fn hex32(s: &str, what: &str) -> Result<[u8; 32]> {
 }
 
 fn content(cid_text: &str, sha: Option<&str>, size: Option<u32>, file: Option<&std::path::Path>, what: &str) -> Result<ContentRef> {
-    let cid = cid::parse(cid_text).map_err(|e| anyhow!("{what} CID: {e}"))?;
     let (sha256, size) = match (file, sha, size) {
         (Some(f), None, None) => {
             let b = std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?;
@@ -37,6 +36,19 @@ fn content(cid_text: &str, sha: Option<&str>, size: Option<u32>, file: Option<&s
         (None, Some(s), Some(n)) => (hex32(s, &format!("{what} sha256"))?, n),
         _ => bail!("{what}: give the content's sha256 and size (--{what}-sha256 and --{what}-size), or --{what}-file to hash a local copy"),
     };
+    // `--idl-cid raw` (or `--archive-cid raw`): the raw-codec sha2-256 CID of the content.
+    let cid = if cid_text == "raw" {
+        let mut c = vec![0x01, 0x55, 0x12, 0x20];
+        c.extend_from_slice(&sha256);
+        c
+    } else {
+        cid::parse(cid_text).map_err(|e| anyhow!("{what} CID: {e}"))?
+    };
+    if let Some(named) = cid::raw_sha256(&cid)
+        && named != sha256
+    {
+        bail!("the {what} CID is a raw sha2-256 CID of other bytes: it names sha256 {}, but the content's is {}", hex::encode(named), hex::encode(sha256));
+    }
     Ok(ContentRef { cid, sha256, size, peer_hint: None })
 }
 
@@ -56,7 +68,8 @@ pub struct EntryArgs {
     /// A tag ([a-z0-9-]); repeat for more (at most 8).
     #[arg(long = "tag")]
     pub tags: Vec<String>,
-    /// IDL on Logos Storage: its CID (z…, b… or 0x…).
+    /// IDL on Logos Storage: its CID (z…, b… or 0x…). `raw` uses the raw-codec sha2-256 CID
+    /// of the IDL bytes (anyone can recompute it), until Storage upload lands (M3).
     #[arg(long)]
     pub idl_cid: Option<String>,
     /// IDL sha256 (hex).
@@ -125,7 +138,7 @@ pub struct BuildArgs {
 }
 
 impl BuildArgs {
-    fn any(&self) -> bool {
+    pub fn any(&self) -> bool {
         self.image_digest.is_some()
             || self.image_tag.is_some()
             || self.risc0_build.is_some()
@@ -205,9 +218,28 @@ impl EntryArgs {
     /// The fields of a new entry. `elf`: for deploy, whose image id is the claim.
     pub fn input(&self, elf: Option<&[u8]>) -> Result<EntryInput> {
         let _ = elf;
-        let name = self.name.clone().ok_or_else(|| anyhow!("--name is required"))?;
-        let version = self.version.clone().ok_or_else(|| anyhow!("--version is required"))?;
-        let idl_cid = self.idl_cid.as_deref().ok_or_else(|| anyhow!("--idl-cid is required (the IDL's Logos Storage CID; Storage upload comes with M3)"))?;
+        // Every missing required flag at once.
+        let mut missing = vec![];
+        if self.name.is_none() {
+            missing.push("--name");
+        }
+        if self.version.is_none() {
+            missing.push("--version");
+        }
+        if self.idl_cid.is_none() {
+            missing.push("--idl-cid (the IDL's Storage CID, or `raw` with --idl-file; Storage upload comes with M3)");
+        }
+        if self.repo.is_none() && self.archive_cid.is_none() {
+            missing.push("the source: --repo and --commit, and/or --archive-cid");
+        } else if self.repo.is_some() && self.commit.is_none() {
+            missing.push("--commit (with --repo)");
+        }
+        if !missing.is_empty() {
+            bail!("missing: {}", missing.join("; "));
+        }
+        let name = self.name.clone().unwrap_or_default();
+        let version = self.version.clone().unwrap_or_default();
+        let idl_cid = self.idl_cid.as_deref().unwrap_or_default();
         let idl = content(idl_cid, self.idl_sha256.as_deref(), self.idl_size, self.idl_file.as_deref(), "idl")?;
         let archive = self.archive()?;
         let repo = self.repo.clone().unwrap_or_default();

@@ -219,13 +219,13 @@ fn links_are_cached_and_persist() {
     r.list(None, 10).unwrap();
     c.rpc.reset_reads();
     r.list(None, 10).unwrap();
-    assert_eq!(c.rpc.reads(), 6, "head + 5 entries; every link from the cache");
+    assert_eq!(c.rpc.reads(), 2, "head + one batch of 5 entries; every link from the cache");
     r.cache().save().unwrap();
     let reloaded = LinkCache::at(path);
     assert_eq!(reloaded.len(), 5);
     let r2 = Registry::with_cache(&c.rpc, REG, reloaded);
     c.rpc.reset_reads();
-    assert_eq!(r2.scan_links(10).unwrap().len(), 5);
+    assert_eq!(r2.scan_links(10).unwrap().0.len(), 5);
     assert_eq!(c.rpc.reads(), 1, "a scan from a warm disk cache reads only the head");
     std::fs::remove_dir_all(dir).ok();
 }
@@ -240,13 +240,14 @@ fn search_by_name_label_and_tag() {
     let r = c.registry();
     let exact = r.by_name("token", 10).unwrap();
     assert_eq!(exact.len(), 2, "both entries named exactly 'token'");
-    let s = r.search_name("TOKEN", 10, 100).unwrap();
+    let s = r.search_name("TOKEN", 10, 100).unwrap().items;
     assert_eq!(s.iter().map(|i| i.link.name.as_str()).collect::<Vec<_>>(), vec!["token", "token", "token-v2"], "exact first, then substring");
-    assert_eq!(r.search_name("tok", 1, 100).unwrap().len(), 1, "limit");
+    assert_eq!(r.search_name("tok", 1, 100).unwrap().items.len(), 1, "limit");
     assert!(r.by_name(&"x".repeat(40), 10).unwrap().is_empty(), "a name too long to be a seed has no list");
-    assert_eq!(r.search_label("LABEL OF AMM", 10, 100).unwrap().len(), 1);
-    assert_eq!(r.search_tag("token", 10, 100).unwrap().len(), 3);
-    assert!(r.search_tag("nope", 10, 100).unwrap().is_empty());
+    assert_eq!(r.search_label("LABEL OF AMM", 10, 100).unwrap().items.len(), 1);
+    let t = r.search_tag("token", 10, 100).unwrap();
+    assert_eq!((t.items.len(), t.scanned, t.truncated), (3, 4, false));
+    assert!(r.search_tag("nope", 10, 100).unwrap().items.is_empty());
 }
 
 #[test]
@@ -258,11 +259,14 @@ fn by_author_follows_transfers() {
     let e3 = c.deployer(acct(3), b, "three", 3);
     c.transfer(e1, b);
     let r = c.registry();
-    let held_by_a: Vec<_> = r.by_author(&a, 10).unwrap().into_iter().map(|i| i.address).collect();
+    let held_by_a: Vec<_> = r.by_author(&a, 10, 100).unwrap().items.into_iter().map(|i| i.address).collect();
     assert_eq!(held_by_a, vec![e2], "e1 left A's holdings");
-    let held_by_b: Vec<_> = r.by_author(&b, 10).unwrap().into_iter().map(|i| i.address).collect();
+    let held_by_b: Vec<_> = r.by_author(&b, 10, 100).unwrap().items.into_iter().map(|i| i.address).collect();
     assert_eq!(held_by_b, vec![e1, e3], "e1 reached B by transfer (author node), then B's own e3");
-    assert_eq!(r.by_author(&b, 1).unwrap().len(), 1);
+    assert_eq!(r.by_author(&b, 1, 100).unwrap().items.len(), 1);
+    // The walk is bounded: A's list has e2, e1 (transferred away); scanning 1 place stops early.
+    let f = r.by_author(&a, 10, 1).unwrap();
+    assert_eq!((f.items.len(), f.scanned, f.truncated), (1, 1, true));
 }
 
 #[test]
@@ -272,9 +276,9 @@ fn bad_data_and_transport_failures_are_typed() {
     // A garbage entry.
     c.rpc.set(acct(9), REG, vec![1, 2, 3]);
     assert!(matches!(c.registry().entry(&acct(9)), Err(Error::BadRecord { what: "entry", .. })));
-    // A garbage header.
+    // A garbage entry with a garbage header is still a bad entry.
     c.rpc.set(acct(9), LOADER, vec![0; 10]);
-    assert!(matches!(c.registry().resolve(&acct(9)), Err(Error::BadRecord { .. })));
+    assert!(matches!(c.registry().resolve(&acct(9)), Err(Error::BadRecord { what: "entry", .. })));
     // A missing link.
     c.rpc.set(addr::link(&REG, &x), REG, vec![]);
     assert_eq!(c.registry().list(None, 5).unwrap_err(), Error::MissingLink(x));
@@ -283,8 +287,11 @@ fn bad_data_and_transport_failures_are_typed() {
     let x = c.deployer(acct(1), acct(2), "p", 1);
     let mut l: Link = borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, &x), &REG).unwrap()).unwrap();
     l.prev_global = Some(x);
+    l.prev_name = Some(x);
     c.rpc.put(addr::link(&REG, &x), REG, &l);
-    assert_eq!(c.registry().list(None, 5).unwrap_err(), Error::Cycle(x));
+    // On the global list the sequence numbers already show it (seq 0 cannot have a prev).
+    assert_eq!(c.registry().list(None, 5).unwrap_err(), Error::BadRecord { at: x, what: "link order" });
+    assert_eq!(c.registry().by_name("p", 5).unwrap_err(), Error::Cycle(x));
     // The sequencer is down.
     *c.rpc.fail.lock().unwrap() = Some("connection refused".into());
     assert!(matches!(c.registry().resolve(&x), Err(Error::Transport { .. })));
@@ -335,4 +342,103 @@ fn json_views_are_stable() {
     assert_eq!(v["freshness"]["status"], "fresh");
     assert_eq!(v["deployer_entry"]["author_label_proven"], false);
     assert!(v["deployer_entry"]["idl"]["cid"].as_str().unwrap().starts_with('z'));
+}
+
+/// Review fix (robustness 5): loader state that is not a program header (a code segment, a
+/// garbage write) means "no program", never an error that aborts a listing.
+#[test]
+fn non_header_loader_state_is_no_program_not_an_error() {
+    let mut c = Chain::new();
+    let (seg, q, a) = (acct(30), acct(31), acct(32));
+    c.deployer(acct(1), a, "smoke-forwarder", 1);
+    // A segment account: loader state of the wrong shape.
+    c.rpc.set(seg, LOADER, vec![7; 300]);
+    c.third_party(seg, q, "smoke-forwarder", 0);
+    let r = c.registry();
+    assert_eq!(r.header(&seg).unwrap(), None);
+    let res = r.resolve(&seg).unwrap();
+    assert!(res.header.is_none() && res.deployer.is_none());
+    let named = r.by_name("smoke-forwarder", 10).unwrap();
+    assert_eq!(named.len(), 2);
+    let programs: Vec<_> = named.iter().map(|i| i.entry.as_ref().unwrap().program).collect();
+    let headers = r.headers(&programs).unwrap();
+    assert_eq!(headers.iter().filter(|h| h.is_none()).count(), 1, "the segment target is no program; listing still works");
+    let loc = r.locate(&addr::third_party_entry(&REG, &seg, &q)).unwrap().unwrap();
+    assert_eq!(loc.freshness, Freshness::NoProgram);
+}
+
+/// Review fix (robustness 6): a cached link that no longer matches the chain is caught by the
+/// global sequence check, the cache is dropped, and the full list comes back.
+#[test]
+fn a_stale_link_cache_heals_itself() {
+    let mut c = Chain::new();
+    let ids: Vec<AccountId> = (1..=6).map(|i| c.deployer(acct(i), acct(100 + i), &format!("tok{i}"), i)).collect();
+    let dir = std::env::temp_dir().join(format!("lezreg-sdk-stale-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("links.bin");
+    // Poison: the cached link of the 4th entry (seq 3) claims it is the oldest.
+    let mut poisoned: Vec<(AccountId, Link)> = Vec::new();
+    for id in &ids {
+        let mut l: Link = borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, id), &REG).unwrap()).unwrap();
+        if l.seq == 3 {
+            l.prev_global = None;
+        }
+        poisoned.push((*id, l));
+    }
+    std::fs::write(&path, borsh::to_vec(&poisoned).unwrap()).unwrap();
+    let r = Registry::with_cache(&c.rpc, REG, LinkCache::at(path));
+    let page = r.list(None, 100).unwrap();
+    assert_eq!((page.total, page.items.len()), (6, 6), "no silent truncation");
+    assert_eq!(r.search_tag("token", 100, 100).unwrap().items.len(), 6);
+    // Paging from a stale `after` link heals too.
+    let (links, _) = r.scan_links(100).unwrap();
+    assert_eq!(links.len(), 6);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// Review fix (robustness 8): entries are read in JSON-RPC batches, not one call each, and a
+/// scan that stops at its bound says so.
+#[test]
+fn searches_batch_entry_reads_and_report_truncation() {
+    let mut c = Chain::new();
+    for i in 1..=8 {
+        c.deployer(acct(i), acct(100 + i), &format!("tok{i}"), i);
+    }
+    let r = c.registry();
+    r.list(None, 100).unwrap();
+    c.rpc.reset_reads();
+    let f = r.search_label("label of tok", 100, 100).unwrap();
+    assert_eq!(f.items.len(), 8);
+    assert_eq!(c.rpc.reads(), 2, "global head + one batch of 8 entries (links cached)");
+    let f = r.search_tag("token", 100, 3).unwrap();
+    assert_eq!((f.items.len(), f.scanned, f.truncated), (3, 3, true));
+    let f = r.search_name("tok", 100, 5).unwrap();
+    assert_eq!((f.items.len(), f.scanned, f.truncated), (5, 5, true));
+    let f = r.search_name("tok", 100, 100).unwrap();
+    assert!(!f.truncated);
+}
+
+/// DESIGN §2.5 fallback: a sequencer without `getAccount` is asked with `getAccountView`s.
+#[test]
+fn resolve_falls_back_to_get_account_view() {
+    let mut c = Chain::new();
+    let x = acct(1);
+    c.deployer(x, acct(2), "token", 5);
+    *c.rpc.no_get_account.lock().unwrap() = true;
+    let res = c.registry().resolve(&x).unwrap();
+    assert_eq!(res.deployer.unwrap().name, "token");
+    assert_eq!(res.header.map(|h| h.image_id), Some([5; 32]));
+}
+
+#[test]
+fn counts_for_names_and_third_parties() {
+    let mut c = Chain::new();
+    let x = acct(1);
+    c.deployer(x, acct(2), "token", 5);
+    c.third_party(x, acct(3), "token", 5);
+    c.third_party(x, acct(4), "token", 5);
+    let r = c.registry();
+    assert_eq!(r.name_count("token").unwrap(), 3);
+    assert_eq!(r.third_party_count(&x).unwrap(), 2);
+    assert_eq!(r.name_count("Not A Name").unwrap(), 0);
 }

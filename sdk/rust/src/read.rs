@@ -187,6 +187,12 @@ impl LinkCache {
         *self.dirty.lock().expect("lock") = true;
     }
 
+    /// Forgets every cached link (they no longer match the chain, e.g. after a chain reset).
+    pub fn clear(&self) {
+        self.links.lock().expect("lock").clear();
+        *self.dirty.lock().expect("lock") = true;
+    }
+
     /// Writes the cache to its file, if it has one and changed.
     pub fn save(&self) -> std::io::Result<()> {
         let Some(path) = &self.path else { return Ok(()) };
@@ -205,6 +211,17 @@ impl LinkCache {
         *dirty = false;
         Ok(())
     }
+}
+
+/// Search results, with how much of the registry was looked at.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Found {
+    pub items: Vec<Listed>,
+    /// Entries examined.
+    pub scanned: usize,
+    /// The search stopped at its scan bound with older entries left unexamined, so a match may
+    /// be missing. (Reaching `limit` is not truncation; ask for a larger limit for more.)
+    pub truncated: bool,
 }
 
 /// Read-only registry client.
@@ -249,22 +266,33 @@ impl<R: Rpc> Registry<R> {
         self.rpc.get_actor_state(account, &self.reg)
     }
 
-    /// The program header at `program`, if one is deployed.
+    /// The program header at `program`, if one is deployed. Loader state that is not a header
+    /// (a code segment, say) means no program there: `None`, not an error, so one odd entry
+    /// cannot break a listing.
     pub fn header(&self, program: &AccountId) -> Result<Option<Header>> {
-        let s = self.rpc.get_actor_state(program, &LOADER)?;
-        if s.is_empty() {
-            return Ok(None);
-        }
-        Header::decode(&s).map(Some).ok_or(Error::BadRecord { at: *program, what: "program header" })
+        Ok(Header::decode(&self.rpc.get_actor_state(program, &LOADER)?))
+    }
+
+    /// Program headers for many accounts, batched; `None` where there is no program.
+    pub fn headers(&self, programs: &[AccountId]) -> Result<Vec<Option<Header>>> {
+        let actors: Vec<_> = programs.iter().map(|p| (*p, LOADER)).collect();
+        Ok(self.rpc.get_actor_states(&actors)?.iter().map(|s| Header::decode(s)).collect())
     }
 
     /// **One `getAccount(program)`**: the deployer entry at `(program, REG)` and the loader
-    /// header together (DESIGN §3, client procedure steps 1–3).
+    /// header together (DESIGN §3, client procedure steps 1–3). A sequencer that refuses
+    /// `getAccount` is asked with two `getAccountView`s instead (DESIGN §2.5).
     pub fn resolve(&self, program: &AccountId) -> Result<Resolved> {
-        let Some(account) = self.rpc.get_account(program)? else {
-            return Ok(Resolved { program: *program, deployer: None, header: None });
+        let (entry_state, loader_state) = match self.rpc.get_account(program) {
+            Ok(None) => return Ok(Resolved { program: *program, deployer: None, header: None }),
+            Ok(Some(account)) => (account.state(&self.reg).to_vec(), account.state(&LOADER).to_vec()),
+            Err(Error::Rpc { .. }) => {
+                let mut s = self.rpc.get_actor_states(&[(*program, self.reg), (*program, LOADER)])?.into_iter();
+                (s.next().unwrap_or_default(), s.next().unwrap_or_default())
+            }
+            Err(e) => return Err(e),
         };
-        let deployer = match account.state(&self.reg) {
+        let deployer = match entry_state.as_slice() {
             [] => None,
             bytes => {
                 let e: Entry = decode(program, bytes, "entry")?;
@@ -272,11 +300,7 @@ impl<R: Rpc> Registry<R> {
                 (Kind::check(&self.reg, program, &e) == Some(Kind::Deployer)).then_some(e)
             }
         };
-        let header = match account.state(&LOADER) {
-            [] => None,
-            bytes => Some(Header::decode(bytes).ok_or(Error::BadRecord { at: *program, what: "program header" })?),
-        };
-        Ok(Resolved { program: *program, deployer, header })
+        Ok(Resolved { program: *program, deployer, header: Header::decode(&loader_state) })
     }
 
     /// The entry at `address`, if any.
@@ -315,6 +339,19 @@ impl<R: Rpc> Registry<R> {
         Ok(self.head(&addr::global_head(&self.reg))?.count)
     }
 
+    /// Entries ever registered under `name`.
+    pub fn name_count(&self, name: &str) -> Result<u64> {
+        if lezreg_types::pda::try_seed_str(name).is_none() {
+            return Ok(0);
+        }
+        Ok(self.head(&addr::name_head(&self.reg, name))?.count)
+    }
+
+    /// Third-party entries ever made for `program` (DESIGN §7.1 `third_party_count`).
+    pub fn third_party_count(&self, program: &AccountId) -> Result<u64> {
+        Ok(self.head(&addr::program_head(&self.reg, program))?.count)
+    }
+
     /// `entry`'s `Link` (cached forever once read).
     pub fn link(&self, entry: &AccountId) -> Result<Link> {
         if let Some(l) = self.cache.get(entry) {
@@ -338,23 +375,55 @@ impl<R: Rpc> Registry<R> {
         }
     }
 
-    fn listed(&self, address: AccountId, link: Link, with_entry: bool) -> Result<Listed> {
-        let entry = if with_entry { self.entry(&address)? } else { None };
-        let kind = entry.as_ref().and_then(|e| Kind::check(&self.reg, &address, e));
-        Ok(Listed { address, link, entry, kind })
+    /// Lists items for `(address, link)` pairs, reading their entries in batches.
+    fn listed_many(&self, links: Vec<(AccountId, Link)>) -> Result<Vec<Listed>> {
+        let actors: Vec<_> = links.iter().map(|(a, _)| (*a, self.reg)).collect();
+        let states = self.rpc.get_actor_states(&actors)?;
+        links
+            .into_iter()
+            .zip(states)
+            .map(|((address, link), s)| {
+                let entry = if s.is_empty() { None } else { Some(decode::<Entry>(&address, &s, "entry")?) };
+                let kind = entry.as_ref().and_then(|e| Kind::check(&self.reg, &address, e));
+                Ok(Listed { address, link, entry, kind })
+            })
+            .collect()
     }
 
-    /// Walks a list from `start` (inclusive), following `prev`, until `limit` items.
-    fn walk(
+    /// Walks a list's links from `start` (inclusive), following `prev`, until `limit` links.
+    /// Returns them and the next unvisited address.
+    ///
+    /// On the global list (`global_from = Some(seq of start)`), every link's `seq` is checked
+    /// to fall by exactly one and the walk to end at 0. A mismatch means the cached links no
+    /// longer describe this chain (a reset chain where the same registry id was redeployed):
+    /// the cache is dropped and the walk read again from the chain.
+    fn walk_links(
         &self,
         start: Option<AccountId>,
         limit: usize,
-        with_entries: bool,
+        global_from: Option<u64>,
+        prev: impl Fn(&Link) -> Option<AccountId> + Copy,
+    ) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>)> {
+        match self.walk_once(start, limit, global_from, prev) {
+            Err(Error::BadRecord { what: "link order", .. }) if !self.cache.is_empty() => {
+                self.cache.clear();
+                self.walk_once(start, limit, global_from, prev)
+            }
+            r => r,
+        }
+    }
+
+    fn walk_once(
+        &self,
+        start: Option<AccountId>,
+        limit: usize,
+        global_from: Option<u64>,
         prev: impl Fn(&Link) -> Option<AccountId>,
-    ) -> Result<(Vec<Listed>, Option<AccountId>)> {
-        let mut out: Vec<Listed> = Vec::new();
+    ) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>)> {
+        let mut out = Vec::new();
         let mut seen = HashSet::new();
         let mut next = start;
+        let mut expect = global_from;
         while let Some(e) = next {
             if out.len() >= limit {
                 break;
@@ -364,29 +433,56 @@ impl<R: Rpc> Registry<R> {
             }
             let l = self.link(&e)?;
             next = prev(&l);
-            out.push(self.listed(e, l, with_entries)?);
+            if let Some(want) = expect {
+                if l.seq != want || (next.is_none() && l.seq != 0) || (next.is_some() && l.seq == 0) {
+                    return Err(Error::BadRecord { at: e, what: "link order" });
+                }
+                expect = want.checked_sub(1);
+            }
+            out.push((e, l));
         }
         Ok((out, next))
     }
 
-    /// One page of the global list, newest first, starting after `after` (or at the newest
-    /// entry). Reads one `Link` per item (cached after the first time) plus each entry.
-    pub fn list(&self, after: Option<&AccountId>, limit: usize) -> Result<Page> {
-        let head = self.head(&addr::global_head(&self.reg))?;
-        let start = match after {
-            None => head.newest,
-            Some(a) => self.link(a)?.prev_global,
+    /// Walks the global list from the newest entry (or from just after `after`).
+    fn walk_global(&self, after: Option<&AccountId>, limit: usize) -> Result<(Vec<(AccountId, Link)>, Option<AccountId>, u64)> {
+        let run = || -> Result<_> {
+            let head = self.head(&addr::global_head(&self.reg))?;
+            let (start, from) = match after {
+                None => (head.newest, head.count.checked_sub(1)),
+                Some(a) => {
+                    let l = self.link(a)?;
+                    (l.prev_global, l.seq.checked_sub(1))
+                }
+            };
+            let (links, rest) = self.walk_links(start, limit, from.or(Some(0)), |l| l.prev_global)?;
+            Ok((links, rest, head.count))
         };
-        let (items, rest) = self.walk(start, limit, true, |l| l.prev_global)?;
-        let next = rest.and_then(|_| items.last().map(|i| i.address));
-        Ok(Page { items, next, total: head.count })
+        match run() {
+            // The `after` link itself may be the stale one.
+            Err(Error::BadRecord { what: "link order", .. }) if after.is_some() => {
+                self.cache.clear();
+                run()
+            }
+            r => r,
+        }
     }
 
-    /// Links of the global list, newest first, up to `scan` (no entry reads).
-    pub fn scan_links(&self, scan: usize) -> Result<Vec<(AccountId, Link)>> {
-        let head = self.head(&addr::global_head(&self.reg))?;
-        let (items, _) = self.walk(head.newest, scan, false, |l| l.prev_global)?;
-        Ok(items.into_iter().map(|i| (i.address, i.link)).collect())
+    /// One page of the global list, newest first, starting after `after` (or at the newest
+    /// entry). Reads one `Link` per item (cached after the first time), then the entries in
+    /// one batch.
+    pub fn list(&self, after: Option<&AccountId>, limit: usize) -> Result<Page> {
+        let (links, rest, total) = self.walk_global(after, limit)?;
+        let items = self.listed_many(links)?;
+        let next = rest.and_then(|_| items.last().map(|i| i.address));
+        Ok(Page { items, next, total })
+    }
+
+    /// Links of the global list, newest first, up to `scan` (no entry reads), and whether
+    /// older entries were left unscanned.
+    pub fn scan_links(&self, scan: usize) -> Result<(Vec<(AccountId, Link)>, bool)> {
+        let (links, rest, _) = self.walk_global(None, scan)?;
+        Ok((links, rest.is_some()))
     }
 
     /// Entries named exactly `name`, newest first (the name's own list).
@@ -395,29 +491,32 @@ impl<R: Rpc> Registry<R> {
             return Ok(Vec::new());
         }
         let head = self.head(&addr::name_head(&self.reg, name))?;
-        Ok(self.walk(head.newest, limit, true, |l| l.prev_name)?.0)
+        self.listed_many(self.walk_links(head.newest, limit, None, |l| l.prev_name)?.0)
     }
 
     /// Third-party entries for `program`, newest first.
     pub fn third_party(&self, program: &AccountId, limit: usize) -> Result<Vec<Listed>> {
         let head = self.head(&addr::program_head(&self.reg, program))?;
-        Ok(self.walk(head.newest, limit, true, |l| l.prev_program)?.0)
+        self.listed_many(self.walk_links(head.newest, limit, None, |l| l.prev_program)?.0)
     }
 
     /// Entries `author` holds now (registered by them or transferred to them, and not
-    /// transferred away), newest first. Proven: `author` co-signed or accepted each one.
-    pub fn by_author(&self, author: &AccountId, limit: usize) -> Result<Vec<Listed>> {
+    /// transferred away), newest first, looking at most `scan` places of the author's list.
+    /// Proven: `author` co-signed or accepted each one.
+    pub fn by_author(&self, author: &AccountId, limit: usize, scan: usize) -> Result<Found> {
         let head = self.head(&addr::author_head(&self.reg, author))?;
         let mut out = Vec::new();
         let mut seen = HashSet::new();
         let mut next = head.newest;
+        let mut scanned = 0;
         while let Some(e) = next {
-            if out.len() >= limit {
+            if out.len() >= limit || scanned >= scan {
                 break;
             }
             if !seen.insert(e) {
                 return Err(Error::Cycle(e));
             }
+            scanned += 1;
             let l = self.link(&e)?;
             next = if l.author == *author {
                 l.prev_author
@@ -429,57 +528,59 @@ impl<R: Rpc> Registry<R> {
                     b => decode::<AuthorNode>(&at, b, "author node")?.prev,
                 }
             };
-            let item = self.listed(e, l, true)?;
+            let item = self.listed_many(vec![(e, l)])?.remove(0);
             if item.entry.as_ref().is_some_and(|en| en.author == *author) {
                 out.push(item);
             }
         }
-        Ok(out)
+        let truncated = next.is_some() && out.len() < limit;
+        Ok(Found { items: out, scanned, truncated })
     }
 
-    /// Name search: exact matches from the name's list first, then substring matches over the
-    /// newest `scan` links of the global list (names are in the `Link`, so this reads no
-    /// entries until a match).
-    pub fn search_name(&self, q: &str, limit: usize, scan: usize) -> Result<Vec<Listed>> {
+    /// Name search (case-insensitive): exact matches from the name's list first, then
+    /// substring matches over the newest `scan` links of the global list (names are in the
+    /// `Link`, so this reads no entries until a match).
+    pub fn search_name(&self, q: &str, limit: usize, scan: usize) -> Result<Found> {
         let q = q.to_ascii_lowercase();
         let mut out = self.by_name(&q, limit)?;
         let mut have: HashSet<AccountId> = out.iter().map(|i| i.address).collect();
+        let (mut scanned, mut truncated) = (0, false);
         if out.len() < limit {
-            for (address, link) in self.scan_links(scan)? {
-                if out.len() >= limit {
-                    break;
-                }
-                if link.name != q && link.name.contains(&q) && have.insert(address) {
-                    out.push(self.listed(address, link, true)?);
-                }
-            }
+            let (links, rest) = self.scan_links(scan)?;
+            scanned = links.len();
+            truncated = rest;
+            let matches: Vec<_> = links.into_iter().filter(|(a, l)| l.name != q && l.name.contains(&q) && have.insert(*a)).take(limit - out.len()).collect();
+            out.extend(self.listed_many(matches)?);
         }
-        Ok(out)
+        Ok(Found { items: out, scanned, truncated })
     }
 
     /// Entries whose free-text `author_label` contains `q` (case-insensitive). **Unproven**:
     /// anyone can write any label.
-    pub fn search_label(&self, q: &str, limit: usize, scan: usize) -> Result<Vec<Listed>> {
+    pub fn search_label(&self, q: &str, limit: usize, scan: usize) -> Result<Found> {
         let q = q.to_lowercase();
         self.filter_scan(limit, scan, |e| e.author_label.to_lowercase().contains(&q))
     }
 
     /// Entries carrying tag `tag`.
-    pub fn search_tag(&self, tag: &str, limit: usize, scan: usize) -> Result<Vec<Listed>> {
+    pub fn search_tag(&self, tag: &str, limit: usize, scan: usize) -> Result<Found> {
         self.filter_scan(limit, scan, |e| e.tags.iter().any(|t| t == tag))
     }
 
-    fn filter_scan(&self, limit: usize, scan: usize, keep: impl Fn(&Entry) -> bool) -> Result<Vec<Listed>> {
+    /// The newest `scan` entries, read in batches, kept where `keep` holds, up to `limit`.
+    fn filter_scan(&self, limit: usize, scan: usize, keep: impl Fn(&Entry) -> bool) -> Result<Found> {
+        let (links, mut truncated) = self.scan_links(scan)?;
         let mut out = Vec::new();
-        for (address, link) in self.scan_links(scan)? {
+        let mut scanned = 0;
+        for chunk in links.chunks(crate::rpc::BATCH) {
             if out.len() >= limit {
+                truncated = false;
                 break;
             }
-            let item = self.listed(address, link, true)?;
-            if item.entry.as_ref().is_some_and(&keep) {
-                out.push(item);
-            }
+            scanned += chunk.len();
+            out.extend(self.listed_many(chunk.to_vec())?.into_iter().filter(|i| i.entry.as_ref().is_some_and(&keep)));
         }
-        Ok(out)
+        out.truncate(limit);
+        Ok(Found { items: out, scanned, truncated })
     }
 }

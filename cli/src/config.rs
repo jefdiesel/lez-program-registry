@@ -57,7 +57,7 @@ fn load() -> Result<Value> {
     }
 }
 
-fn parse_registry(s: &str) -> Result<AccountId> {
+pub fn parse_registry(s: &str) -> Result<AccountId> {
     let s = s.strip_prefix("Public/").unwrap_or(s);
     AccountId::from_base58(s).ok_or_else(|| anyhow!("'{s}' is not an account id"))
 }
