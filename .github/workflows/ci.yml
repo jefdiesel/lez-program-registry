@@ -26,6 +26,8 @@ jobs:
         run: cargo test -p lezreg-types -p lezreg-program
       - name: Engine tests (real guest on the rc1 state machine)
         run: cargo test --release -p lezreg-engine-test -- --nocapture --test-threads 1
+      - name: SDK tests (mocked sequencer; the e2e test skips without LEZREG_E2E_RPC) and CLI build
+        run: cargo test --release -p lezreg-sdk && cargo build --release -p lezreg
 
   idl:
     runs-on: ubuntu-24.04

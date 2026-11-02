@@ -12,6 +12,8 @@ members = [
     "tools/engine-test/helper-methods/guest",
     "tools/idl-drift",
     "tools/smoke",
+    "sdk/rust",
+    "cli",
 ]
 # idl-check pins SPEL v0.7.0, which pins LEZ 0.2.5: it must never share a lock file with 0.4 crates.
 exclude = ["spikes", "tools/idl-check", "_deps"]
@@ -29,6 +31,7 @@ lee = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", ta
 program_loader_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
 wallet = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
 common = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
+clock_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1" }
 sequencer_service_rpc = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.4.0-rc1", features = ["client"] }
 risc0-zkvm = { version = "3.0.5", default-features = false, features = ["std"] }
 risc0-binfmt = "3.0.5"

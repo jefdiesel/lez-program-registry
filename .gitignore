@@ -4,3 +4,5 @@ _deps/
 /spikes/*/wallet/
 /smoke-out/
 .DS_Store
+/demo-out/
+/chain/.deploy-*.env

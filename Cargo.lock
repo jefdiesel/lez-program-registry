@@ -3713,6 +3713,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "lezreg"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "lee_core",
+ "lezreg-sdk",
+ "lezreg-types",
+ "libc",
+ "sequencer_service_rpc",
+ "serde_json",
+ "tokio",
+ "wallet",
+]
+
+[[package]]
 name = "lezreg-engine-test"
 version = "0.1.0"
 dependencies = [
@@ -3762,6 +3779,28 @@ dependencies = [
  "lee_core",
  "lezreg-types",
  "spel04-shim",
+]
+
+[[package]]
+name = "lezreg-sdk"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "bs58",
+ "clock_core",
+ "common",
+ "hex",
+ "lee",
+ "lee_core",
+ "lezreg-program",
+ "lezreg-types",
+ "program_loader_core",
+ "risc0-binfmt",
+ "sequencer_service_rpc",
+ "serde_json",
+ "tokio",
+ "ureq",
+ "wallet",
 ]
 
 [[package]]

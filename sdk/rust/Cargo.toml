@@ -1,0 +1,38 @@
+[package]
+name = "lezreg-sdk"
+description = "LEZ Program Registry SDK: resolve, list and search registry entries straight from a LEZ sequencer; with feature `tx`, build, simulate, sign and send registry transactions."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "lezreg_sdk"
+
+[features]
+default = ["tx"]
+# Writes: pulls in the LEZ wallet and engine (for simulation) and the registry program crate
+# (for `Instruction` and `actors_to_declare`). Reads never need it.
+tx = ["dep:lezreg-program", "dep:lee_core", "dep:lee", "dep:common", "dep:wallet", "dep:program_loader_core", "dep:clock_core", "dep:risc0-binfmt", "dep:tokio", "dep:sequencer_service_rpc"]
+
+[dependencies]
+lezreg-types = { path = "../../crates/types" }
+borsh.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+bs58 = { workspace = true, features = ["std"] }
+ureq = "3.4.2"
+
+lezreg-program = { path = "../../program", optional = true }
+lee_core = { workspace = true, optional = true }
+lee = { workspace = true, optional = true }
+common = { workspace = true, optional = true }
+wallet = { workspace = true, optional = true }
+program_loader_core = { workspace = true, optional = true }
+clock_core = { workspace = true, optional = true }
+risc0-binfmt = { workspace = true, optional = true }
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread"], optional = true }
+sequencer_service_rpc = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
