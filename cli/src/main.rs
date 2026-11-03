@@ -222,6 +222,11 @@ enum Command {
         #[command(flatten)]
         storage: storage_cmd::StorageOpts,
     },
+    /// Start a Logos Storage node in the background (for authors who don't run one).
+    Storage {
+        #[command(subcommand)]
+        cmd: StorageCmd,
+    },
     /// Pin every IDL in the registry (a self-hostable pinner). With --every, repeat forever.
     PinAll {
         /// Walk again every N seconds (at least 60).
@@ -268,6 +273,15 @@ enum SearchBy {
         tag: String,
         #[command(flatten)]
         o: SearchOpts,
+    },
+}
+
+#[derive(Subcommand)]
+enum StorageCmd {
+    /// Start the node, wait until it advertises an address, print the API to use.
+    Up {
+        #[command(flatten)]
+        o: storage_cmd::UpOpts,
     },
 }
 
@@ -706,6 +720,9 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 storage_cmd::push(out, &file, &storage)?;
             }
         },
+        Command::Storage {
+            cmd: StorageCmd::Up { o },
+        } => storage_cmd::up(out, &o)?,
         Command::Pin { target, storage } => {
             storage_cmd::pin(out, &reader(&net)?, &target, &storage)?
         }

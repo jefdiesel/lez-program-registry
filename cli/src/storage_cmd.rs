@@ -270,3 +270,119 @@ pub fn pin_all(
         std::thread::sleep(Duration::from_secs(secs.max(60)));
     }
 }
+
+/// Options for `lezreg storage up`.
+#[derive(clap::Args, Clone)]
+pub struct UpOpts {
+    /// The Logos Storage node binary (v0.5.3). Default: `logos-storage` on PATH. lezreg never
+    /// downloads it for you: get it from the logos-storage-nim releases and check its hash.
+    #[arg(long, env = "LEZREG_STORAGE_BIN")]
+    pub bin: Option<std::path::PathBuf>,
+    /// Data directory. Default: $XDG_DATA_HOME/lez-registry/storage (or ~/.local/share/…).
+    #[arg(long)]
+    pub data_dir: Option<std::path::PathBuf>,
+    #[arg(long, default_value_t = 8090)]
+    pub api_port: u16,
+    #[arg(long, default_value_t = 8070)]
+    pub listen_port: u16,
+    /// How long the node keeps blocks, in seconds. Default ten years. 0 is refused: Storage
+    /// v0.5.3 expires blocks at once with it, whatever its help says.
+    #[arg(long, default_value_t = 315_360_000)]
+    pub block_ttl: u64,
+    /// A Storage node to join (its SPR, `spr:…`). Default: the network's bootstrap nodes.
+    #[arg(long, conflicts_with = "no_bootstrap")]
+    pub bootstrap: Option<String>,
+    /// Join no network (a local test node). Storage then needs --nat.
+    #[arg(long, requires = "nat")]
+    pub no_bootstrap: bool,
+    /// Passed to the node as `--nat=…`, for example `extip:203.0.113.7` (or `extip:127.0.0.1`
+    /// for a local test node).
+    #[arg(long)]
+    pub nat: Option<String>,
+}
+
+/// `lezreg storage up`: start a Logos Storage node in the background for authors without one,
+/// wait until it advertises an address, and print the API to use (DESIGN §5.3).
+pub fn up(out: &mut Out, o: &UpOpts) -> Result<()> {
+    if o.block_ttl == 0 {
+        bail!("--block-ttl 0 makes Storage v0.5.3 expire blocks immediately; use a long TTL");
+    }
+    let bin = o
+        .bin
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("logos-storage"));
+    let data = match &o.data_dir {
+        Some(d) => d.clone(),
+        None => std::env::var_os("XDG_DATA_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+            })
+            .ok_or_else(|| anyhow!("no HOME; pass --data-dir"))?
+            .join("lez-registry/storage"),
+    };
+    std::fs::create_dir_all(&data)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let api = format!("http://127.0.0.1:{}/api/storage/v1", o.api_port);
+    if StorageClient::new(&api).info().is_ok() {
+        bail!(
+            "a Storage node already answers at {api}; use it (LEZREG_STORAGE_API={api}) or pick another --api-port"
+        );
+    }
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(data.join("node.log"))?;
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.arg(format!("--data-dir={}", data.display()))
+        .arg(format!("--api-port={}", o.api_port))
+        .arg(format!("--listen-port={}", o.listen_port))
+        .arg(format!("--block-ttl={}", o.block_ttl));
+    if let Some(spr) = &o.bootstrap {
+        cmd.arg(format!("--bootstrap-node={spr}"));
+    }
+    if o.no_bootstrap {
+        cmd.arg("--no-bootstrap-node");
+    }
+    if let Some(nat) = &o.nat {
+        cmd.arg(format!("--nat={nat}"));
+    }
+    let child = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log)
+        .spawn()
+        .map_err(|e| {
+            anyhow!(
+                "cannot start {}: {e} (pass --bin <path to logos-storage v0.5.3>)",
+                bin.display()
+            )
+        })?;
+    std::fs::write(data.join("node.pid"), child.id().to_string())?;
+    eprintln!(
+        "started {} (pid {}), waiting for it to advertise an address…",
+        bin.display(),
+        child.id()
+    );
+    let info = StorageClient::new(&api)
+        .wait_reachable(Duration::from_secs(120))
+        .map_err(|e| {
+            anyhow!(
+                "the node started but {e}; see {}",
+                data.join("node.log").display()
+            )
+        })?;
+    out.text(&format!(
+        "Storage node up\n  api      {api}\n  peer     {}\n  addrs    {}\n  data     {}\n  stop     kill $(cat {})\n\nexport LEZREG_STORAGE_API={api}",
+        info.id,
+        info.addrs.join(" "),
+        data.display(),
+        data.join("node.pid").display()
+    ));
+    out.json(json!({"api": api, "peer": info.id, "addrs": info.addrs, "data_dir": data.display().to_string(), "pid": child.id()}));
+    Ok(())
+}
