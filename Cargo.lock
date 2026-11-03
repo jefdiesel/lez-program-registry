@@ -3717,6 +3717,7 @@ name = "lezreg"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "bs58",
  "clap",
  "hex",
@@ -3798,9 +3799,11 @@ dependencies = [
  "lezreg-types",
  "program_loader_core",
  "risc0-binfmt",
+ "risc0-zkos-v1compat",
  "sequencer_service_rpc",
  "serde_json",
  "tokio",
+ "toml",
  "ureq",
  "wallet",
 ]

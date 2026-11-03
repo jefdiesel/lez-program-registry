@@ -226,17 +226,13 @@ fn run(cmd: &mut Command, what: &str) -> Result<Vec<u8>> {
         .output()
         .map_err(|e| Error::Invalid(format!("{what}: cannot run: {e}")))?;
     if !out.status.success() {
+        // The cause is usually well above the last lines (docker prints the failing step's
+        // output, then the Dockerfile excerpt), so keep a generous tail.
         let err = String::from_utf8_lossy(&out.stderr);
+        let tail: Vec<&str> = err.lines().rev().take(40).collect();
         return Err(Error::Invalid(format!(
-            "{what} failed: {}",
-            err.lines()
-                .rev()
-                .take(6)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join("\n")
+            "{what} failed:\n{}",
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
         )));
     }
     Ok(out.stdout)

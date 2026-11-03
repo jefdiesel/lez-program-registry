@@ -30,9 +30,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build lezreg
         run: cargo build --release -p lezreg
+      - name: Free disk for the Docker build (the CLI's target/ is many GB)
+        run: |
+          cp target/release/lezreg "$RUNNER_TEMP/lezreg"
+          rm -rf target ~/.cargo/registry/cache
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
       - name: lezreg build (its own Dockerfile, compile offline) reproduces artifacts/
         run: |
-          ./target/release/lezreg --json build . --binary lez_program_registry \
+          "$RUNNER_TEMP/lezreg" --json build . --binary lez_program_registry \
             --manifest-path methods/guest/Cargo.toml --work "$RUNNER_TEMP/lezreg-build" | tee out.json
           got=$(python3 -c 'import json;print(json.load(open("out.json"))["image_id"])')
           want=$(cat artifacts/lez_program_registry.imageid)
