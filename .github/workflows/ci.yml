@@ -31,6 +31,8 @@ jobs:
         run: cargo test --release -p lezreg-engine-test -- --nocapture --test-threads 1
       - name: SDK tests (mocked sequencer; the e2e test skips without LEZREG_E2E_RPC), CLI tests and build, read-only SDK build
         run: cargo test --release -p lezreg-sdk -p lezreg && cargo build --release -p lezreg && cargo build -p lezreg-sdk --no-default-features
+      - name: JS SDK against the Rust vectors (sdk/js/vectors.json is checked current by the SDK tests above)
+        run: node sdk/js/lezreg.test.mjs
 
   idl:
     runs-on: ubuntu-24.04
