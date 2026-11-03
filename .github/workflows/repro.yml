@@ -80,7 +80,7 @@ jobs:
           ENV CFLAGS_riscv32im_risc0_zkvm_elf="-march=rv32im -nostdlib"
           # Fetch for every platform: --target would skip crates only the host-side build scripts
           # need (iana-time-zone failed the network-off compile below). The build is unchanged.
-          RUN cargo +risc0 fetch --locked --manifest-path \$CARGO_MANIFEST_PATH
+          RUN CARGO_NET_RETRY=10 CARGO_NET_GIT_FETCH_WITH_CLI=true cargo +risc0 fetch --locked --manifest-path \$CARGO_MANIFEST_PATH
           RUN --network=none cargo +risc0 build --release --locked --target riscv32im-risc0-zkvm-elf --manifest-path \$CARGO_MANIFEST_PATH
           FROM scratch AS export
           COPY --from=build /src/target/riscv32im-risc0-zkvm-elf/release /

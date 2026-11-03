@@ -156,7 +156,9 @@ pub fn dockerfile(
     if offline_compile {
         // Fetch for every platform: `--target` skips crates only host-side build scripts need,
         // which the network-off compile then cannot download (repro.yml, 2026-11-03).
-        f.push_str("RUN cargo +risc0 fetch --locked --manifest-path $CARGO_MANIFEST_PATH\n");
+        // Retries and the git CLI: the all-platform fetch clones large git dependencies, and
+        // one flaky clone failed a CI run (2026-11-03). Fetching doesn't change the build.
+        f.push_str("RUN CARGO_NET_RETRY=10 CARGO_NET_GIT_FETCH_WITH_CLI=true cargo +risc0 fetch --locked --manifest-path $CARGO_MANIFEST_PATH\n");
         f.push_str(&format!(
             "RUN --network=none cargo +risc0 build --release {common}{features}\n"
         ));
@@ -467,7 +469,7 @@ mod tests {
         )));
         assert!(d.contains("\nRUN --network=none cargo +risc0 build --release --locked --target riscv32im-risc0-zkvm-elf --manifest-path $CARGO_MANIFEST_PATH\n"));
         assert!(
-            d.contains("\nRUN cargo +risc0 fetch --locked --manifest-path $CARGO_MANIFEST_PATH\n")
+            d.contains("\nRUN CARGO_NET_RETRY=10 CARGO_NET_GIT_FETCH_WITH_CLI=true cargo +risc0 fetch --locked --manifest-path $CARGO_MANIFEST_PATH\n")
         );
         assert!(d.ends_with("COPY --from=build /src/target/riscv32im-risc0-zkvm-elf/release /\n"));
     }
