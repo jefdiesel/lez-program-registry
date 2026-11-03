@@ -40,9 +40,9 @@ jobs:
           rzup install cargo-risczero 3.0.5
           rzup install rust
 
-      - name: Cache the standalone sequencer (per LEZ commit)
+      - name: Restore the standalone sequencer (per LEZ commit)
         id: seqcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/lez-seq
           key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
@@ -56,6 +56,14 @@ jobs:
           cp "$RUNNER_TEMP/lez/target/release/sequencer_service" ~/lez-seq/
           cp "$RUNNER_TEMP/lez/lez/sequencer/service/networks/local.json" ~/lez-seq/
           rm -rf "$RUNNER_TEMP/lez"
+      # Saved right away, not at the end of the job: a later failing step must not throw away
+      # a 40-minute build.
+      - name: Save the standalone sequencer
+        if: steps.seqcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/lez-seq
+          key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
       - name: Start the sequencer (fresh chain)
         run: |
           S=~/lez-seq/sequencer_service
