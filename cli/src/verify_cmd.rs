@@ -35,13 +35,16 @@ struct Tuple {
 }
 
 /// `lezreg verify <program> [--revision N]`: rebuild the recorded source and compare.
+#[allow(clippy::too_many_arguments)]
 pub fn verify(
     out: &mut Out,
     r: &Registry<HttpRpc>,
+    network: &str,
     target: &str,
     revision: Option<u32>,
     work: Option<&Path>,
     allow_network: bool,
+    mark: bool,
 ) -> Result<()> {
     let program = parse_account(target).map_err(|_| anyhow!("verify takes a program id"))?;
     let resolved = r.resolve(&tid(&program))?;
@@ -142,6 +145,18 @@ pub fn verify(
         h(&lezreg_types::pda::sha256(&elf))
     ));
     out.json(json!({"verdict": v.label(), "rebuilt": h(&rebuilt), "claimed": h(&t.claimed), "live": live.map(|l| h(&l)), "revision": t.revision, "network_denied": network_denied, "archive_sha256": h(&src.archive_sha256)}));
+    if mark && v == Verdict::Match {
+        let key = mark_key(network, target, &rebuilt, &t.build, &src.archive_sha256);
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let p = write_mark(
+            key,
+            json!({"program": target, "name": t.name, "revision": t.revision, "verdict": v.label(), "image_id": h(&rebuilt), "elf_sha256": h(&lezreg_types::pda::sha256(&elf)), "image_digest": h(&t.build.image_digest), "network_denied": network_denied, "at": format!("unix:{at}"), "tool": env!("CARGO_PKG_VERSION")}),
+        )?;
+        eprintln!("marked locally verified in {}", p.display());
+    }
     match v {
         Verdict::Match | Verdict::MatchStale { .. } => Ok(()),
         other => bail!("{}", other.label()),
@@ -163,5 +178,104 @@ pub fn build(out: &mut Out, dir: &Path, b: &BuildConfig, work: Option<&Path>) ->
         hex::encode(lezreg_types::pda::sha256(&elf))
     ));
     out.json(json!({"image_id": hex::encode(id), "elf": bin_path.display().to_string()}));
+    Ok(())
+}
+
+/// Where local "verified" marks live (DESIGN §4.3); the Basecamp module reads the same file.
+pub fn marks_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let home = PathBuf::from(std::env::var_os("HOME")?);
+            Some(if cfg!(target_os = "macos") {
+                home.join("Library/Application Support")
+            } else {
+                home.join(".local/share")
+            })
+        })?;
+    Some(base.join("lez-registry").join("verified.json"))
+}
+
+fn load_marks() -> serde_json::Map<String, serde_json::Value> {
+    marks_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_marks(m: &serde_json::Map<String, serde_json::Value>) -> Result<PathBuf> {
+    let p = marks_path().ok_or_else(|| anyhow!("no data directory for the marks file"))?;
+    let dir = p.parent().expect("has a parent");
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(".verified.json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(m)?)?;
+    // Which programs someone checked is their business: owner-only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&tmp, &p)?;
+    Ok(p)
+}
+
+/// A mark's key: it applies only while the network, program, image, build tuple and source all
+/// stay what was verified.
+pub fn mark_key(
+    network: &str,
+    program: &str,
+    image: &[u8; 32],
+    build: &BuildConfig,
+    source_sha: &[u8; 32],
+) -> String {
+    let build_hash = lezreg_types::pda::sha256(&borsh::to_vec(build).unwrap_or_default());
+    format!(
+        "{network}/{program}/{}/{}/{}",
+        hex::encode(image),
+        hex::encode(build_hash),
+        hex::encode(source_sha)
+    )
+}
+
+/// Records a Match. Never published anywhere.
+pub fn write_mark(key: String, record: serde_json::Value) -> Result<PathBuf> {
+    let mut m = load_marks();
+    m.insert(key, record);
+    save_marks(&m)
+}
+
+/// `lezreg verified list|forget`.
+pub fn marks(out: &mut Out, forget: Option<&str>) -> Result<()> {
+    let mut m = load_marks();
+    if let Some(prefix) = forget {
+        let before = m.len();
+        m.retain(|k, v| {
+            !(k.contains(prefix) || v.get("program").and_then(|p| p.as_str()) == Some(prefix))
+        });
+        let p = save_marks(&m)?;
+        out.text(&format!(
+            "forgot {} mark(s); {} left in {}",
+            before - m.len(),
+            m.len(),
+            p.display()
+        ));
+        out.json(json!({"forgot": before - m.len()}));
+        return Ok(());
+    }
+    if m.is_empty() {
+        out.text("no local verification marks");
+    }
+    for v in m.values() {
+        out.text(&format!(
+            "{}  {} rev {}  {}  image {}…  {}",
+            v["at"].as_str().unwrap_or("?"),
+            v["name"].as_str().unwrap_or("?"),
+            v["revision"],
+            v["verdict"].as_str().unwrap_or("?"),
+            v["image_id"].as_str().unwrap_or("").get(..12).unwrap_or(""),
+            v["program"].as_str().unwrap_or("?")
+        ));
+    }
+    out.json(json!({"marks": m}));
     Ok(())
 }

@@ -238,6 +238,14 @@ enum Command {
         /// If the network-off build fails, retry with the network on (reported as weaker).
         #[arg(long)]
         allow_network: bool,
+        /// On Match, record a local "verified" mark (never published).
+        #[arg(long)]
+        mark: bool,
+    },
+    /// Local verification marks: list them, or forget one (by program id).
+    Verified {
+        #[arg(long)]
+        forget: Option<String>,
     },
     /// The canonical reproducible build of a local source tree, printing its image id: what
     /// `verify` will rebuild. Needs Docker with buildx.
@@ -756,16 +764,20 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             revision,
             work,
             allow_network,
+            mark,
         } => {
             verify_cmd::verify(
                 out,
                 &reader(&net)?,
+                &net.name,
                 &program,
                 revision,
                 work.as_deref(),
                 allow_network,
+                mark,
             )?;
         }
+        Command::Verified { forget } => verify_cmd::marks(out, forget.as_deref())?,
         Command::Build {
             dir,
             binary,
