@@ -25,10 +25,14 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 
 | Milestone | State |
 |---|---|
-| M1: program, `spel04-shim`, guest, unit and engine tests, IDL | done (`b39edbe`) |
-| **M2: Rust SDK, `lezreg` CLI, `chain/deploy.sh`** | **done.** The demo core passes on a local LEZ v0.4.0-rc1 sequencer ([`docs/demo-m2.log`](docs/demo-m2.log)) |
-| M3: Logos Storage upload and fetch of IDLs and source archives | next. Until then you supply the IDL's CID, sha256 and size yourself |
-| M4+: `verify`, Basecamp module, JS SDK, `publish`/`adopt`, GitHub Action | planned (DESIGN §11) |
+| M1: program, `spel04-shim`, guest, tests, IDL, **reproducible build** | **done.** CI builds the guest on two runners, byte-identical; the image (`5f42948a…4b55`) is in [`artifacts/`](artifacts/) |
+| M2: Rust SDK, `lezreg` CLI, `chain/deploy.sh` | **done** ([`docs/demo-m2.log`](docs/demo-m2.log)) |
+| M3: IDLs on Logos Storage | **done:** `idl push`, `--idl-cid push` inside register/update, `idl get` (hash-checked fetch ladder), `pin`, `pin-all`, `storage up` |
+| M4: source verification | written, CI check in progress: `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
+| M5: end to end in CI | in progress: `e2e.yml`: rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
+| M6: Basecamp core module `program_registry` | reads done and loading in a Logos host; writes, UI example and catalog next |
+| M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
+| M8: adoption tools (`publish`, `adopt`, GitHub Action) | planned |
 
 LEZ testnet 0.4 has not launched. The `testnet` network is a placeholder: it has no RPC and no
 registry id yet, and `lezreg` says so. The registry will be deployed there on launch day with
@@ -242,6 +246,31 @@ let tps  = r.third_party(&program_id, 20)?;         // r.third_party_count(&prog
 let mut w = lezreg_sdk::tx::Writer::new(wallet_core, registry_lee_id);
 w.register_deployer(program, author, &input, &SendOpts { payer: Some(p), ..Default::default() }).await?;
 ```
+
+**IDLs, pinning, verification (CLI):**
+
+```sh
+lezreg idl push idl/my_program.json                 # canonical JSON to your Storage node; prints cid/sha256/size
+lezreg register ... --idl-cid push --idl-file idl/my_program.json   # or upload inside the write
+lezreg idl get <program|name> [-o file]             # fetched, checked against the chain's sha256
+lezreg pin <program> ; lezreg pin-all --every 900   # keep IDLs available (a self-hostable pinner)
+lezreg storage up --bin /path/to/logos-storage      # a Storage node for authors without one
+lezreg verify <program> [--mark]                    # rebuild in Docker, compile offline: Match / MatchStale / Mismatch
+lezreg build . --binary my_guest                    # the canonical image id before you deploy
+```
+
+**JavaScript** (`sdk/js/lezreg.js`, no dependencies, browsers and Node 19+):
+
+```js
+import { Registry, fetchIdl } from "./lezreg.js";
+const reg = new Registry({ rpc: "http://127.0.0.1:3062", registry: "<registry id>" });
+const label = await reg.programLabel("<program id>");   // { text, kind, stale, upgradeable, ... }
+const { deployer } = await reg.resolve("<program id>");
+const { status, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
+```
+
+**Basecamp apps:** depend on the `program_registry` core module and call
+`program_label(program_id)` for a wallet prompt's one-line label (see [`module/`](module/)).
 
 Errors are typed (`lezreg_sdk::Error`): `Transport`, `Rpc`, `BadRecord`, `MissingLink`, `NoEntry`,
 `NotDeployed`, `Invalid`, `NoKey`, `NotAuthor`, `Frozen`, `Refused` (simulation), `Funds`,
