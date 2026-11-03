@@ -33,7 +33,11 @@ impl Header {
         if b.len() != 65 || b[64] > 1 {
             return None;
         }
-        Some(Self { image_id: b[..32].try_into().ok()?, first_segment: AccountId(b[32..64].try_into().ok()?), immutable: b[64] == 1 })
+        Some(Self {
+            image_id: b[..32].try_into().ok()?,
+            first_segment: AccountId(b[32..64].try_into().ok()?),
+            immutable: b[64] == 1,
+        })
     }
 }
 
@@ -83,8 +87,12 @@ impl Kind {
     pub fn check(reg: &AccountId, address: &AccountId, entry: &Entry) -> Option<Self> {
         match entry.kind {
             t::KIND_DEPLOYER if entry.program == *address => Some(Self::Deployer),
-            t::KIND_THIRD_PARTY if addr::third_party_entry(reg, &entry.program, &entry.registrant) == *address => {
-                Some(Self::ThirdParty { publisher: entry.registrant })
+            t::KIND_THIRD_PARTY
+                if addr::third_party_entry(reg, &entry.program, &entry.registrant) == *address =>
+            {
+                Some(Self::ThirdParty {
+                    publisher: entry.registrant,
+                })
             }
             _ => None,
         }
@@ -122,7 +130,9 @@ impl Resolved {
     /// Fresh/stale/no-program, if there is a deployer entry.
     #[must_use]
     pub fn freshness(&self) -> Option<Freshness> {
-        self.deployer.as_ref().map(|e| Freshness::of(e, self.header.as_ref()))
+        self.deployer
+            .as_ref()
+            .map(|e| Freshness::of(e, self.header.as_ref()))
     }
 }
 
@@ -165,7 +175,11 @@ impl LinkCache {
             .and_then(|b| borsh::from_slice::<Vec<(AccountId, Link)>>(&b).ok())
             .map(|v| v.into_iter().collect())
             .unwrap_or_default();
-        Self { links: Mutex::new(links), path: Some(path), dirty: Mutex::new(false) }
+        Self {
+            links: Mutex::new(links),
+            path: Some(path),
+            dirty: Mutex::new(false),
+        }
     }
 
     #[must_use]
@@ -195,12 +209,20 @@ impl LinkCache {
 
     /// Writes the cache to its file, if it has one and changed.
     pub fn save(&self) -> std::io::Result<()> {
-        let Some(path) = &self.path else { return Ok(()) };
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
         let mut dirty = self.dirty.lock().expect("lock");
         if !*dirty {
             return Ok(());
         }
-        let mut v: Vec<(AccountId, Link)> = self.links.lock().expect("lock").iter().map(|(k, l)| (*k, l.clone())).collect();
+        let mut v: Vec<(AccountId, Link)> = self
+            .links
+            .lock()
+            .expect("lock")
+            .iter()
+            .map(|(k, l)| (*k, l.clone()))
+            .collect();
         v.sort_by_key(|(_, l)| l.seq);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -234,14 +256,22 @@ pub struct Registry<R: Rpc> {
     cache: LinkCache,
 }
 
-fn decode<T: borsh::BorshDeserialize>(at: &AccountId, bytes: &[u8], what: &'static str) -> Result<T> {
+fn decode<T: borsh::BorshDeserialize>(
+    at: &AccountId,
+    bytes: &[u8],
+    what: &'static str,
+) -> Result<T> {
     borsh::from_slice(bytes).map_err(|_| Error::BadRecord { at: *at, what })
 }
 
 impl<R: Rpc> Registry<R> {
     /// A client for the registry program `reg`, reading through `rpc`, with an in-memory cache.
     pub fn new(rpc: R, reg: AccountId) -> Self {
-        Self { rpc, reg, cache: LinkCache::default() }
+        Self {
+            rpc,
+            reg,
+            cache: LinkCache::default(),
+        }
     }
 
     /// The same, with a `LinkCache` (for example one on disk).
@@ -279,7 +309,12 @@ impl<R: Rpc> Registry<R> {
     /// Program headers for many accounts, batched; `None` where there is no program.
     pub fn headers(&self, programs: &[AccountId]) -> Result<Vec<Option<Header>>> {
         let actors: Vec<_> = programs.iter().map(|p| (*p, LOADER)).collect();
-        Ok(self.rpc.get_actor_states(&actors)?.iter().map(|s| Header::decode(s)).collect())
+        Ok(self
+            .rpc
+            .get_actor_states(&actors)?
+            .iter()
+            .map(|s| Header::decode(s))
+            .collect())
     }
 
     /// **One `getAccount(program)`**: the deployer entry at `(program, REG)` and the loader
@@ -287,10 +322,22 @@ impl<R: Rpc> Registry<R> {
     /// `getAccount` is asked with two `getAccountView`s instead (DESIGN §2.5).
     pub fn resolve(&self, program: &AccountId) -> Result<Resolved> {
         let (entry_state, loader_state) = match self.rpc.get_account(program) {
-            Ok(None) => return Ok(Resolved { program: *program, deployer: None, header: None }),
-            Ok(Some(account)) => (account.state(&self.reg).to_vec(), account.state(&LOADER).to_vec()),
+            Ok(None) => {
+                return Ok(Resolved {
+                    program: *program,
+                    deployer: None,
+                    header: None,
+                });
+            }
+            Ok(Some(account)) => (
+                account.state(&self.reg).to_vec(),
+                account.state(&LOADER).to_vec(),
+            ),
             Err(Error::Rpc { .. }) => {
-                let mut s = self.rpc.get_actor_states(&[(*program, self.reg), (*program, LOADER)])?.into_iter();
+                let mut s = self
+                    .rpc
+                    .get_actor_states(&[(*program, self.reg), (*program, LOADER)])?
+                    .into_iter();
                 (s.next().unwrap_or_default(), s.next().unwrap_or_default())
             }
             Err(e) => return Err(e),
@@ -303,7 +350,11 @@ impl<R: Rpc> Registry<R> {
                 (Kind::check(&self.reg, program, &e) == Some(Kind::Deployer)).then_some(e)
             }
         };
-        Ok(Resolved { program: *program, deployer, header: Header::decode(&loader_state) })
+        Ok(Resolved {
+            program: *program,
+            deployer,
+            header: Header::decode(&loader_state),
+        })
     }
 
     /// The entry at `address`, if any.
@@ -316,15 +367,30 @@ impl<R: Rpc> Registry<R> {
 
     /// The entry at `address` with its proven kind and its program's live header.
     pub fn locate(&self, address: &AccountId) -> Result<Option<Located>> {
-        let Some(entry) = self.entry(address)? else { return Ok(None) };
-        let kind = Kind::check(&self.reg, address, &entry).ok_or(Error::BadRecord { at: *address, what: "entry at its own address" })?;
+        let Some(entry) = self.entry(address)? else {
+            return Ok(None);
+        };
+        let kind = Kind::check(&self.reg, address, &entry).ok_or(Error::BadRecord {
+            at: *address,
+            what: "entry at its own address",
+        })?;
         let header = self.header(&entry.program)?;
         let freshness = Freshness::of(&entry, header.as_ref());
-        Ok(Some(Located { address: *address, entry, kind, header, freshness }))
+        Ok(Some(Located {
+            address: *address,
+            entry,
+            kind,
+            header,
+            freshness,
+        }))
     }
 
     /// `T(program, publisher)` and the third-party entry there, if any.
-    pub fn third_party_entry(&self, program: &AccountId, publisher: &AccountId) -> Result<(AccountId, Option<Entry>)> {
+    pub fn third_party_entry(
+        &self,
+        program: &AccountId,
+        publisher: &AccountId,
+    ) -> Result<(AccountId, Option<Entry>)> {
         let at = addr::third_party_entry(&self.reg, program, publisher);
         Ok((at, self.entry(&at)?))
     }
@@ -332,7 +398,11 @@ impl<R: Rpc> Registry<R> {
     /// A list head (an empty actor state is an empty list).
     pub fn head(&self, at: &AccountId) -> Result<Head> {
         match self.state(at)?.as_slice() {
-            [] => Ok(Head { schema: t::SCHEMA, count: 0, newest: None }),
+            [] => Ok(Head {
+                schema: t::SCHEMA,
+                count: 0,
+                newest: None,
+            }),
             b => decode(at, b, "list head"),
         }
     }
@@ -387,9 +457,20 @@ impl<R: Rpc> Registry<R> {
             .into_iter()
             .zip(states)
             .map(|((address, link), s)| {
-                let entry = if s.is_empty() { None } else { Some(decode::<Entry>(&address, &s, "entry")?) };
-                let kind = entry.as_ref().and_then(|e| Kind::check(&self.reg, &address, e));
-                Ok(Listed { address, link, entry, kind })
+                let entry = if s.is_empty() {
+                    None
+                } else {
+                    Some(decode::<Entry>(&address, &s, "entry")?)
+                };
+                let kind = entry
+                    .as_ref()
+                    .and_then(|e| Kind::check(&self.reg, &address, e));
+                Ok(Listed {
+                    address,
+                    link,
+                    entry,
+                    kind,
+                })
             })
             .collect()
     }
@@ -409,7 +490,9 @@ impl<R: Rpc> Registry<R> {
         prev: impl Fn(&Link) -> Option<AccountId> + Copy,
     ) -> Result<Walked> {
         match self.walk_once(start, limit, global_from, prev) {
-            Err(Error::BadRecord { what: "link order", .. }) if !self.cache.is_empty() => {
+            Err(Error::BadRecord {
+                what: "link order", ..
+            }) if !self.cache.is_empty() => {
                 self.cache.clear();
                 self.walk_once(start, limit, global_from, prev)
             }
@@ -438,8 +521,12 @@ impl<R: Rpc> Registry<R> {
             let l = self.link(&e)?;
             next = prev(&l);
             if let Some(want) = expect {
-                if l.seq != want || (next.is_none() && l.seq != 0) || (next.is_some() && l.seq == 0) {
-                    return Err(Error::BadRecord { at: e, what: "link order" });
+                if l.seq != want || (next.is_none() && l.seq != 0) || (next.is_some() && l.seq == 0)
+                {
+                    return Err(Error::BadRecord {
+                        at: e,
+                        what: "link order",
+                    });
                 }
                 expect = want.checked_sub(1);
             }
@@ -459,11 +546,16 @@ impl<R: Rpc> Registry<R> {
                     (l.prev_global, l.seq.checked_sub(1))
                 }
             };
-            Ok((self.walk_links(start, limit, from.or(Some(0)), |l| l.prev_global)?, head.count))
+            Ok((
+                self.walk_links(start, limit, from.or(Some(0)), |l| l.prev_global)?,
+                head.count,
+            ))
         };
         match run() {
             // The `after` link itself may be the stale one.
-            Err(Error::BadRecord { what: "link order", .. }) if after.is_some() => {
+            Err(Error::BadRecord {
+                what: "link order", ..
+            }) if after.is_some() => {
                 self.cache.clear();
                 run()
             }
@@ -496,13 +588,19 @@ impl<R: Rpc> Registry<R> {
             return Ok(Vec::new());
         }
         let head = self.head(&addr::name_head(&self.reg, name))?;
-        self.listed_many(self.walk_links(head.newest, limit, None, |l| l.prev_name)?.0)
+        self.listed_many(
+            self.walk_links(head.newest, limit, None, |l| l.prev_name)?
+                .0,
+        )
     }
 
     /// Third-party entries for `program`, newest first.
     pub fn third_party(&self, program: &AccountId, limit: usize) -> Result<Vec<Listed>> {
         let head = self.head(&addr::program_head(&self.reg, program))?;
-        self.listed_many(self.walk_links(head.newest, limit, None, |l| l.prev_program)?.0)
+        self.listed_many(
+            self.walk_links(head.newest, limit, None, |l| l.prev_program)?
+                .0,
+        )
     }
 
     /// Entries `author` holds now (registered by them or transferred to them, and not
@@ -539,7 +637,11 @@ impl<R: Rpc> Registry<R> {
             }
         }
         let truncated = next.is_some() && out.len() < limit;
-        Ok(Found { items: out, scanned, truncated })
+        Ok(Found {
+            items: out,
+            scanned,
+            truncated,
+        })
     }
 
     /// Name search (case-insensitive): exact matches from the name's list first, then
@@ -554,10 +656,18 @@ impl<R: Rpc> Registry<R> {
             let (links, rest) = self.scan_links(scan)?;
             scanned = links.len();
             truncated = rest;
-            let matches: Vec<_> = links.into_iter().filter(|(a, l)| l.name != q && l.name.contains(&q) && have.insert(*a)).take(limit - out.len()).collect();
+            let matches: Vec<_> = links
+                .into_iter()
+                .filter(|(a, l)| l.name != q && l.name.contains(&q) && have.insert(*a))
+                .take(limit - out.len())
+                .collect();
             out.extend(self.listed_many(matches)?);
         }
-        Ok(Found { items: out, scanned, truncated })
+        Ok(Found {
+            items: out,
+            scanned,
+            truncated,
+        })
     }
 
     /// Entries whose free-text `author_label` contains `q` (case-insensitive). **Unproven**:
@@ -573,7 +683,12 @@ impl<R: Rpc> Registry<R> {
     }
 
     /// The newest `scan` entries, read in batches, kept where `keep` holds, up to `limit`.
-    fn filter_scan(&self, limit: usize, scan: usize, keep: impl Fn(&Entry) -> bool) -> Result<Found> {
+    fn filter_scan(
+        &self,
+        limit: usize,
+        scan: usize,
+        keep: impl Fn(&Entry) -> bool,
+    ) -> Result<Found> {
         let (links, mut truncated) = self.scan_links(scan)?;
         let mut out = Vec::new();
         let mut scanned = 0;
@@ -583,9 +698,17 @@ impl<R: Rpc> Registry<R> {
                 break;
             }
             scanned += chunk.len();
-            out.extend(self.listed_many(chunk.to_vec())?.into_iter().filter(|i| i.entry.as_ref().is_some_and(&keep)));
+            out.extend(
+                self.listed_many(chunk.to_vec())?
+                    .into_iter()
+                    .filter(|i| i.entry.as_ref().is_some_and(&keep)),
+            );
         }
         out.truncate(limit);
-        Ok(Found { items: out, scanned, truncated })
+        Ok(Found {
+            items: out,
+            scanned,
+            truncated,
+        })
     }
 }

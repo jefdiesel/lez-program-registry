@@ -29,18 +29,25 @@
 
 pub mod cid;
 pub mod error;
+pub mod idl;
+pub mod jcs;
 pub mod json;
 pub mod read;
 pub mod rpc;
+pub mod storage;
 #[cfg(feature = "tx")]
 pub mod tx;
 
 use std::path::PathBuf;
 
 pub use error::{Error, Result};
+pub use idl::{FetchConfig, IdlStatus, Peer, Unavailable};
 pub use lezreg_types as types;
-pub use read::{Found, Freshness, Header, Kind, LOADER, LinkCache, Listed, Located, Page, Registry, Resolved};
+pub use read::{
+    Found, Freshness, Header, Kind, LOADER, LinkCache, Listed, Located, Page, Registry, Resolved,
+};
 pub use rpc::{AccountStates, HttpRpc, MockRpc, Rpc};
+pub use storage::StorageClient;
 
 /// A network: a sequencer and the registry's program id on it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,8 +63,16 @@ pub struct Network {
 #[must_use]
 pub fn builtin_network(name: &str) -> Option<Network> {
     match name {
-        "local" => Some(Network { name: "local".into(), rpc: Some("http://127.0.0.1:3062".into()), registry: None }),
-        "testnet" => Some(Network { name: "testnet".into(), rpc: None, registry: None }),
+        "local" => Some(Network {
+            name: "local".into(),
+            rpc: Some("http://127.0.0.1:3062".into()),
+            registry: None,
+        }),
+        "testnet" => Some(Network {
+            name: "testnet".into(),
+            rpc: None,
+            registry: None,
+        }),
         _ => None,
     }
 }
@@ -70,5 +85,8 @@ pub fn default_cache_path(registry: &lezreg_types::AccountId, rpc: &str) -> Opti
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
     let host = hex::encode(&lezreg_types::pda::sha256(rpc.as_bytes())[..6]);
-    Some(base.join("lez-registry").join(format!("links-{}-{host}.bin", registry.to_base58())))
+    Some(
+        base.join("lez-registry")
+            .join(format!("links-{}-{host}.bin", registry.to_base58())),
+    )
 }

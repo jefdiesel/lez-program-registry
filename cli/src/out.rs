@@ -17,7 +17,10 @@ pub struct Out {
 /// Points stdout at /dev/null; returns the saved descriptor.
 fn silence() -> Option<i32> {
     let _ = std::io::stdout().flush();
-    let null = std::fs::OpenOptions::new().write(true).open("/dev/null").ok()?;
+    let null = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/null")
+        .ok()?;
     // SAFETY: plain descriptor calls on stdout.
     let saved = unsafe { libc::dup(libc::STDOUT_FILENO) };
     if saved < 0 {
@@ -52,7 +55,12 @@ pub async fn quietly<T, F: std::future::Future<Output = T>>(f: impl FnOnce() -> 
 impl Out {
     pub fn new(json: bool) -> Self {
         let saved = if json { silence() } else { None };
-        Self { json, saved, value: Value::Null, context: serde_json::Map::new() }
+        Self {
+            json,
+            saved,
+            value: Value::Null,
+            context: serde_json::Map::new(),
+        }
     }
 
     /// A line of text (text mode only).
@@ -103,7 +111,11 @@ impl Out {
             restore(s);
         }
         let mut stdout = std::io::stdout();
-        let _ = writeln!(stdout, "{}", serde_json::to_string_pretty(&self.value).unwrap_or_default());
+        let _ = writeln!(
+            stdout,
+            "{}",
+            serde_json::to_string_pretty(&self.value).unwrap_or_default()
+        );
         let _ = stdout.flush();
     }
 }

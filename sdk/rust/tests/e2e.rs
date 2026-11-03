@@ -18,8 +18,12 @@ fn env() -> Option<(String, AccountId)> {
         rpc.starts_with("http://127.0.0.1:") || rpc.starts_with("http://localhost:"),
         "LEZREG_E2E_RPC must be a local sequencer"
     );
-    let reg = std::env::var("LEZREG_E2E_REGISTRY").expect("set LEZREG_E2E_REGISTRY with LEZREG_E2E_RPC");
-    Some((rpc, AccountId::from_base58(reg.trim_start_matches("Public/")).expect("registry id")))
+    let reg =
+        std::env::var("LEZREG_E2E_REGISTRY").expect("set LEZREG_E2E_REGISTRY with LEZREG_E2E_RPC");
+    Some((
+        rpc,
+        AccountId::from_base58(reg.trim_start_matches("Public/")).expect("registry id"),
+    ))
 }
 
 #[test]
@@ -34,7 +38,10 @@ fn e2e_reads() {
     let e = me.deployer.as_ref().expect("self-entry at (REG, REG)");
     assert_eq!(e.name, "lez_program_registry");
     assert_eq!(me.freshness(), Some(Freshness::Fresh));
-    assert!(!e.born_with_deploy(), "the self-entry comes from CreateHeader + RegisterDeployer");
+    assert!(
+        !e.born_with_deploy(),
+        "the self-entry comes from CreateHeader + RegisterDeployer"
+    );
     // The global list ends at the self-entry (seq 0).
     let total = r.count().unwrap();
     assert!(total >= 1);
@@ -52,9 +59,23 @@ fn e2e_reads() {
     }
     assert_eq!(seen, total, "paging visits every entry once");
     let oldest = last.unwrap();
-    assert_eq!((oldest.address, oldest.link.seq, oldest.kind), (reg, 0, Some(Kind::Deployer)));
-    assert!(r.by_name("lez_program_registry", 10).unwrap().iter().any(|i| i.address == reg));
-    assert!(r.by_author(&reg, 10, 1000).unwrap().items.iter().any(|i| i.address == reg));
+    assert_eq!(
+        (oldest.address, oldest.link.seq, oldest.kind),
+        (reg, 0, Some(Kind::Deployer))
+    );
+    assert!(
+        r.by_name("lez_program_registry", 10)
+            .unwrap()
+            .iter()
+            .any(|i| i.address == reg)
+    );
+    assert!(
+        r.by_author(&reg, 10, 1000)
+            .unwrap()
+            .items
+            .iter()
+            .any(|i| i.address == reg)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -69,15 +90,27 @@ async fn e2e_writes() {
         eprintln!("writes skipped: LEZREG_E2E_PAYER is not set");
         return;
     };
-    let payer: lee_core::account::AccountId = payer.trim_start_matches("Public/").parse().expect("payer id");
+    let payer: lee_core::account::AccountId = payer
+        .trim_start_matches("Public/")
+        .parse()
+        .expect("payer id");
     let overrides = wallet::config::WalletConfigOverrides {
-        sequencer: Some(wallet::config::SequencerConnectionData { sequencer_addr: rpc.parse().unwrap(), basic_auth: None }),
+        sequencer: Some(wallet::config::SequencerConnectionData {
+            sequencer_addr: rpc.parse().unwrap(),
+            basic_auth: None,
+        }),
         seq_tx_poll_max_blocks: Some(60),
         ..Default::default()
     };
     let storage = wallet::utils::fetch_persistent_storage_path().unwrap();
     let password = wallet::utils::read_password(&storage).unwrap();
-    let w = wallet::WalletCore::new_update_chain(wallet::utils::fetch_config_path().unwrap(), storage, Some(overrides), &password).unwrap();
+    let w = wallet::WalletCore::new_update_chain(
+        wallet::utils::fetch_config_path().unwrap(),
+        storage,
+        Some(overrides),
+        &password,
+    )
+    .unwrap();
     let mut writer = Writer::new(w, lezreg_sdk::tx::lid(&reg));
     let x = writer.new_account().await.unwrap();
     writer.save_wallet().unwrap();
@@ -87,14 +120,44 @@ async fn e2e_writes() {
         author_label: "e2e".into(),
         description: "registered before deploying: no program yet".into(),
         tags: vec!["e2e".into()],
-        idl: ContentRef { cid: vec![1, 0x55, 0x12, 0x20, 1], sha256: [1; 32], size: 1, peer_hint: None },
-        source: SourceRef { repo: "https://example.org/e2e".into(), commit: vec![2; 20], docker_root: ".".into(), archive: None },
-        build: BuildConfig { schema: 1, builder: 1, binary: "e2e".into(), manifest_path: "Cargo.toml".into(), ..BuildConfig::default() },
+        idl: ContentRef {
+            cid: vec![1, 0x55, 0x12, 0x20, 1],
+            sha256: [1; 32],
+            size: 1,
+            peer_hint: None,
+        },
+        source: SourceRef {
+            repo: "https://example.org/e2e".into(),
+            commit: vec![2; 20],
+            docker_root: ".".into(),
+            archive: None,
+        },
+        build: BuildConfig {
+            schema: 1,
+            builder: 1,
+            binary: "e2e".into(),
+            manifest_path: "Cargo.toml".into(),
+            ..BuildConfig::default()
+        },
         image_id: Some([3; 32]),
     };
-    let opts = SendOpts { payer: Some(payer), ..SendOpts::default() };
+    let opts = SendOpts {
+        payer: Some(payer),
+        ..SendOpts::default()
+    };
     // Dry run first: simulates, sends nothing.
-    let dry = writer.register_deployer(x, x, &input, &SendOpts { dry_run: true, ..opts.clone() }).await.unwrap();
+    let dry = writer
+        .register_deployer(
+            x,
+            x,
+            &input,
+            &SendOpts {
+                dry_run: true,
+                ..opts.clone()
+            },
+        )
+        .await
+        .unwrap();
     assert!(dry.hash.is_none() && dry.cycles.is_some());
     let reg_r = writer.register_deployer(x, x, &input, &opts).await.unwrap();
     assert!(reg_r.gas_limit >= reg_r.cycles.unwrap() * 3 / 2);
@@ -102,11 +165,38 @@ async fn e2e_writes() {
     let res = r.resolve(&tid(&x)).unwrap();
     assert_eq!(res.deployer.as_ref().unwrap().name, "e2e-sdk");
     assert_eq!(res.freshness(), Some(Freshness::NoProgram));
-    writer.update(x, None, &PatchInput { version: Some("0.0.2".into()), ..PatchInput::default() }, &opts).await.unwrap();
+    writer
+        .update(
+            x,
+            None,
+            &PatchInput {
+                version: Some("0.0.2".into()),
+                ..PatchInput::default()
+            },
+            &opts,
+        )
+        .await
+        .unwrap();
     assert_eq!(r.resolve(&tid(&x)).unwrap().deployer.unwrap().revision, 2);
-    assert!(r.release(&tid(&x), 2).unwrap().is_some(), "every update writes a release");
+    assert!(
+        r.release(&tid(&x), 2).unwrap().is_some(),
+        "every update writes a release"
+    );
     writer.freeze(x, None, &opts).await.unwrap();
     assert!(r.resolve(&tid(&x)).unwrap().deployer.unwrap().is_frozen());
-    let refused = writer.update(x, None, &PatchInput { version: Some("0.0.3".into()), ..PatchInput::default() }, &opts).await;
-    assert!(matches!(refused, Err(lezreg_sdk::Error::Frozen(_))), "{refused:?}");
+    let refused = writer
+        .update(
+            x,
+            None,
+            &PatchInput {
+                version: Some("0.0.3".into()),
+                ..PatchInput::default()
+            },
+            &opts,
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(lezreg_sdk::Error::Frozen(_))),
+        "{refused:?}"
+    );
 }

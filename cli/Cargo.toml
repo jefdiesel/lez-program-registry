@@ -17,6 +17,7 @@ lee_core.workspace = true
 wallet.workspace = true
 sequencer_service_rpc.workspace = true
 hex.workspace = true
+bs58 = { workspace = true, features = ["std"] }
 serde_json.workspace = true
 anyhow = "1.0.98"
 clap = { version = "4.5.42", features = ["derive", "env"] }

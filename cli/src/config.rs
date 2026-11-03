@@ -41,16 +41,23 @@ impl Resolved {
 }
 
 pub fn path() -> Option<PathBuf> {
-    let dir = std::env::var_os("LEZREG_CONFIG_DIR").map(PathBuf::from).or_else(|| {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(|d| PathBuf::from(d).join("lezreg"))
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("lezreg")))
-    })?;
+    let dir = std::env::var_os("LEZREG_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME")
+                .map(|d| PathBuf::from(d).join("lezreg"))
+                .or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|h| PathBuf::from(h).join(".config").join("lezreg"))
+                })
+        })?;
     Some(dir.join("networks.json"))
 }
 
 fn load() -> Result<Value> {
-    let Some(p) = path() else { return Ok(json!({})) };
+    let Some(p) = path() else {
+        return Ok(json!({}));
+    };
     match std::fs::read(&p) {
         Ok(b) => serde_json::from_slice(&b).with_context(|| format!("{} is not JSON", p.display())),
         Err(_) => Ok(json!({})),
@@ -67,7 +74,9 @@ pub fn resolve(name: &str, rpc: Option<&str>, registry: Option<&str>) -> Result<
     let saved = file.get(name);
     let builtin = lezreg_sdk::builtin_network(name);
     if builtin.is_none() && saved.is_none() {
-        bail!("unknown network '{name}': use local or testnet, or define it with `lezreg network set {name} --rpc <url> --registry <id>`");
+        bail!(
+            "unknown network '{name}': use local or testnet, or define it with `lezreg network set {name} --rpc <url> --registry <id>`"
+        );
     }
     let mut out = Resolved {
         name: name.to_owned(),
@@ -94,7 +103,11 @@ pub fn resolve(name: &str, rpc: Option<&str>, registry: Option<&str>) -> Result<
 pub fn set(name: &str, rpc: Option<&str>, registry: Option<&str>) -> Result<PathBuf> {
     let p = path().ok_or_else(|| anyhow!("no config directory: set LEZREG_CONFIG_DIR or HOME"))?;
     let mut file = load()?;
-    let entry = file.as_object_mut().ok_or_else(|| anyhow!("{} is not a JSON object", p.display()))?.entry(name).or_insert_with(|| json!({}));
+    let entry = file
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("{} is not a JSON object", p.display()))?
+        .entry(name)
+        .or_insert_with(|| json!({}));
     if let Some(r) = rpc {
         entry["rpc"] = json!(r);
     }

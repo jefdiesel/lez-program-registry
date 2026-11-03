@@ -26,7 +26,11 @@ pub enum Error {
     /// The wallet holds no signing key for an account that must sign.
     NoKey(AccountId),
     /// The signer is not the entry's current author.
-    NotAuthor { entry: AccountId, author: AccountId, signer: AccountId },
+    NotAuthor {
+        entry: AccountId,
+        author: AccountId,
+        signer: AccountId,
+    },
     /// The entry is frozen and can no longer change.
     Frozen(AccountId),
     /// Simulation against current chain state refused the transaction (nothing was sent).
@@ -51,26 +55,45 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Transport { url, message } => write!(f, "cannot reach the sequencer at {url}: {message}"),
+            Self::Transport { url, message } => {
+                write!(f, "cannot reach the sequencer at {url}: {message}")
+            }
             Self::Rpc { method, message } => write!(f, "sequencer error on {method}: {message}"),
             Self::BadRecord { at, what } => write!(f, "{at} does not hold a registry {what}"),
-            Self::MissingLink(e) => write!(f, "entry {e} has no list link (private or unverifiable)"),
+            Self::MissingLink(e) => {
+                write!(f, "entry {e} has no list link (private or unverifiable)")
+            }
             Self::Cycle(e) => write!(f, "list walk looped at {e}"),
             Self::NoEntry(e) => write!(f, "no registry entry at {e}"),
             Self::NotDeployed(p) => write!(f, "no program is deployed at {p}"),
             Self::Invalid(m) => write!(f, "invalid input: {m}"),
             Self::Config(m) => write!(f, "{m}"),
             Self::NoKey(a) => write!(f, "this wallet holds no signing key for {a}"),
-            Self::NotAuthor { entry, author, signer } => {
-                write!(f, "only the entry's author may change it: entry {entry} is held by {author}, not {signer}")
+            Self::NotAuthor {
+                entry,
+                author,
+                signer,
+            } => {
+                write!(
+                    f,
+                    "only the entry's author may change it: entry {entry} is held by {author}, not {signer}"
+                )
             }
             Self::Frozen(e) => write!(f, "entry {e} is frozen"),
-            Self::Refused(m) => write!(f, "simulation refused the transaction (nothing was sent): {m}"),
+            Self::Refused(m) => write!(
+                f,
+                "simulation refused the transaction (nothing was sent): {m}"
+            ),
             Self::Funds(m) => write!(f, "{m}"),
             Self::Rejected(m) => write!(f, "the sequencer did not accept the transaction: {m}"),
-            Self::NotIncluded { hash, detail } => write!(f, "transaction {hash} was not confirmed: {detail}"),
+            Self::NotIncluded { hash, detail } => {
+                write!(f, "transaction {hash} was not confirmed: {detail}")
+            }
             Self::Reverted { hash, block, fee } => {
-                write!(f, "{hash} was included in block {block} but REVERTED: fee {fee} charged, nothing else applied")
+                write!(
+                    f,
+                    "{hash} was included in block {block} but REVERTED: fee {fee} charged, nothing else applied"
+                )
             }
             Self::ReadBack(m) => write!(f, "applied, but the read-back check failed: {m}"),
             Self::Wallet(m) => write!(f, "wallet: {m}"),

@@ -91,7 +91,9 @@ pub fn freshness(f: &Freshness) -> Value {
 pub fn kind(k: Option<&Kind>) -> Value {
     match k {
         Some(Kind::Deployer) => json!("deployer"),
-        Some(Kind::ThirdParty { publisher }) => json!({"third_party": {"publisher": publisher.to_base58()}}),
+        Some(Kind::ThirdParty { publisher }) => {
+            json!({"third_party": {"publisher": publisher.to_base58()}})
+        }
         None => json!("unverified"),
     }
 }

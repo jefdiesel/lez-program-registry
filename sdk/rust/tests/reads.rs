@@ -3,7 +3,10 @@
 //! with `Link`/`Head`/`AuthorNode` records from `lezreg-types`.
 
 use lezreg_sdk::{Error, Freshness, Header, Kind, LOADER, LinkCache, MockRpc, Registry};
-use lezreg_types::{self as t, AccountId, AuthorNode, BuildConfig, ContentRef, Entry, Head, Link, SourceRef, pda::addr};
+use lezreg_types::{
+    self as t, AccountId, AuthorNode, BuildConfig, ContentRef, Entry, Head, Link, SourceRef,
+    pda::addr,
+};
 
 const REG: AccountId = AccountId([0xEE; 32]);
 
@@ -25,10 +28,30 @@ fn entry(kind: u8, program: AccountId, author: AccountId, name: &str, image: u8)
         version: "1.0.0".into(),
         author_label: format!("label of {name}"),
         description: String::new(),
-        tags: if name.contains("tok") { vec!["token".into()] } else { vec![] },
-        idl: ContentRef { cid: vec![1, 0x55, 0], sha256: [9; 32], size: 3, peer_hint: None },
-        source: SourceRef { repo: "https://example.org/r".into(), commit: vec![1; 20], docker_root: ".".into(), archive: None },
-        build: BuildConfig { schema: 1, builder: 1, binary: "b".into(), manifest_path: "m".into(), ..BuildConfig::default() },
+        tags: if name.contains("tok") {
+            vec!["token".into()]
+        } else {
+            vec![]
+        },
+        idl: ContentRef {
+            cid: vec![1, 0x55, 0],
+            sha256: [9; 32],
+            size: 3,
+            peer_hint: None,
+        },
+        source: SourceRef {
+            repo: "https://example.org/r".into(),
+            commit: vec![1; 20],
+            docker_root: ".".into(),
+            archive: None,
+        },
+        build: BuildConfig {
+            schema: 1,
+            builder: 1,
+            binary: "b".into(),
+            manifest_path: "m".into(),
+            ..BuildConfig::default()
+        },
         image_id: [image; 32],
         registered_at: 1,
         updated_at: 1,
@@ -51,7 +74,10 @@ struct Chain {
 
 impl Chain {
     fn new() -> Self {
-        Self { rpc: MockRpc::new(), seq: 0 }
+        Self {
+            rpc: MockRpc::new(),
+            seq: 0,
+        }
     }
 
     fn head(&self, at: AccountId) -> Head {
@@ -74,7 +100,9 @@ impl Chain {
         let prev_global = self.bump(addr::global_head(&REG), address);
         let prev_name = self.bump(addr::name_head(&REG, &e.name), address);
         let prev_author = self.bump(addr::author_head(&REG, &e.registrant), address);
-        let prev_program = (e.kind == t::KIND_THIRD_PARTY).then(|| self.bump(addr::program_head(&REG, &e.program), address)).flatten();
+        let prev_program = (e.kind == t::KIND_THIRD_PARTY)
+            .then(|| self.bump(addr::program_head(&REG, &e.program), address))
+            .flatten();
         let link = Link {
             schema: 1,
             seq: self.seq,
@@ -92,23 +120,51 @@ impl Chain {
         address
     }
 
-    fn deployer(&mut self, program: AccountId, author: AccountId, name: &str, image: u8) -> AccountId {
+    fn deployer(
+        &mut self,
+        program: AccountId,
+        author: AccountId,
+        name: &str,
+        image: u8,
+    ) -> AccountId {
         self.rpc.set(program, LOADER, header_bytes(image, false));
-        self.register(program, &entry(t::KIND_DEPLOYER, program, author, name, image))
+        self.register(
+            program,
+            &entry(t::KIND_DEPLOYER, program, author, name, image),
+        )
     }
 
-    fn third_party(&mut self, program: AccountId, publisher: AccountId, name: &str, image: u8) -> AccountId {
+    fn third_party(
+        &mut self,
+        program: AccountId,
+        publisher: AccountId,
+        name: &str,
+        image: u8,
+    ) -> AccountId {
         let at = addr::third_party_entry(&REG, &program, &publisher);
-        self.register(at, &entry(t::KIND_THIRD_PARTY, program, publisher, name, image))
+        self.register(
+            at,
+            &entry(t::KIND_THIRD_PARTY, program, publisher, name, image),
+        )
     }
 
     /// `TransferAuthor` of the entry at `at` to `to`.
     fn transfer(&self, at: AccountId, to: AccountId) {
-        let mut e: Entry = borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&self.rpc, &at, &REG).unwrap()).unwrap();
+        let mut e: Entry =
+            borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&self.rpc, &at, &REG).unwrap())
+                .unwrap();
         e.author = to;
         self.rpc.put(at, REG, &e);
         let prev = self.bump(addr::author_head(&REG, &to), at);
-        self.rpc.put(addr::author_node(&REG, &to, &at), REG, &AuthorNode { schema: 1, entry: at, prev });
+        self.rpc.put(
+            addr::author_node(&REG, &to, &at),
+            REG,
+            &AuthorNode {
+                schema: 1,
+                entry: at,
+                prev,
+            },
+        );
     }
 
     fn registry(&self) -> Registry<&MockRpc> {
@@ -124,7 +180,11 @@ fn resolve_is_one_get_account_and_reports_freshness() {
     let r = c.registry();
     c.rpc.reset_reads();
     let res = r.resolve(&x).unwrap();
-    assert_eq!(c.rpc.reads(), 1, "deployer entry and header come from one getAccount");
+    assert_eq!(
+        c.rpc.reads(),
+        1,
+        "deployer entry and header come from one getAccount"
+    );
     let e = res.deployer.as_ref().unwrap();
     assert_eq!(e.name, "token");
     assert_eq!(res.header.unwrap().image_id, [5; 32]);
@@ -140,7 +200,10 @@ fn resolve_is_one_get_account_and_reports_freshness() {
     let y = acct(3);
     c.register(y, &entry(t::KIND_DEPLOYER, y, a, "early", 1));
     let r = c.registry();
-    assert_eq!(r.resolve(&y).unwrap().freshness(), Some(Freshness::NoProgram));
+    assert_eq!(
+        r.resolve(&y).unwrap().freshness(),
+        Some(Freshness::NoProgram)
+    );
 
     // Nothing at all.
     let z = acct(4);
@@ -153,9 +216,11 @@ fn a_record_at_x_that_is_not_xs_deployer_entry_is_not_one() {
     let c = Chain::new();
     let (x, other) = (acct(1), acct(9));
     // kind deployer but for another program; and kind third-party at X.
-    c.rpc.put(x, REG, &entry(t::KIND_DEPLOYER, other, other, "fake", 1));
+    c.rpc
+        .put(x, REG, &entry(t::KIND_DEPLOYER, other, other, "fake", 1));
     assert!(c.registry().resolve(&x).unwrap().deployer.is_none());
-    c.rpc.put(x, REG, &entry(t::KIND_THIRD_PARTY, x, other, "fake", 1));
+    c.rpc
+        .put(x, REG, &entry(t::KIND_THIRD_PARTY, x, other, "fake", 1));
     assert!(c.registry().resolve(&x).unwrap().deployer.is_none());
 }
 
@@ -181,7 +246,10 @@ fn third_party_entries_are_told_apart_by_address() {
     let tps = c.registry().third_party(&x, 10).unwrap();
     assert_eq!(tps[0].address, fake);
     assert_eq!(tps[0].kind, None);
-    assert!(matches!(c.registry().locate(&fake), Err(Error::BadRecord { .. })));
+    assert!(matches!(
+        c.registry().locate(&fake),
+        Err(Error::BadRecord { .. })
+    ));
     let loc = c.registry().locate(&t_at).unwrap().unwrap();
     assert_eq!(loc.freshness, Freshness::Fresh);
 }
@@ -189,16 +257,27 @@ fn third_party_entries_are_told_apart_by_address() {
 #[test]
 fn list_pages_newest_first() {
     let mut c = Chain::new();
-    let ids: Vec<AccountId> = (1..=5).map(|i| c.deployer(acct(i), acct(100 + i), &format!("p{i}"), i)).collect();
+    let ids: Vec<AccountId> = (1..=5)
+        .map(|i| c.deployer(acct(i), acct(100 + i), &format!("p{i}"), i))
+        .collect();
     let r = c.registry();
     let p1 = r.list(None, 2).unwrap();
     assert_eq!(p1.total, 5);
-    assert_eq!(p1.items.iter().map(|i| i.address).collect::<Vec<_>>(), vec![ids[4], ids[3]]);
+    assert_eq!(
+        p1.items.iter().map(|i| i.address).collect::<Vec<_>>(),
+        vec![ids[4], ids[3]]
+    );
     assert_eq!(p1.next, Some(ids[3]));
     let p2 = r.list(p1.next.as_ref(), 2).unwrap();
-    assert_eq!(p2.items.iter().map(|i| i.address).collect::<Vec<_>>(), vec![ids[2], ids[1]]);
+    assert_eq!(
+        p2.items.iter().map(|i| i.address).collect::<Vec<_>>(),
+        vec![ids[2], ids[1]]
+    );
     let p3 = r.list(p2.next.as_ref(), 2).unwrap();
-    assert_eq!(p3.items.iter().map(|i| i.address).collect::<Vec<_>>(), vec![ids[0]]);
+    assert_eq!(
+        p3.items.iter().map(|i| i.address).collect::<Vec<_>>(),
+        vec![ids[0]]
+    );
     assert_eq!(p3.next, None);
     assert_eq!(p3.items[0].link.seq, 0);
     assert!(p3.items.iter().all(|i| i.kind == Some(Kind::Deployer)));
@@ -219,14 +298,22 @@ fn links_are_cached_and_persist() {
     r.list(None, 10).unwrap();
     c.rpc.reset_reads();
     r.list(None, 10).unwrap();
-    assert_eq!(c.rpc.reads(), 2, "head + one batch of 5 entries; every link from the cache");
+    assert_eq!(
+        c.rpc.reads(),
+        2,
+        "head + one batch of 5 entries; every link from the cache"
+    );
     r.cache().save().unwrap();
     let reloaded = LinkCache::at(path);
     assert_eq!(reloaded.len(), 5);
     let r2 = Registry::with_cache(&c.rpc, REG, reloaded);
     c.rpc.reset_reads();
     assert_eq!(r2.scan_links(10).unwrap().0.len(), 5);
-    assert_eq!(c.rpc.reads(), 1, "a scan from a warm disk cache reads only the head");
+    assert_eq!(
+        c.rpc.reads(),
+        1,
+        "a scan from a warm disk cache reads only the head"
+    );
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -241,10 +328,24 @@ fn search_by_name_label_and_tag() {
     let exact = r.by_name("token", 10).unwrap();
     assert_eq!(exact.len(), 2, "both entries named exactly 'token'");
     let s = r.search_name("TOKEN", 10, 100).unwrap().items;
-    assert_eq!(s.iter().map(|i| i.link.name.as_str()).collect::<Vec<_>>(), vec!["token", "token", "token-v2"], "exact first, then substring");
-    assert_eq!(r.search_name("tok", 1, 100).unwrap().items.len(), 1, "limit");
-    assert!(r.by_name(&"x".repeat(40), 10).unwrap().is_empty(), "a name too long to be a seed has no list");
-    assert_eq!(r.search_label("LABEL OF AMM", 10, 100).unwrap().items.len(), 1);
+    assert_eq!(
+        s.iter().map(|i| i.link.name.as_str()).collect::<Vec<_>>(),
+        vec!["token", "token", "token-v2"],
+        "exact first, then substring"
+    );
+    assert_eq!(
+        r.search_name("tok", 1, 100).unwrap().items.len(),
+        1,
+        "limit"
+    );
+    assert!(
+        r.by_name(&"x".repeat(40), 10).unwrap().is_empty(),
+        "a name too long to be a seed has no list"
+    );
+    assert_eq!(
+        r.search_label("LABEL OF AMM", 10, 100).unwrap().items.len(),
+        1
+    );
     let t = r.search_tag("token", 10, 100).unwrap();
     assert_eq!((t.items.len(), t.scanned, t.truncated), (3, 4, false));
     assert!(r.search_tag("nope", 10, 100).unwrap().items.is_empty());
@@ -259,10 +360,26 @@ fn by_author_follows_transfers() {
     let e3 = c.deployer(acct(3), b, "three", 3);
     c.transfer(e1, b);
     let r = c.registry();
-    let held_by_a: Vec<_> = r.by_author(&a, 10, 100).unwrap().items.into_iter().map(|i| i.address).collect();
+    let held_by_a: Vec<_> = r
+        .by_author(&a, 10, 100)
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|i| i.address)
+        .collect();
     assert_eq!(held_by_a, vec![e2], "e1 left A's holdings");
-    let held_by_b: Vec<_> = r.by_author(&b, 10, 100).unwrap().items.into_iter().map(|i| i.address).collect();
-    assert_eq!(held_by_b, vec![e1, e3], "e1 reached B by transfer (author node), then B's own e3");
+    let held_by_b: Vec<_> = r
+        .by_author(&b, 10, 100)
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|i| i.address)
+        .collect();
+    assert_eq!(
+        held_by_b,
+        vec![e1, e3],
+        "e1 reached B by transfer (author node), then B's own e3"
+    );
     assert_eq!(r.by_author(&b, 1, 100).unwrap().items.len(), 1);
     // The walk is bounded: A's list has e2, e1 (transferred away); scanning 1 place stops early.
     let f = r.by_author(&a, 10, 1).unwrap();
@@ -275,26 +392,47 @@ fn bad_data_and_transport_failures_are_typed() {
     let x = c.deployer(acct(1), acct(2), "p", 1);
     // A garbage entry.
     c.rpc.set(acct(9), REG, vec![1, 2, 3]);
-    assert!(matches!(c.registry().entry(&acct(9)), Err(Error::BadRecord { what: "entry", .. })));
+    assert!(matches!(
+        c.registry().entry(&acct(9)),
+        Err(Error::BadRecord { what: "entry", .. })
+    ));
     // A garbage entry with a garbage header is still a bad entry.
     c.rpc.set(acct(9), LOADER, vec![0; 10]);
-    assert!(matches!(c.registry().resolve(&acct(9)), Err(Error::BadRecord { what: "entry", .. })));
+    assert!(matches!(
+        c.registry().resolve(&acct(9)),
+        Err(Error::BadRecord { what: "entry", .. })
+    ));
     // A missing link.
     c.rpc.set(addr::link(&REG, &x), REG, vec![]);
-    assert_eq!(c.registry().list(None, 5).unwrap_err(), Error::MissingLink(x));
+    assert_eq!(
+        c.registry().list(None, 5).unwrap_err(),
+        Error::MissingLink(x)
+    );
     // A cycle.
     let mut c = Chain::new();
     let x = c.deployer(acct(1), acct(2), "p", 1);
-    let mut l: Link = borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, &x), &REG).unwrap()).unwrap();
+    let mut l: Link = borsh::from_slice(
+        &lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, &x), &REG).unwrap(),
+    )
+    .unwrap();
     l.prev_global = Some(x);
     l.prev_name = Some(x);
     c.rpc.put(addr::link(&REG, &x), REG, &l);
     // On the global list the sequence numbers already show it (seq 0 cannot have a prev).
-    assert_eq!(c.registry().list(None, 5).unwrap_err(), Error::BadRecord { at: x, what: "link order" });
+    assert_eq!(
+        c.registry().list(None, 5).unwrap_err(),
+        Error::BadRecord {
+            at: x,
+            what: "link order"
+        }
+    );
     assert_eq!(c.registry().by_name("p", 5).unwrap_err(), Error::Cycle(x));
     // The sequencer is down.
     *c.rpc.fail.lock().unwrap() = Some("connection refused".into());
-    assert!(matches!(c.registry().resolve(&x), Err(Error::Transport { .. })));
+    assert!(matches!(
+        c.registry().resolve(&x),
+        Err(Error::Transport { .. })
+    ));
     assert!(matches!(c.registry().count(), Err(Error::Transport { .. })));
 }
 
@@ -341,7 +479,12 @@ fn json_views_are_stable() {
     assert_eq!(v["deployer_entry"]["kind"], "deployer");
     assert_eq!(v["freshness"]["status"], "fresh");
     assert_eq!(v["deployer_entry"]["author_label_proven"], false);
-    assert!(v["deployer_entry"]["idl"]["cid"].as_str().unwrap().starts_with('z'));
+    assert!(
+        v["deployer_entry"]["idl"]["cid"]
+            .as_str()
+            .unwrap()
+            .starts_with('z')
+    );
 }
 
 /// Review fix (robustness 5): loader state that is not a program header (a code segment, a
@@ -360,10 +503,20 @@ fn non_header_loader_state_is_no_program_not_an_error() {
     assert!(res.header.is_none() && res.deployer.is_none());
     let named = r.by_name("smoke-forwarder", 10).unwrap();
     assert_eq!(named.len(), 2);
-    let programs: Vec<_> = named.iter().map(|i| i.entry.as_ref().unwrap().program).collect();
+    let programs: Vec<_> = named
+        .iter()
+        .map(|i| i.entry.as_ref().unwrap().program)
+        .collect();
     let headers = r.headers(&programs).unwrap();
-    assert_eq!(headers.iter().filter(|h| h.is_none()).count(), 1, "the segment target is no program; listing still works");
-    let loc = r.locate(&addr::third_party_entry(&REG, &seg, &q)).unwrap().unwrap();
+    assert_eq!(
+        headers.iter().filter(|h| h.is_none()).count(),
+        1,
+        "the segment target is no program; listing still works"
+    );
+    let loc = r
+        .locate(&addr::third_party_entry(&REG, &seg, &q))
+        .unwrap()
+        .unwrap();
     assert_eq!(loc.freshness, Freshness::NoProgram);
 }
 
@@ -372,14 +525,19 @@ fn non_header_loader_state_is_no_program_not_an_error() {
 #[test]
 fn a_stale_link_cache_heals_itself() {
     let mut c = Chain::new();
-    let ids: Vec<AccountId> = (1..=6).map(|i| c.deployer(acct(i), acct(100 + i), &format!("tok{i}"), i)).collect();
+    let ids: Vec<AccountId> = (1..=6)
+        .map(|i| c.deployer(acct(i), acct(100 + i), &format!("tok{i}"), i))
+        .collect();
     let dir = std::env::temp_dir().join(format!("lezreg-sdk-stale-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("links.bin");
     // Poison: the cached link of the 4th entry (seq 3) claims it is the oldest.
     let mut poisoned: Vec<(AccountId, Link)> = Vec::new();
     for id in &ids {
-        let mut l: Link = borsh::from_slice(&lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, id), &REG).unwrap()).unwrap();
+        let mut l: Link = borsh::from_slice(
+            &lezreg_sdk::Rpc::get_actor_state(&c.rpc, &addr::link(&REG, id), &REG).unwrap(),
+        )
+        .unwrap();
         if l.seq == 3 {
             l.prev_global = None;
         }
@@ -388,7 +546,11 @@ fn a_stale_link_cache_heals_itself() {
     std::fs::write(&path, borsh::to_vec(&poisoned).unwrap()).unwrap();
     let r = Registry::with_cache(&c.rpc, REG, LinkCache::at(path));
     let page = r.list(None, 100).unwrap();
-    assert_eq!((page.total, page.items.len()), (6, 6), "no silent truncation");
+    assert_eq!(
+        (page.total, page.items.len()),
+        (6, 6),
+        "no silent truncation"
+    );
     assert_eq!(r.search_tag("token", 100, 100).unwrap().items.len(), 6);
     // Paging from a stale `after` link heals too.
     let (links, _) = r.scan_links(100).unwrap();
@@ -409,7 +571,11 @@ fn searches_batch_entry_reads_and_report_truncation() {
     c.rpc.reset_reads();
     let f = r.search_label("label of tok", 100, 100).unwrap();
     assert_eq!(f.items.len(), 8);
-    assert_eq!(c.rpc.reads(), 2, "global head + one batch of 8 entries (links cached)");
+    assert_eq!(
+        c.rpc.reads(),
+        2,
+        "global head + one batch of 8 entries (links cached)"
+    );
     let f = r.search_tag("token", 100, 3).unwrap();
     assert_eq!((f.items.len(), f.scanned, f.truncated), (3, 3, true));
     let f = r.search_name("tok", 100, 5).unwrap();

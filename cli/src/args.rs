@@ -11,7 +11,8 @@ use lezreg_sdk::{
 use lezreg_types::{self as t, BuildConfig, ContentRef, Entry, SourceRef};
 
 /// The `risczero/risc0-guest-builder:r0.1.91.1` digest LEZ's own CI pins (DESIGN §4.1).
-pub const DEFAULT_IMAGE_DIGEST: &str = "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0";
+pub const DEFAULT_IMAGE_DIGEST: &str =
+    "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0";
 
 /// An account as the wallet prints it (`Public/<id>`) or bare base58.
 pub fn parse_account(s: &str) -> Result<AccountId> {
@@ -19,22 +20,36 @@ pub fn parse_account(s: &str) -> Result<AccountId> {
     if s.starts_with("Private/") {
         bail!("{s}: the registry is public-only; use a public account");
     }
-    bare.parse().map_err(|_| anyhow!("'{s}' is not an account id"))
+    bare.parse()
+        .map_err(|_| anyhow!("'{s}' is not an account id"))
 }
 
 pub fn hex32(s: &str, what: &str) -> Result<[u8; 32]> {
-    let v = hex::decode(s.strip_prefix("0x").unwrap_or(s)).with_context(|| format!("{what} is not hex"))?;
-    v.try_into().map_err(|_| anyhow!("{what} must be 32 bytes (64 hex characters)"))
+    let v = hex::decode(s.strip_prefix("0x").unwrap_or(s))
+        .with_context(|| format!("{what} is not hex"))?;
+    v.try_into()
+        .map_err(|_| anyhow!("{what} must be 32 bytes (64 hex characters)"))
 }
 
-fn content(cid_text: &str, sha: Option<&str>, size: Option<u32>, file: Option<&std::path::Path>, what: &str) -> Result<ContentRef> {
+fn content(
+    cid_text: &str,
+    sha: Option<&str>,
+    size: Option<u32>,
+    file: Option<&std::path::Path>,
+    what: &str,
+) -> Result<ContentRef> {
     let (sha256, size) = match (file, sha, size) {
         (Some(f), None, None) => {
             let b = std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?;
-            (t::pda::sha256(&b), u32::try_from(b.len()).context("file too large")?)
+            (
+                t::pda::sha256(&b),
+                u32::try_from(b.len()).context("file too large")?,
+            )
         }
         (None, Some(s), Some(n)) => (hex32(s, &format!("{what} sha256"))?, n),
-        _ => bail!("{what}: give the content's sha256 and size (--{what}-sha256 and --{what}-size), or --{what}-file to hash a local copy"),
+        _ => bail!(
+            "{what}: give the content's sha256 and size (--{what}-sha256 and --{what}-size), or --{what}-file to hash a local copy"
+        ),
     };
     // `--idl-cid raw` (or `--archive-cid raw`): the raw-codec sha2-256 CID of the content.
     let cid = if cid_text == "raw" {
@@ -47,9 +62,18 @@ fn content(cid_text: &str, sha: Option<&str>, size: Option<u32>, file: Option<&s
     if let Some(named) = cid::raw_sha256(&cid)
         && named != sha256
     {
-        bail!("the {what} CID is a raw sha2-256 CID of other bytes: it names sha256 {}, but the content's is {}", hex::encode(named), hex::encode(sha256));
+        bail!(
+            "the {what} CID is a raw sha2-256 CID of other bytes: it names sha256 {}, but the content's is {}",
+            hex::encode(named),
+            hex::encode(sha256)
+        );
     }
-    Ok(ContentRef { cid, sha256, size, peer_hint: None })
+    Ok(ContentRef {
+        cid,
+        sha256,
+        size,
+        peer_hint: None,
+    })
 }
 
 #[derive(clap::Args, Clone, Default)]
@@ -177,7 +201,9 @@ impl BuildArgs {
             b.lock_sha256 = hex32(v, "--lock-sha256")?;
         }
         if let Some(f) = &self.lock_file {
-            b.lock_sha256 = t::pda::sha256(&std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?);
+            b.lock_sha256 = t::pda::sha256(
+                &std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?,
+            );
         }
         Ok(b)
     }
@@ -211,7 +237,15 @@ impl EntryArgs {
     fn archive(&self) -> Result<Option<ContentRef>> {
         self.archive_cid
             .as_deref()
-            .map(|c| content(c, self.archive_sha256.as_deref(), self.archive_size, self.archive_file.as_deref(), "archive"))
+            .map(|c| {
+                content(
+                    c,
+                    self.archive_sha256.as_deref(),
+                    self.archive_size,
+                    self.archive_file.as_deref(),
+                    "archive",
+                )
+            })
             .transpose()
     }
 
@@ -240,7 +274,13 @@ impl EntryArgs {
         let name = self.name.clone().unwrap_or_default();
         let version = self.version.clone().unwrap_or_default();
         let idl_cid = self.idl_cid.as_deref().unwrap_or_default();
-        let idl = content(idl_cid, self.idl_sha256.as_deref(), self.idl_size, self.idl_file.as_deref(), "idl")?;
+        let idl = content(
+            idl_cid,
+            self.idl_sha256.as_deref(),
+            self.idl_size,
+            self.idl_file.as_deref(),
+            "idl",
+        )?;
         let archive = self.archive()?;
         let repo = self.repo.clone().unwrap_or_default();
         let commit = match &self.commit {
@@ -251,7 +291,12 @@ impl EntryArgs {
         if repo.is_empty() && archive.is_none() {
             bail!("give the source: --repo and --commit, and/or --archive-cid");
         }
-        let source = SourceRef { repo, commit, docker_root: self.docker_root.clone(), archive };
+        let source = SourceRef {
+            repo,
+            commit,
+            docker_root: self.docker_root.clone(),
+            archive,
+        };
         let build = self.build.apply(default_build(&name)?)?;
         Ok(EntryInput {
             name,
@@ -262,7 +307,11 @@ impl EntryArgs {
             idl,
             source,
             build,
-            image_id: self.image_id.as_deref().map(|s| hex32(s, "--image-id")).transpose()?,
+            image_id: self
+                .image_id
+                .as_deref()
+                .map(|s| hex32(s, "--image-id"))
+                .transpose()?,
         })
     }
 }
@@ -319,7 +368,19 @@ pub struct PatchArgs {
 impl PatchArgs {
     /// The patch, with source/build changes applied on top of the `stored` entry's.
     pub fn input(&self, stored: &Entry) -> Result<PatchInput> {
-        let idl = self.idl_cid.as_deref().map(|c| content(c, self.idl_sha256.as_deref(), self.idl_size, self.idl_file.as_deref(), "idl")).transpose()?;
+        let idl = self
+            .idl_cid
+            .as_deref()
+            .map(|c| {
+                content(
+                    c,
+                    self.idl_sha256.as_deref(),
+                    self.idl_size,
+                    self.idl_file.as_deref(),
+                    "idl",
+                )
+            })
+            .transpose()?;
         let source = if self.repo.is_some() || self.commit.is_some() || self.docker_root.is_some() {
             let mut s = stored.source.clone();
             if let Some(r) = &self.repo {
@@ -335,8 +396,18 @@ impl PatchArgs {
         } else {
             None
         };
-        let build = if self.build.any() { Some(self.build.apply(stored.build.clone())?) } else { None };
-        let tags = if self.clear_tags { Some(vec![]) } else if self.tags.is_empty() { None } else { Some(self.tags.clone()) };
+        let build = if self.build.any() {
+            Some(self.build.apply(stored.build.clone())?)
+        } else {
+            None
+        };
+        let tags = if self.clear_tags {
+            Some(vec![])
+        } else if self.tags.is_empty() {
+            None
+        } else {
+            Some(self.tags.clone())
+        };
         let p = PatchInput {
             version: self.version.clone(),
             description: self.description.clone(),
@@ -345,7 +416,11 @@ impl PatchArgs {
             idl,
             source,
             build,
-            image_id: self.image_id.as_deref().map(|s| hex32(s, "--image-id")).transpose()?,
+            image_id: self
+                .image_id
+                .as_deref()
+                .map(|s| hex32(s, "--image-id"))
+                .transpose()?,
         };
         if p.version.is_none()
             && p.description.is_none()
@@ -356,7 +431,9 @@ impl PatchArgs {
             && p.build.is_none()
             && p.image_id.is_none()
         {
-            bail!("nothing to update: give at least one field (--version, --description, --idl-cid, --image-id, ...)");
+            bail!(
+                "nothing to update: give at least one field (--version, --description, --idl-cid, --image-id, ...)"
+            );
         }
         Ok(p)
     }
