@@ -19,7 +19,7 @@ on:
 
 env:
   LEZ_TAG: v0.4.0-rc1
-  LEZ_COMMIT: 1806e873
+  LEZ_COMMIT: "1806e873"  # quoted: unquoted YAML reads it as 1806 × 10^873
   STORAGE_ZIP: logos-storage-linux-amd64-v0.5.3.zip
   STORAGE_SHA256: 1086fae4f283cab882f133abe4d5a88cfae8d61edba9f0094c7f75b368ec9d56
   RPC: http://127.0.0.1:3062

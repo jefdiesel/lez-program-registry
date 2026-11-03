@@ -7,3 +7,7 @@ _deps/
 /demo-out/
 /demo-out.prev-*/
 /chain/.deploy-*.env
+/module/result*
+/module/logos-rust-sdk-src
+/module/rust-lib/target/
+/module/rust-lib/generated/
