@@ -1,0 +1,183 @@
+# LEZ Program Registry GitHub Action (DESIGN §7.6, milestone M8).
+#
+#   - uses: actions/checkout@v4
+#   - uses: jefdiesel/lez-program-registry/action@main
+#     with: { mode: prepare }            # or verify
+#
+# verify:  the canonical build (`lezreg build`: risc0-guest-builder pinned by digest, compile
+#          with the network off) of the program lezreg.toml describes, its image id, and with
+#          `rpc` (and a program id) a comparison with the live program. Fails on a mismatch.
+#          Writes a job summary.
+# prepare: verify + `lezreg release prepare`: the canonical IDL (RFC 8785), program.bin and an
+#          unsigned lezreg-release.json with every hash, uploaded as a workflow artifact and, on
+#          a tag, attached to the GitHub release. The author then runs ONE local command:
+#            lezreg publish --from-release https://github.com/<owner>/<repo>/releases/tag/<tag>
+#          which re-checks every hash and signs on their machine.
+#
+# Header and author keys never enter CI: this action has no key input and sends no transaction.
+name: LEZ Program Registry
+description: Reproducible build of a LEZ program, checked against the live program, and an unsigned registry release payload. No keys in CI.
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  mode:
+    description: "verify or prepare"
+    default: prepare
+  config:
+    description: "Path of lezreg.toml (lezreg init --detect writes it)"
+    default: lezreg.toml
+  rpc:
+    description: "A LEZ sequencer RPC URL. With a program id (input or lezreg.toml), the build must equal the live program's image"
+    default: ""
+  program-id:
+    description: "The program id (default: lezreg.toml's [deploy] program)"
+    default: ""
+  lezreg-bin:
+    description: "Path of a prebuilt lezreg. Empty: build it from this action's own source (about 30 minutes on a cold runner)"
+    default: ""
+  upload:
+    description: "prepare on a tag: attach the payload to that tag's GitHub release (creating it if missing; needs `permissions: contents: write`)"
+    default: "true"
+  token:
+    description: "Token for the release upload"
+    default: ${{ github.token }}
+
+outputs:
+  image-id:
+    description: "Image id of the canonical build"
+    value: ${{ steps.prepare.outputs.image-id }}
+  live-image-id:
+    description: "Image id of the live program (empty when not compared)"
+    value: ${{ steps.prepare.outputs.live-image-id }}
+  match:
+    description: "true / false when compared with the live program, else empty"
+    value: ${{ steps.prepare.outputs.match }}
+  release-dir:
+    description: "Directory holding lezreg-release.json, program.bin and idl.json"
+    value: ${{ steps.prepare.outputs.dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check inputs
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        CONFIG: ${{ inputs.config }}
+      run: |
+        case "$MODE" in verify|prepare) ;; *) echo "::error::mode must be verify or prepare (got '$MODE'); publishing happens on your machine with lezreg publish --from-release"; exit 1;; esac
+        test -f "$CONFIG" || { echo "::error::$CONFIG not found: run 'lezreg init --detect' and commit it"; exit 1; }
+        command -v docker >/dev/null || { echo "::error::this action needs Docker (ubuntu runners have it)"; exit 1; }
+
+    - name: lezreg
+      id: lezreg
+      shell: bash
+      env:
+        GIVEN: ${{ inputs.lezreg-bin }}
+      run: |
+        if [ -n "$GIVEN" ]; then echo "bin=$GIVEN" >> "$GITHUB_OUTPUT"; exit 0; fi
+        sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
+        if ! command -v rzup >/dev/null && [ ! -x "$HOME/.risc0/bin/rzup" ]; then
+          curl -L https://risczero.com/install | bash
+        fi
+        export PATH="$HOME/.risc0/bin:$PATH"
+        rzup install cargo-risczero 3.0.5
+        rzup install rust
+        # rust-toolchain.toml is read from the current directory: build from the action's repo.
+        cd "$GITHUB_ACTION_PATH/.."
+        CARGO_TARGET_DIR="$RUNNER_TEMP/lezreg-target" cargo build --release --locked -p lezreg
+        cp "$RUNNER_TEMP/lezreg-target/release/lezreg" "$RUNNER_TEMP/lezreg"
+        # The guest build below needs the disk.
+        rm -rf "$RUNNER_TEMP/lezreg-target" "$HOME/.cargo/registry/cache"
+        echo "bin=$RUNNER_TEMP/lezreg" >> "$GITHUB_OUTPUT"
+
+    - name: Canonical build (Docker, compile offline)
+      id: build
+      shell: bash
+      env:
+        L: ${{ steps.lezreg.outputs.bin }}
+        CONFIG: ${{ inputs.config }}
+      run: |
+        "$L" --json build --config "$CONFIG" --work "$RUNNER_TEMP/lezreg-build" > "$RUNNER_TEMP/lezreg-build.json"
+        cat "$RUNNER_TEMP/lezreg-build.json"
+        python3 - "$RUNNER_TEMP/lezreg-build.json" >> "$GITHUB_OUTPUT" <<'EOF'
+        import json, sys
+        d = json.load(open(sys.argv[1]))
+        print(f"bin={d['bin']}")
+        print(f"image-id={d['image_id']}")
+        EOF
+
+    - name: Release payload (and the live comparison)
+      id: prepare
+      shell: bash
+      env:
+        L: ${{ steps.lezreg.outputs.bin }}
+        CONFIG: ${{ inputs.config }}
+        BIN: ${{ steps.build.outputs.bin }}
+        RPC: ${{ inputs.rpc }}
+        PROGRAM: ${{ inputs.program-id }}
+      run: |
+        dir="$RUNNER_TEMP/lezreg-release"
+        args=(--json)
+        [ -n "$RPC" ] && args+=(--rpc "$RPC")
+        args+=(release prepare --config "$CONFIG" --elf "$BIN" --out "$dir")
+        [ -n "$PROGRAM" ] && args+=(--program "$PROGRAM")
+        [ -n "$RPC" ] && args+=(--live)
+        set +e
+        "$L" "${args[@]}" > "$RUNNER_TEMP/lezreg-prepare.json"
+        status=$?
+        set -e
+        cat "$RUNNER_TEMP/lezreg-prepare.json"
+        python3 - "$RUNNER_TEMP/lezreg-prepare.json" "$dir" >> "$GITHUB_OUTPUT" <<'EOF'
+        import json, sys
+        d = json.load(open(sys.argv[1]))
+        m = d.get("match")
+        print(f"image-id={d.get('image_id') or ''}")
+        print(f"live-image-id={d.get('live_image_id') or ''}")
+        print(f"match={'' if m is None else str(m).lower()}")
+        print(f"dir={sys.argv[2]}")
+        EOF
+        python3 - "$RUNNER_TEMP/lezreg-prepare.json" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+        import json, sys
+        d = json.load(open(sys.argv[1]))
+        if "error" in d:
+            print(f"### LEZ Program Registry: failed\n\n```\n{d['error']}\n```")
+            sys.exit(0)
+        m = d.get("match")
+        verdict = {None: "not compared (no rpc)", True: "MATCH", False: "MISMATCH"}[m]
+        p = d["payload"]
+        print(f"### LEZ Program Registry: {p['name']} {p['version']}\n")
+        print("| | |\n|---|---|")
+        print(f"| commit | `{p['commit']}` |")
+        print(f"| rebuilt image id | `{d['image_id']}` |")
+        print(f"| live image id | `{d.get('live_image_id') or '-'}` |")
+        print(f"| program | `{d.get('program') or '-'}` |")
+        print(f"| verdict | **{verdict}** |")
+        print(f"| builder | `risczero/risc0-guest-builder:{p['build']['image_tag']}@sha256:{p['build']['image_digest']}` |")
+        print(f"| network_denied | true (compile with the network off) |")
+        print(f"| Cargo.lock sha256 | `{p['build']['lock_sha256']}` |")
+        EOF
+        exit $status
+
+    - name: Workflow artifact
+      if: inputs.mode == 'prepare'
+      uses: actions/upload-artifact@v4
+      with:
+        name: lezreg-release
+        path: ${{ steps.prepare.outputs.dir }}
+        if-no-files-found: error
+
+    - name: Attach to the release
+      if: inputs.mode == 'prepare' && inputs.upload == 'true' && startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        DIR: ${{ steps.prepare.outputs.dir }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --title "$TAG" --notes "LEZ Program Registry payload attached: lezreg publish --from-release ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+        gh release upload "$TAG" "$DIR/lezreg-release.json" "$DIR/program.bin" "$DIR/idl.json" --clobber
+        echo "Publish from your machine (keys stay there):" >> "$GITHUB_STEP_SUMMARY"
+        echo "\`lezreg publish --from-release ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}\`" >> "$GITHUB_STEP_SUMMARY"

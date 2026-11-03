@@ -8,8 +8,12 @@
 
 mod args;
 mod config;
+mod doctor;
 mod out;
+mod project;
+mod publish;
 mod render;
+mod stats;
 mod storage_cmd;
 mod verify_cmd;
 
@@ -248,18 +252,99 @@ enum Command {
         forget: Option<String>,
     },
     /// The canonical reproducible build of a local source tree, printing its image id: what
-    /// `verify` will rebuild. Needs Docker with buildx.
+    /// `verify` will rebuild. Writes the guest ELF and the deployable `.bin`. Without
+    /// --binary, the build settings come from lezreg.toml. Needs Docker with buildx.
     Build {
-        /// Source root (the docker root).
-        #[arg(default_value = ".")]
-        dir: std::path::PathBuf,
-        /// Guest bin target name.
-        #[arg(long)]
-        binary: String,
+        /// Source root (the docker root). Default: lezreg.toml's, else the current directory.
+        dir: Option<std::path::PathBuf>,
+        /// lezreg.toml to read when --binary is not given.
+        #[arg(long, default_value = project::FILE)]
+        config: std::path::PathBuf,
         #[command(flatten)]
         build: args::BuildArgs,
         #[arg(long)]
         work: Option<std::path::PathBuf>,
+    },
+    /// Write lezreg.toml for this project: name, version, IDL, repository and the canonical
+    /// build tuple, detected from Cargo.toml, Cargo.lock and git (--detect). Refuses a tree
+    /// with uncommitted changes.
+    Init {
+        #[command(flatten)]
+        o: project::InitOpts,
+    },
+    /// The one command: deploy and register (if nothing is deployed yet; needs --elf),
+    /// register (if deployed), or update (if registered and lezreg.toml says something new),
+    /// from lezreg.toml. The IDL goes to your Storage node (LEZREG_STORAGE_API). Rerun after a
+    /// version bump and it sends an Update; rerun with nothing changed and it sends nothing.
+    Publish {
+        /// The project's lezreg.toml.
+        #[arg(long, default_value = project::FILE)]
+        config: std::path::PathBuf,
+        /// The program binary (`.bin`) or guest ELF: deployed if the program is not, else
+        /// checked against the live program's image.
+        #[arg(long)]
+        elf: Option<std::path::PathBuf>,
+        /// The program id (default: lezreg.toml's [deploy] program; none: deploy to a new
+        /// header account, recorded in lezreg.toml).
+        #[arg(long)]
+        program: Option<String>,
+        /// The proven author (default: lezreg.toml's [deploy] author, else the header key).
+        #[arg(long)]
+        author: Option<String>,
+        /// Go ahead although tracked files have uncommitted changes.
+        #[arg(long)]
+        allow_dirty: bool,
+        /// Publish what the GitHub Action prepared: a directory or URL holding
+        /// lezreg-release.json, program.bin and idl.json (a GitHub release tag URL works).
+        /// Every hash is checked again here; the keys stay on this machine.
+        #[arg(long, conflicts_with_all = ["elf", "allow_dirty"])]
+        from_release: Option<String>,
+        #[command(flatten)]
+        opts: WriteOpts,
+    },
+    /// Register an already deployed program whose header key is in the wallet, with the
+    /// metadata in the project's lezreg.toml (an update if it is registered already).
+    Adopt {
+        /// The program id.
+        program: String,
+        /// The project directory (holding lezreg.toml).
+        #[arg(long, default_value = ".")]
+        project: std::path::PathBuf,
+        /// Entry name, instead of lezreg.toml's.
+        #[arg(long)]
+        name: Option<String>,
+        /// The proven author (default: lezreg.toml's [deploy] author, else the header key).
+        #[arg(long)]
+        author: Option<String>,
+        #[arg(long)]
+        allow_dirty: bool,
+        #[command(flatten)]
+        opts: WriteOpts,
+    },
+    /// The adoption evidence table, from chain: entries whose program is deployed (others are
+    /// listed as not counted), distinct programs, proven authors and images; stale entries
+    /// are flagged.
+    Stats {
+        /// Per month (UTC) of registration: entries, programs, authors, new authors.
+        #[arg(long)]
+        by_month: bool,
+        /// Per proven author: entries and names.
+        #[arg(long)]
+        by_author: bool,
+        /// Leave out entries whose author or registrant is listed in this file (one account
+        /// per line, `#` comments): your own team's keys.
+        #[arg(long)]
+        exclude_keys: Option<std::path::PathBuf>,
+    },
+    /// Check this machine: sequencer, registry id, Storage node, r0vm, wallet, Docker, clock.
+    Doctor {
+        #[arg(long, env = "LEZREG_STORAGE_API", default_value = lezreg_sdk::storage::DEFAULT_API)]
+        storage_api: String,
+    },
+    /// Release payloads for the GitHub Action (DESIGN §7.6).
+    Release {
+        #[command(subcommand)]
+        cmd: ReleaseCmd,
     },
     /// Start a Logos Storage node in the background (for authors who don't run one).
     Storage {
@@ -312,6 +397,31 @@ enum SearchBy {
         tag: String,
         #[command(flatten)]
         o: SearchOpts,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReleaseCmd {
+    /// Write lezreg-release.json, program.bin and idl.json (canonical) for a built binary:
+    /// the unsigned payload `publish --from-release` checks and signs. With --live, the
+    /// program's live image must equal the binary's.
+    Prepare {
+        /// The binary `lezreg build` wrote (`.bin` or guest ELF).
+        #[arg(long)]
+        elf: std::path::PathBuf,
+        /// Output directory.
+        #[arg(long = "out", default_value = "lezreg-release")]
+        out_dir: std::path::PathBuf,
+        #[arg(long, default_value = project::FILE)]
+        config: std::path::PathBuf,
+        /// The program id (default: lezreg.toml's [deploy] program).
+        #[arg(long)]
+        program: Option<String>,
+        /// Compare with the live program on the sequencer (--rpc).
+        #[arg(long)]
+        live: bool,
+        #[arg(long)]
+        allow_dirty: bool,
     },
 }
 
@@ -780,12 +890,173 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
         Command::Verified { forget } => verify_cmd::marks(out, forget.as_deref())?,
         Command::Build {
             dir,
-            binary,
+            config,
             build,
             work,
         } => {
-            let b = build.apply(args::default_build(&binary)?)?;
+            let (dir, b) = match &build.binary {
+                Some(binary) => (
+                    dir.unwrap_or_else(|| ".".into()),
+                    build.apply(args::default_build(binary)?)?,
+                ),
+                None => {
+                    let p = project::Project::load(&config)
+                        .map_err(|e| anyhow!("{e:#}\n(or pass --binary and the build flags)"))?;
+                    let b = build.apply(publish::build_config(&p.m, &[0; 32])?)?;
+                    let dir = match dir {
+                        Some(d) => d,
+                        None => p.docker_root_dir()?,
+                    };
+                    (dir, b)
+                }
+            };
             verify_cmd::build(out, &dir, &b, work.as_deref())?;
+        }
+        Command::Init { o } => {
+            let (path, m, notes) = project::init(&o)?;
+            for n in &notes {
+                eprintln!("note: {n}");
+            }
+            out.text(&format!(
+                "wrote {}: {} {} (guest {} in {}, risc0-build {})\nnext: commit it, then `lezreg publish --elf <program .bin>` (`lezreg build` makes one)",
+                path.display(),
+                m.program.name,
+                m.program.version,
+                m.build.binary,
+                m.build.manifest_path,
+                m.build.risc0_build
+            ));
+            out.json(json!({"file": path.display().to_string(), "manifest": serde_json::to_value(&m)?, "notes": notes}));
+        }
+        Command::Publish {
+            config,
+            elf,
+            program,
+            author,
+            allow_dirty,
+            from_release,
+            opts,
+        } => {
+            let program = program.as_deref().map(parse_account).transpose()?;
+            let author = author.as_deref().map(parse_account).transpose()?;
+            let mut proj = if from_release.is_none() || config.exists() {
+                Some(project::Project::load(&config)?)
+            } else {
+                None
+            };
+            let mut plan = match &from_release {
+                Some(src) => {
+                    let scratch =
+                        std::env::temp_dir().join(format!("lezreg-release-{}", std::process::id()));
+                    let (payload, bin, idl) = publish::fetch_release(src, &scratch)?;
+                    eprintln!(
+                        "release payload: {} {} commit {} image {} (sizes, sha256s and image id checked)",
+                        payload.name, payload.version, payload.commit, payload.image_id
+                    );
+                    if let Some(p) = &proj {
+                        if p.m.program.name != payload.name {
+                            eprintln!(
+                                "note: {} names {}, the release {}; publishing the release",
+                                p.path.display(),
+                                p.m.program.name,
+                                payload.name
+                            );
+                        }
+                        if publish::check_against_checkout(&payload, p)? == Some(true) {
+                            eprintln!("Cargo.lock checked against this checkout");
+                        }
+                    }
+                    let mut plan = payload.plan(bin, idl)?;
+                    if plan.program.is_none() {
+                        plan.program = proj
+                            .as_ref()
+                            .and_then(project::Project::program)
+                            .map(parse_account)
+                            .transpose()?;
+                    }
+                    plan
+                }
+                None => {
+                    let bin = elf.as_deref().map(publish::read_bin).transpose()?;
+                    publish::plan_from_project(
+                        proj.as_ref().expect("loaded"),
+                        bin,
+                        program,
+                        allow_dirty,
+                    )?
+                }
+            };
+            if program.is_some() {
+                plan.program = program;
+            }
+            if author.is_some() {
+                plan.author = author;
+            }
+            publish::publish(
+                out,
+                &net,
+                &plan,
+                &opts,
+                proj.as_mut(),
+                publish::Mode::Publish,
+            )
+            .await?;
+        }
+        Command::Adopt {
+            program,
+            project: dir,
+            name,
+            author,
+            allow_dirty,
+            opts,
+        } => {
+            let mut p = project::Project::load(&dir.join(project::FILE))?;
+            if let Some(n) = name {
+                p.m.program.name = n;
+            }
+            let program = parse_account(&program)?;
+            let mut plan = publish::plan_from_project(&p, None, Some(program), allow_dirty)?;
+            if let Some(a) = author {
+                plan.author = Some(parse_account(&a)?);
+            }
+            publish::publish(out, &net, &plan, &opts, Some(&mut p), publish::Mode::Adopt).await?;
+        }
+        Command::Stats {
+            by_month,
+            by_author,
+            exclude_keys,
+        } => {
+            let exclude = exclude_keys
+                .as_deref()
+                .map(stats::read_keys)
+                .transpose()?
+                .unwrap_or_default();
+            let r = reader(&net)?;
+            let (rows, unreadable) = stats::collect(&r)?;
+            r.cache().save().ok();
+            let s = stats::aggregate(&rows, unreadable, &exclude);
+            stats::report(out, &s, by_month, by_author);
+        }
+        Command::Doctor { storage_api } => {
+            let checks = doctor::run_checks(&net, &storage_api);
+            if !doctor::report(out, &checks) {
+                FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        Command::Release {
+            cmd:
+                ReleaseCmd::Prepare {
+                    elf,
+                    out_dir,
+                    config,
+                    program,
+                    live,
+                    allow_dirty,
+                },
+        } => {
+            let p = project::Project::load(&config)?;
+            let program = program.as_deref().map(parse_account).transpose()?;
+            publish::prepare(out, &net, &p, &elf, &out_dir, program, live, allow_dirty)?;
         }
         Command::Storage {
             cmd: StorageCmd::Up { o },
@@ -984,6 +1255,9 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
     Ok(())
 }
 
+/// Set by a command that printed its result but must still exit non-zero (`doctor`).
+static FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Says when an entry gets lezreg's default build settings rather than the author's.
 fn note_build_defaults(entry: &args::EntryArgs) {
     if !entry.build.any() {
@@ -1044,7 +1318,7 @@ async fn main() {
         }
     }
     out.finish();
-    if result.is_err() {
+    if result.is_err() || FAILED.load(std::sync::atomic::Ordering::Relaxed) {
         std::process::exit(1);
     }
 }

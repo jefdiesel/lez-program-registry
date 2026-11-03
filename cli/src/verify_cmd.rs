@@ -169,15 +169,21 @@ pub fn build(out: &mut Out, dir: &Path, b: &BuildConfig, work: Option<&Path>) ->
     let work = workdir(work, "build")?;
     let elf = verify::docker_build(dir, b, true, &work)?;
     let id = verify::image_id_of_elf(&elf)?;
-    let bin_path = work.join(format!("{}.elf", b.binary));
-    std::fs::write(&bin_path, &elf)?;
+    let elf_path = work.join(format!("{}.elf", b.binary));
+    std::fs::write(&elf_path, &elf)?;
+    // What the loader deploys (`lezreg publish --elf` takes either).
+    let bin = verify::program_bin_of_elf(&elf);
+    let bin_path = work.join(format!("{}.bin", b.binary));
+    std::fs::write(&bin_path, &bin)?;
     out.text(&format!(
-        "image id {}\nelf      {} (sha256 {})",
+        "image id {}\nelf      {} (sha256 {})\nbin      {} (sha256 {})",
         hex::encode(id),
+        elf_path.display(),
+        hex::encode(lezreg_types::pda::sha256(&elf)),
         bin_path.display(),
-        hex::encode(lezreg_types::pda::sha256(&elf))
+        hex::encode(lezreg_types::pda::sha256(&bin))
     ));
-    out.json(json!({"image_id": hex::encode(id), "elf": bin_path.display().to_string()}));
+    out.json(json!({"image_id": hex::encode(id), "elf": elf_path.display().to_string(), "bin": bin_path.display().to_string(), "image_digest": hex::encode(b.image_digest), "network_denied": true}));
     Ok(())
 }
 

@@ -20,6 +20,11 @@ hex.workspace = true
 borsh.workspace = true
 bs58 = { workspace = true, features = ["std"] }
 serde_json.workspace = true
+clock_core.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "0.8.23"
+toml_edit = "0.22.27"
+ureq = "3.4.2"
 anyhow = "1.0.98"
 clap = { version = "4.5.42", features = ["derive", "env"] }
 libc = "0.2"

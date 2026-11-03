@@ -31,7 +31,7 @@ pub fn hex32(s: &str, what: &str) -> Result<[u8; 32]> {
         .map_err(|_| anyhow!("{what} must be 32 bytes (64 hex characters)"))
 }
 
-fn content(
+pub fn content(
     cid_text: &str,
     sha: Option<&str>,
     size: Option<u32>,

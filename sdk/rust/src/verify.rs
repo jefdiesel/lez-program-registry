@@ -392,8 +392,26 @@ pub fn docker_build(
 /// The image id LEZ's loader computes for a guest ELF: `Program::id()` of the
 /// `ProgramBinary(user ELF, V1COMPAT)`, as 32 little-endian bytes.
 pub fn image_id_of_elf(elf: &[u8]) -> Result<[u8; 32]> {
-    let bin = risc0_binfmt::ProgramBinary::new(elf, risc0_zkos_v1compat::V1COMPAT_ELF).encode();
-    image_id_of_bin(&bin)
+    image_id_of_bin(&program_bin_of_elf(elf))
+}
+
+/// The risc0 program binary (`.bin`, what the loader deploys) for a guest ELF: the user ELF
+/// with the V1COMPAT kernel, as `cargo risczero build` packs it.
+#[must_use]
+pub fn program_bin_of_elf(elf: &[u8]) -> Vec<u8> {
+    risc0_binfmt::ProgramBinary::new(elf, risc0_zkos_v1compat::V1COMPAT_ELF).encode()
+}
+
+/// A deployable program binary from either a `.bin` or a bare guest ELF (as `lezreg build`
+/// writes it), checked to load.
+pub fn program_bin(bytes: &[u8]) -> Result<Vec<u8>> {
+    let bin = if bytes.starts_with(b"\x7fELF") {
+        program_bin_of_elf(bytes)
+    } else {
+        bytes.to_vec()
+    };
+    image_id_of_bin(&bin)?;
+    Ok(bin)
 }
 
 /// The image id of a risc0 program binary (`.bin`).
@@ -459,7 +477,9 @@ mod tests {
         // repro.yml writes this line with a bash heredoc, and it builds the canonical image.
         let d = dockerfile(&config(), &[], true).unwrap();
         let us = '\u{1f}';
-        let want = format!("ENV CARGO_ENCODED_RUSTFLAGS=\"-C{us}passes=lower-atomic{us}-C{us}link-arg=-Ttext=0x00200800{us}-C{us}link-arg=--fatal-warnings{us}-C{us}panic=abort{us}--cfg{us}getrandom_backend=\\\"custom\\\"\"\n");
+        let want = format!(
+            "ENV CARGO_ENCODED_RUSTFLAGS=\"-C{us}passes=lower-atomic{us}-C{us}link-arg=-Ttext=0x00200800{us}-C{us}link-arg=--fatal-warnings{us}-C{us}panic=abort{us}--cfg{us}getrandom_backend=\\\"custom\\\"\"\n"
+        );
         assert!(d.contains(&want), "{d}");
     }
 
