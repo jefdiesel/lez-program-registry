@@ -1,6 +1,6 @@
 //! Entry fields on the command line. IDL and source archive pointers are given as a Storage
-//! CID plus the content's sha256 and size (or a local file to hash); uploading to Logos
-//! Storage is milestone M3.
+//! CID plus the content's sha256 and size (or a local file to hash), or for the IDL as
+//! `--idl-cid push --idl-file f`, which uploads it to the user's Storage node first.
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use lee_core::account::AccountId;
@@ -38,6 +38,32 @@ fn content(
     file: Option<&std::path::Path>,
     what: &str,
 ) -> Result<ContentRef> {
+    // `--idl-cid push --idl-file f`: canonicalize the IDL and upload it to the user's Storage
+    // node first (DESIGN §5.3); the reference then carries the node as `peer_hint`.
+    if cid_text == "push" {
+        if what != "idl" {
+            bail!("`push` works for --idl-cid only; upload the archive and pass its CID");
+        }
+        let Some(f) = file else {
+            bail!("--idl-cid push needs --idl-file <the IDL JSON>")
+        };
+        if sha.is_some() || size.is_some() {
+            bail!("--idl-cid push hashes the canonical IDL itself; drop --idl-sha256/--idl-size");
+        }
+        let raw = std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?;
+        let prepared =
+            lezreg_sdk::idl::prepare_idl(&raw).map_err(|e| anyhow!("{}: {e}", f.display()))?;
+        let api = std::env::var("LEZREG_STORAGE_API")
+            .unwrap_or_else(|_| lezreg_sdk::storage::DEFAULT_API.to_owned());
+        eprintln!(
+            "uploading {} ({} B canonical) to {api}",
+            prepared.filename,
+            prepared.bytes.len()
+        );
+        let node = lezreg_sdk::StorageClient::new(&api);
+        return lezreg_sdk::idl::publish(&node, &prepared, std::time::Duration::from_secs(60))
+            .map_err(|e| anyhow!("IDL upload: {e}"));
+    }
     let (sha256, size) = match (file, sha, size) {
         (Some(f), None, None) => {
             let b = std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?;
@@ -92,8 +118,9 @@ pub struct EntryArgs {
     /// A tag ([a-z0-9-]); repeat for more (at most 8).
     #[arg(long = "tag")]
     pub tags: Vec<String>,
-    /// IDL on Logos Storage: its CID (z…, b… or 0x…). `raw` uses the raw-codec sha2-256 CID
-    /// of the IDL bytes (anyone can recompute it), until Storage upload lands (M3).
+    /// IDL on Logos Storage: its CID (z…, b… or 0x…). `push` (with --idl-file) uploads the
+    /// canonical IDL to your Storage node (LEZREG_STORAGE_API) and uses that; `raw` uses the
+    /// raw-codec sha2-256 CID of the bytes without uploading.
     #[arg(long)]
     pub idl_cid: Option<String>,
     /// IDL sha256 (hex).
@@ -261,7 +288,8 @@ impl EntryArgs {
             missing.push("--version");
         }
         if self.idl_cid.is_none() {
-            missing.push("--idl-cid (the IDL's Storage CID, or `raw` with --idl-file; Storage upload comes with M3)");
+            missing
+                .push("--idl-cid (the IDL's Storage CID, or `push` with --idl-file to upload it)");
         }
         if self.repo.is_none() && self.archive_cid.is_none() {
             missing.push("the source: --repo and --commit, and/or --archive-cid");
@@ -344,6 +372,7 @@ pub struct PatchArgs {
     /// Remove every tag.
     #[arg(long)]
     pub clear_tags: bool,
+    /// New IDL: its CID, or `push` with --idl-file to upload it (see `register --help`).
     #[arg(long)]
     pub idl_cid: Option<String>,
     #[arg(long)]
