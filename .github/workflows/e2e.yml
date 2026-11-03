@@ -164,6 +164,62 @@ jobs:
           echo "== pin-all"
           "$L" pin-all --storage-api "$B"
 
+      # M8: the author flow on a sample project. The sample is this checkout under another name:
+      # lezreg.toml describes the registry guest, and the program deployed is
+      # artifacts/lez_program_registry.bin at a new header account, so the Action step below can
+      # rebuild it and match the live program.
+      - name: Adoption tools (init, publish, rerun, version bump, release payload, adopt, stats, doctor)
+        env:
+          LEZREG_NETWORK: e2e
+          LEZREG_STORAGE_API: http://127.0.0.1:8091/api/storage/v1
+        run: |
+          L="$RUNNER_TEMP/lezreg"
+          j() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
+          echo "== init --detect"
+          "$L" init --detect --name e2e-sample --label "e2e" --tag sample --author "$PAYER"
+          cat lezreg.toml
+          grep -q 'binary = "lez_program_registry"' lezreg.toml
+          grep -q 'manifest_path = "methods/guest/Cargo.toml"' lezreg.toml
+          echo "== doctor"
+          "$L" doctor
+          echo "== publish: deploy + register in one DeployAndRegister"
+          "$L" --json publish --elf artifacts/lez_program_registry.bin > pub1.json
+          test "$(j 'd["action"]' < pub1.json)" = "deployed and registered"
+          SAMPLE=$(j 'd["program"]' < pub1.json)
+          grep -q "program = \"$SAMPLE\"" lezreg.toml
+          echo "SAMPLE=$SAMPLE" >> "$GITHUB_ENV"
+          echo "== publish again: nothing to send"
+          test "$("$L" --json publish --elf artifacts/lez_program_registry.bin | j 'd["action"]')" = "unchanged"
+          echo "== version bump: an Update"
+          sed -i 's/^version = "\(.*\)"/version = "9.9.1"/' lezreg.toml
+          test "$("$L" --json publish | j 'd["action"]')" = "updated"
+          test "$("$L" --json show "$SAMPLE" | j 'd["deployer_entry"]["version"]')" = "9.9.1"
+          echo "== release payload (live image must match), then publish --from-release (hashes re-checked)"
+          sed -i 's/^version = "\(.*\)"/version = "9.9.2"/' lezreg.toml
+          "$L" release prepare --elf artifacts/lez_program_registry.bin --out "$RUNNER_TEMP/rel" --live
+          cp -r "$RUNNER_TEMP/rel" "$RUNNER_TEMP/rel-bad" && printf 'x' >> "$RUNNER_TEMP/rel-bad/program.bin"
+          if "$L" publish --from-release "$RUNNER_TEMP/rel-bad"; then echo "a tampered payload was accepted"; exit 1; fi
+          "$L" publish --from-release "$RUNNER_TEMP/rel"
+          test "$("$L" --json show "$SAMPLE" | j 'd["deployer_entry"]["version"]')" = "9.9.2"
+          echo "== adopt a program deployed without registering"
+          X=$("$L" --json deploy artifacts/lez_program_registry.bin --no-register --payer "$PAYER" | j 'd["program"]')
+          test "$("$L" --json adopt "$X" --name e2e-adopted | j 'd["action"]')" = "registered"
+          echo "== stats"
+          "$L" stats --by-month --by-author
+          "$L" --json stats --by-month > stats.json
+          echo "$PAYER" > team.txt
+          "$L" --json stats --exclude-keys team.txt > stats-ex.json
+          python3 - <<'EOF'
+          import json
+          s = json.load(open("stats.json")); x = json.load(open("stats-ex.json"))
+          print(s, x, sep="\n")
+          assert s["counted"] == 3 and s["programs"] == 3, s      # the registry, the sample, the adopted
+          assert s["authors"] == 2, s                             # REG (its own header key) and PAYER
+          assert sum(m["entries"] for m in s["by_month"]) == 3, s
+          assert x["counted"] == 1 and x["excluded"] == 2 and x["authors"] == 1, x
+          EOF
+          rm -f pub1.json stats.json stats-ex.json team.txt
+
       - name: Free disk for the Docker rebuild
         run: |
           rm -rf target ~/.cargo/registry/cache
@@ -176,6 +232,25 @@ jobs:
           "$RUNNER_TEMP/lezreg" --json verify "$REG" --mark --work "$RUNNER_TEMP/verify" | tee verify.json
           python3 -c 'import json;d=json.load(open("verify.json"));assert d["verdict"]=="Match", d;print("Match", d["rebuilt"])'
           "$RUNNER_TEMP/lezreg" verified
+
+      # The M8 exit check: the Action itself (prepare mode, no upload) on the sample project:
+      # canonical Docker build from lezreg.toml, live image of the sample program on this chain,
+      # payload written. It fails on a mismatch.
+      - name: The GitHub Action on the sample project
+        id: action
+        uses: ./action
+        with:
+          mode: prepare
+          rpc: ${{ env.RPC }}
+          program-id: ${{ env.SAMPLE }}
+          lezreg-bin: ${{ runner.temp }}/lezreg
+          upload: "false"
+      - name: The Action matched the live program
+        run: |
+          echo "image ${{ steps.action.outputs.image-id }} live ${{ steps.action.outputs.live-image-id }} match ${{ steps.action.outputs.match }}"
+          test "${{ steps.action.outputs.match }}" = "true"
+          test "${{ steps.action.outputs.image-id }}" = "$(cat artifacts/lez_program_registry.imageid)"
+          ls -la "${{ steps.action.outputs.release-dir }}"
 
       - name: Logs
         if: always()

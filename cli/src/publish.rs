@@ -427,10 +427,14 @@ pub async fn publish(
                     "{program} is deployed, but this wallet does not hold its header key, so it cannot make the deployer entry. A community entry needs no key: `lezreg register --third-party --program {program} --publisher <your account> …`"
                 );
             }
+            let author = plan.author.unwrap_or(program);
+            // A header account usually holds nothing: the author pays unless --payer says.
+            let so = lezreg_sdk::tx::SendOpts {
+                payer: so.payer.or(Some(author)),
+                ..so.clone()
+            };
             let input = entry_input(plan, idl_ref(&prepared, &plan.idl, opts.dry_run)?);
-            let receipt = w
-                .register_deployer(program, plan.author.unwrap_or(program), &input, &so)
-                .await?;
+            let receipt = w.register_deployer(program, author, &input, &so).await?;
             if !opts.dry_run {
                 remember(project.as_deref_mut(), program);
             }
@@ -650,6 +654,7 @@ impl ReleasePayload {
 
 /// `lezreg release prepare`: the payload for a built binary, written to `out_dir`. With
 /// `live`, the program's live image (read from the sequencer) must equal the binary's.
+#[allow(clippy::too_many_arguments)]
 pub fn prepare(
     out: &mut Out,
     net: &Net,

@@ -32,7 +32,7 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
 | M6: Basecamp core module `program_registry` | reads done and loading in a Logos host; writes, UI example and catalog next |
 | M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
-| M8: adoption tools (`publish`, `adopt`, GitHub Action) | planned |
+| M8: adoption tools | **done, CI run pending:** `init --detect`, `publish` (deploy+register, register or update, idempotent), `publish --from-release`, `adopt`, `stats`, `doctor`, `release prepare`, and the GitHub Action ([`action/`](action/action.yml), `verify` and `prepare` modes). Run end to end on a local rc1 chain; `e2e.yml` now runs the same flow and the Action. Not yet: `idl gen`/`idl check`, source-archive upload, the Action's opt-in `publish` mode |
 
 LEZ testnet 0.4 has not launched. The `testnet` network is a placeholder: it has no RPC and no
 registry id yet, and `lezreg` says so. The registry will be deployed there on launch day with
@@ -198,8 +198,8 @@ lezreg freeze <PROGRAM_ID>                                              # irreve
 The build fields default to LEZ's own builder pin (`risczero/risc0-guest-builder:r0.1.91.1@sha256:fafb377a…`,
 risc0-build 3.0.5), the binary to the entry name, and the Cargo.lock hash to zero. lezreg warns
 when you give no build flags, and `show` marks build info without a Cargo.lock hash as
-UNVERIFIED. Give at least `--binary`, `--manifest-path` and `--lock-file`. `lezreg init --detect`
-(M8) will fill them in from your project.
+UNVERIFIED. Give at least `--binary`, `--manifest-path` and `--lock-file`, or use `lezreg
+publish`, which takes them all from `lezreg.toml` (next section).
 
 **Upgradeable by default.** `deploy` makes the code upgradeable unless you pass `--immutable`:
 the header key can later point the program at new code. The entry then shows `stale` until
@@ -212,6 +212,87 @@ segment chain held in memory, and the payer's funds for every write.
 `--force-send [--gas-limit N]` sends a transaction even when simulation refuses it, so you can
 watch the chain refuse it too. The payer is charged the whole limit; the demo uses it for the
 Mallory cases.
+
+### Publish your program (one command)
+
+```sh
+cd my-program                       # a git checkout with a risc0 guest and its Cargo.lock
+lezreg init --detect --author <YOUR_ACCOUNT>   # writes lezreg.toml; commit it
+lezreg doctor                       # sequencer, registry, Storage node, r0vm, wallet, Docker, clock
+lezreg publish --elf <program .bin or guest ELF> [--dry-run]
+```
+
+`init --detect` reads the guest (a methods crate's `[package.metadata.risc0] methods`, or a
+`guest/Cargo.toml`; `methods/guest` wins when there are several), its bin target, the name,
+version and description from `Cargo.toml`, the IDL under `idl/`, the repository from `git remote
+origin` (as an https URL, any token in it dropped), and the canonical builder from the
+`risc0-build` version in `Cargo.lock` (3.0.5 → `risczero/risc0-guest-builder:r0.1.91.1@sha256:fafb377a…`,
+host Rust 1.91.1; an unknown version is refused, not guessed). It refuses a tree with
+uncommitted changes (`--allow-dirty` overrides), and `--ci` also writes
+`.github/workflows/lezreg.yml`.
+
+`publish` then does whatever the chain still needs:
+
+| The chain has | publish does |
+|---|---|
+| nothing at the program (or no `[deploy] program` yet) | uploads the IDL, writes the segments and sends `DeployAndRegister` (needs `--elf`); records the new program id in `lezreg.toml` |
+| the program, but no entry | `RegisterDeployer` (the wallet must hold the header key) |
+| an entry that differs from `lezreg.toml` or the tree | `Update` of just the fields that changed (version, label, description, tags, IDL, commit, build tuple, a new live image) |
+| exactly what `lezreg.toml` says | nothing: "up to date" |
+
+So the release routine is: bump `version` in `lezreg.toml`, commit, `lezreg publish`. The commit
+and the `Cargo.lock` hash are read at publish time, and a commit that is on no remote branch gets
+a warning (verifiers could not fetch it). With `--elf` on a deployed program, the binary's image
+must equal the live one. `[deploy] author` (or `--author`) is the proven author; without it the
+header key is the author, and `publish` suggests a separate author account, since one author
+account across all your programs is what counts you as one author. The author pays the fees
+unless `--payer` says otherwise. The IDL goes to `LEZREG_STORAGE_API` (only when it changed).
+
+```sh
+lezreg adopt <PROGRAM_ID> [--project dir] [--name n]   # a program you deployed earlier (header key in the wallet)
+lezreg stats --by-month --by-author [--exclude-keys team.txt]
+```
+
+`stats` is the adoption table straight from the chain: entries whose program has a live header
+are counted (others are listed as not counted), with distinct programs, proven authors (never
+the label) and images, stale entries flagged, per month of registration and per author.
+`--exclude-keys` drops entries whose author or registrant is listed (one account per line).
+
+### From CI: the GitHub Action
+
+```yaml
+on: { pull_request: {}, push: { tags: ["v*"] } }
+permissions: { contents: write }
+jobs:
+  registry:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jefdiesel/lez-program-registry/action@main
+        with:
+          mode: ${{ startsWith(github.ref, 'refs/tags/') && 'prepare' || 'verify' }}
+          # rpc: <a LEZ RPC>            # with a program id: compare with the live program
+          # program-id: <PROGRAM_ID>    # default: lezreg.toml's [deploy] program
+```
+
+- **`verify`**: the canonical build of what `lezreg.toml` describes (`lezreg build`: the pinned
+  builder, compile with the network off), its image id, and with `rpc` the live program's image;
+  fails on a mismatch, and writes a job summary (image ids, builder digest, `network_denied`).
+- **`prepare`**: verify, then `lezreg release prepare`: `program.bin`, the canonical IDL
+  (`idl.json`) and an unsigned `lezreg-release.json` with every hash, kept as a workflow
+  artifact and, on a tag, attached to the release. Then, on your machine:
+
+```sh
+lezreg publish --from-release https://github.com/<you>/<repo>/releases/tag/<tag>   # or a local directory
+```
+
+It downloads the three files (following the release host's redirect), checks their sizes and
+sha256s against the payload, the binary's image id, that the IDL is canonical, and, when run in
+a checkout of the payload's commit, the `Cargo.lock` hash; then it publishes exactly as above.
+**Header and author keys never enter CI**: the Action has no key input and sends nothing. It
+builds `lezreg` from its own source unless given `lezreg-bin` (a cold build takes about 30
+minutes). The source tarball and the Action's opt-in `publish` mode (DESIGN §7.6) are not built
+yet; `verify` rebuilds from the recorded repository and commit.
 
 ### Deploy the registry itself
 
@@ -320,6 +401,7 @@ rsync -a --delete --exclude target --exclude .git --exclude _deps \
 | `crates/types/` | records, PDA rule and validation, with no LEZ dependency |
 | `sdk/rust/` | `lezreg-sdk`: reads, list cache and search; `tx` writes |
 | `cli/` | `lezreg` |
+| `action/` | the GitHub Action (`verify`, `prepare`) |
 | `chain/deploy.sh` | deploys the registry and its self-entry |
 | `scripts/demo-m2.sh` | the M2 demo |
 | `idl/` | the generated IDL |

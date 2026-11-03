@@ -1,0 +1,280 @@
+# M8 author flow on a local LEZ v0.4.0-rc1 sequencer (Mac mini, 2026-11-03): a throwaway chain,
+# one Storage v0.5.3 node, the registry deployed from artifacts/, LEZ's published local-test key.
+# Two bugs this run found were fixed afterwards and rerun (transcript at the end):
+#  - the dirty-file list lost its first character ("rogram/"): now `git diff --name-only HEAD`;
+#  - adopt's RegisterDeployer defaulted the payer to the (empty) header account: the author pays.
+
+######## sample project: a git copy of the registry repo (the registry guest under another name)
+
+######## init refuses a dirty tree
+error: uncommitted changes (rogram/src/lib.rs): commit them first, since the entry records the commit and `verify` rebuilds exactly that (--allow-dirty goes ahead anyway)
+exit 1
+
+######## lezreg init --detect
+note: 4 guests found; using methods/guest/Cargo.toml (pass --manifest-path for another)
+wrote ./lezreg.toml: m8-sample 0.1.0 (guest lez_program_registry in methods/guest/Cargo.toml, risc0-build 3.0.5)
+next: commit it, then `lezreg publish --elf <program .bin>` (`lezreg build` makes one)
+exit 0
+# lezreg.toml: what `lezreg publish` registers (LEZ Program Registry).
+# Written by `lezreg init`. Edit freely; bump `version` and rerun `lezreg publish` to
+# record a new release. The commit and the Cargo.lock hash are read at publish time.
+
+[program]
+name = "m8-sample"            # immutable once registered: [a-z0-9][a-z0-9._-]*, at most 32 bytes
+version = "0.1.0"
+label = "M8 test"           # free-text author name, shown as UNPROVEN
+description = ""
+tags = ["sample"]            # at most 8, [a-z0-9-]
+idl = "idl/lez_program_registry.idl.json"             # the program's IDL JSON, relative to this file
+
+[source]
+repo = "https://github.com/jefdiesel/lez-program-registry"
+docker_root = "."     # build context, relative to the repository root
+
+# The canonical build (`lezreg build`, `lezreg verify`). risc0-build 3.0.5 builds in
+# risczero/risc0-guest-builder:r0.1.91.1 (pinned by digest).
+[build]
+risc0_build = "3.0.5"
+image_tag = "r0.1.91.1"
+image_digest = "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0"
+host_rust = "1.91.1"
+manifest_path = "methods/guest/Cargo.toml"   # the guest's Cargo.toml, relative to docker_root
+binary = "lez_program_registry"
+features = []
+
+[deploy]
+author = "6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV"          # the proven author; keep the header key cold
+immutable = false
+# program = "<id>"     # set by `lezreg publish` after the first deploy
+
+######## lezreg doctor
+ok    network    m8 (config /Volumes/exos162/logos/dev/m8-agent-live/config/networks.json)
+ok    sequencer  http://127.0.0.1:3200, block 12
+ok    clock      this machine is +10.8 s from the chain clock (block 12)
+ok    registry   FHG3ZEDM96qF275fD8LUUdY7GcD27ycyyQi9qWJLNmwY
+ok    storage    http://127.0.0.1:8210/api/storage/v1: peer 16Uiu2HAmGRCs9NH99WoWsbyaHwo3GqDDcFw566enwTxbVPDKTY74
+ok    r0vm       /Users/minim4/.cargo/bin/r0vm
+ok    wallet     /Volumes/exos162/logos/dev/m8-agent-live/wallet/storage.json
+warn  docker     server 29.2.1, buildx yes, memory 5.8 GiB (the builder runs emulated on arm64: give Docker at least 8 GiB)
+exit 0
+
+######## publish --dry-run (nothing deployed yet)
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+== deploy 555092 bytes (image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55) at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: 6 segment writes, then DeployAndRegister
+   pre-flight: DeployAndRegister simulated OK (182406 cycles, gas limit 273609); payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV holds 9999994380160, the whole deploy reserves up to about 7354548
+   dry run: nothing written
+DeployAndRegister (after 6 segment writes): dry run, nothing sent; simulated 182406 cycles, gas limit would be 273609; the payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV must hold about 7354548 for the fee reserve
+dry run: would have deployed and registered m8-sample 0.1.0 at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+exit 0
+
+######## publish without --elf: refused
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+error: m8-sample is not deployed yet: pass --elf <program .bin or guest ELF> (`lezreg build` makes one) to deploy and register it
+exit 1
+
+######## publish: deploy + register
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8210/api/storage/v1
+== deploy 555092 bytes (image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55) at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: 6 segment writes, then DeployAndRegister
+   pre-flight: DeployAndRegister simulated OK (184681 cycles, gas limit 277022); payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV holds 9999994380160, the whole deploy reserves up to about 7385670
+   writing segment 1/6 (31148 bytes) at 9KJbY6xPC6UivgFa7BS9Xw8jAgMNHeVMym2PAe7VUTji
+   writing segment 2/6 (98304 bytes) at 3kQn6ZfNvoeCNJqyEE5A8wopo351ub1ha9Xhvr7S3KQy
+   writing segment 3/6 (98304 bytes) at DhphHTqMrgrUSHWCsu82Eicag3oDhkqGqesFTEXhb4RJ
+   writing segment 4/6 (98304 bytes) at 5LVtfatmK6ACRdMg4jXeaQPYUwwsZg2YJke6XgnsauQy
+   writing segment 5/6 (98304 bytes) at B4hWr84sxMZGukU9UTdV19weQcCkG4rZiBPcArvxS6Pf
+   writing segment 6/6 (98304 bytes) at EXST9T8drGk7WNFuzuVhK6vvrwPvcyorC5Jrx4V3Ebv7
+   wrote the segment chain (522668 bytes of user ELF), first segment EXST9T8drGk7WNFuzuVhK6vvrwPvcyorC5Jrx4V3Ebv7
+== DeployAndRegister
+   root (G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp, REG); 8 actors declared; 556 message bytes; signing: G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp, 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+   simulated: OK, 184681 cycles -> gas limit 277022
+   submitted c194cd36a28d34d192509ef827d519202dd312dfa40710b376c3f8d61c843721
+   block 19: APPLIED; 1577 bytes, gas limit 277022, fee 1490072
+   read back G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: m8-sample v0.1.0 revision 1, author 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV (deploy-and-register: confirmed)
+   read back header at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55 (upgradeable): confirmed
+recorded program G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp in lezreg.toml
+exit 0
+deployed and registered G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+31:program = "G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp"
+
+######## publish again: nothing to send
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+m8-sample 0.1.0 at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp is up to date (revision 1): nothing to send
+share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+exit 0
+
+######## publish with a different binary: refused
+error: /Volumes/exos162/logos/lez-program-registry/target/release/lezreg_forwarder: invalid input: not a loadable program: Invalid program bytecode
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+error: G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp runs image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55, but the binary given is image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082: it is not this program's code. Upgrading the code is not something publish does
+exit 1
+
+######## version bump: an Update
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+== Update (revision 2)
+   root (6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV, REG); 3 actors declared; 95 message bytes; signing: 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+   simulated: OK, 90404 cycles -> gas limit 135606
+   submitted 752c28c52cca98d414602002925da967053202d3a2cf4fc24b3751649b47e501
+   block 20: APPLIED; 620 bytes, gas limit 135606, fee 728200
+   read back G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: m8-sample v0.1.1 revision 2, author 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV (revision 2: confirmed)
+Update (revision 2): applied in block 20 (tx 752c28c52cca98d414602002925da967053202d3a2cf4fc24b3751649b47e501); simulated 90404 cycles, gas limit 135606, fee 728200, 620 bytes; entry G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+updated m8-sample 0.1.1 at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp (changed: version)
+share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+exit 0
+0.1.1 2 {'status': 'fresh'}
+
+######## release prepare (+ --live) and publish --from-release (dir)
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+m8-sample 0.1.2 commit ec8e36a5e736e74d27b8c48f4e0ba4b2360b9ad2
+  image id  5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55
+  live      5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55  MATCH
+  wrote     /Volumes/exos162/logos/dev/m8-agent-live/rel/{program.bin, idl.json, lezreg-release.json}
+exit 0
+total 1136
+drwxr-xr-x   5 minim4  staff     160 Nov  3 16:11 .
+drwxr-xr-x  16 minim4  staff     512 Nov  3 16:11 ..
+-rw-r--r--   1 minim4  staff   18282 Nov  3 16:11 idl.json
+-rw-r--r--   1 minim4  staff    1181 Nov  3 16:11 lezreg-release.json
+-rw-r--r--   1 minim4  staff  555092 Nov  3 16:11 program.bin
+
+######## tampered payload is refused
+error: idl.json does not match the payload: sha256 baf94d3c665d0ff5c45eb55bebdd596fb5b666dfd8b1a193b93ae097173b299f (18282 B), the payload says 98b7354e9c578ec16239ec649730248f67b84be356bd32f51304d05fb22957c4 (18282 B)
+exit 1
+
+######## publish --from-release
+release payload: m8-sample 0.1.2 commit ec8e36a5e736e74d27b8c48f4e0ba4b2360b9ad2 image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55 (sizes, sha256s and image id checked)
+Cargo.lock checked against this checkout
+== Update (revision 3)
+   root (6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV, REG); 3 actors declared; 95 message bytes; signing: 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+   simulated: OK, 90404 cycles -> gas limit 135606
+   submitted 8ea1caab5d8e7f5ab6ef5c63184117f0a1da2c16df73d29957c2f7d732af513c
+   block 21: APPLIED; 620 bytes, gas limit 135606, fee 728200
+   read back G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp: m8-sample v0.1.2 revision 3, author 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV (revision 3: confirmed)
+Update (revision 3): applied in block 21 (tx 8ea1caab5d8e7f5ab6ef5c63184117f0a1da2c16df73d29957c2f7d732af513c); simulated 90404 cycles, gas limit 135606, fee 728200, 620 bytes; entry G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+updated m8-sample 0.1.2 at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp (changed: version)
+share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+exit 0
+0.1.2 3
+
+######## from-release over http (local server)
+fetching the release payload from http://127.0.0.1:8219/
+release payload: m8-sample 0.1.2 commit ec8e36a5e736e74d27b8c48f4e0ba4b2360b9ad2 image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55 (sizes, sha256s and image id checked)
+Cargo.lock checked against this checkout
+m8-sample 0.1.2 at G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp is up to date (revision 3): nothing to send
+share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
+exit 0
+
+######## adopt: a program deployed without registering
+== deploy 555092 bytes (image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55) at 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4: 6 segment writes, then CreateHeader
+   pre-flight: CreateHeader simulated OK (0 cycles, gas limit 30000); payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV holds 9999987223224, the whole deploy reserves up to about 5157774
+   writing segment 1/6 (31148 bytes) at HFZgQ3sSvunrmkkGg4UtfCbunD5tWcZpUDDipEMqXqo1
+   writing segment 2/6 (98304 bytes) at 5yjBhYtMkHMaxcGBXzoRPjzSPvNSt2eX9tHpbrxWAKUQ
+   writing segment 3/6 (98304 bytes) at 4t6Bd8rUJ1aGztXATinhcPHiNcZNDLg91LHAzJKb1EvX
+   writing segment 4/6 (98304 bytes) at F7K4pn3b1A49WoyY2MaUJ1macsgjLZhgRfibThkthtst
+   writing segment 5/6 (98304 bytes) at HKT5N4qZrae4tbxr391VzfFDfisKnixhSzdiZcqVSYqp
+   writing segment 6/6 (98304 bytes) at F8rHta9eR1qKmaW6D6ygTk1uMKezJv8CkdSqekJGrvcp
+   wrote the segment chain (522668 bytes of user ELF), first segment F8rHta9eR1qKmaW6D6ygTk1uMKezJv8CkdSqekJGrvcp
+== CreateHeader
+   root (5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+   simulated: OK, 0 cycles -> gas limit 30000
+   submitted 754ace39ecc7b3b36e1ae5716d4a9c128a4b9c0d2f7f6be22e6acac017fa4d51
+   block 28: APPLIED; 607 bytes, gas limit 30000, fee 4864
+   read back header at 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4: image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55 (upgradeable): confirmed
+note: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4's header key is in the wallet at /Volumes/exos162/logos/dev/m8-agent-live/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+deployed 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8210/api/storage/v1
+== RegisterDeployer
+   root (5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4, REG); 7 actors declared; 525 message bytes; signing: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4, 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+   simulated: OK, 183497 cycles -> gas limit 275246
+error: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4 holds 0, but about 2499939 is held for the fee while this runs: send it at least 2499939 more
+exit 1
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8210/api/storage/v1
+== RegisterDeployer
+   root (5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4, REG); 7 actors declared; 525 message bytes; signing: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4, 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+   simulated: OK, 183497 cycles -> gas limit 275246
+error: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4 holds 0, but about 2499939 is held for the fee while this runs: send it at least 2499939 more
+exit (rerun) 1
+
+######## adopt of nothing deployed: refused
+warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
+error: nothing is deployed at 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV: adopt registers a deployed program (`lezreg publish --elf` deploys and registers)
+exit 1
+
+######## stats
+entries listed      2
+counted             2  (live program header; 2 deployer, 0 third-party, 0 stale)
+not counted         0 with no program deployed, 0 excluded, 0 unreadable
+distinct programs   2
+distinct authors    2  (proven co-signers)
+distinct images     1
+
+month     entries  programs  authors  new authors
+2026-11        2         2        2            2
+
+author                                          entries  first    names
+FHG3ZEDM96qF275fD8LUUdY7GcD27ycyyQi9qWJLNmwY          1  2026-11  lez_program_registry
+6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV          1  2026-11  m8-sample
+exit 0
+entries listed      2
+counted             1  (live program header; 1 deployer, 0 third-party, 0 stale)
+not counted         0 with no program deployed, 1 excluded, 0 unreadable
+distinct programs   1
+distinct authors    1  (proven co-signers)
+distinct images     1
+exit 0
+exit 0
+{
+  "authors": 2,
+  "by_month": [
+    {
+      "authors": 2,
+      "entries": 2,
+      "month": "2026-11",
+      "new_authors": 2,
+      "programs": 2
+    }
+  ],
+  "counted": 2,
+  "deployer": 2,
+  "excluded": 0,
+  "images": 1,
+  "listed": 2,
+  "no_program": 0,
+  "programs": 2,
+  "stale": 0,
+  "third_party": 0,
+  "unreadable": 0
+}
+
+######## after the two fixes: adopt (rerun), adopt again, the dirty-tree message, stats
+   block 39: APPLIED; 1482 bytes, gas limit 275246, fee 1479840
+   read back 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4: m8-adopted v0.1.1 revision 1, author 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV (deployer entry: confirmed)
+note: ./lezreg.toml names program G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp; left unchanged
+RegisterDeployer: applied in block 39 (tx b58a42e1120363161148855697989c02cfce11d19613312b9f333dfbf45bf769); simulated 183497 cycles, gas limit 275246, fee 1479840, 1482 bytes; entry 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+registered m8-adopted 0.1.1 at 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+share: lezreg --network m8 show 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+exit 0
+== rerun
+note: ./lezreg.toml names program G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp; left unchanged
+m8-adopted 0.1.1 at 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4 is up to date (revision 1): nothing to send
+share: lezreg --network m8 show 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
+== dirty msg
+error: uncommitted changes (program/src/lib.rs): commit them first, since the entry records the commit and `verify` rebuilds exactly that (--allow-dirty goes ahead anyway)
+== stats
+entries listed      3
+counted             3  (live program header; 3 deployer, 0 third-party, 0 stale)
+not counted         0 with no program deployed, 0 excluded, 0 unreadable
+distinct programs   3
+distinct authors    2  (proven co-signers)
+distinct images     1
+
+month     entries  programs  authors  new authors
+2026-11        3         3        2            2
+
+author                                          entries  first    names
+6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV          2  2026-11  m8-adopted, m8-sample
+FHG3ZEDM96qF275fD8LUUdY7GcD27ycyyQi9qWJLNmwY          1  2026-11  lez_program_registry
+== stats --json --exclude-keys (PAYER): counted, excluded, authors
+1 2 1

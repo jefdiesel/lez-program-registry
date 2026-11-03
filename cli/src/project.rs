@@ -220,10 +220,11 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
 /// and `publish` writes the program id into it).
 pub fn dirty_files(dir: &Path) -> Result<Vec<String>> {
     Ok(
-        git(dir, &["status", "--porcelain", "--untracked-files=no"])?
+        // Staged and unstaged changes to tracked files, against HEAD.
+        git(dir, &["diff", "--name-only", "HEAD", "--"])?
             .lines()
-            .map(|l| l.get(3..).unwrap_or(l).to_owned())
-            .filter(|f| !f.ends_with(FILE))
+            .filter(|f| !f.is_empty() && *f != FILE && !f.ends_with(&format!("/{FILE}")))
+            .map(str::to_owned)
             .collect(),
     )
 }
@@ -1002,7 +1003,11 @@ mod tests {
         assert_eq!(Project::load(&path).unwrap().m, m);
         // Not twice without --force.
         assert!(init(&o).is_err());
-        // lezreg.toml itself never makes the tree dirty.
+        // lezreg.toml itself never makes the tree dirty, committed or not.
+        assert!(dirty_files(&d).unwrap().is_empty());
+        sh(&d, &["add", FILE]);
+        sh(&d, &["commit", "-qm", "toml"]);
+        Project::load(&path).unwrap().save_program("Abc").unwrap();
         assert!(dirty_files(&d).unwrap().is_empty());
         std::fs::remove_dir_all(&d).ok();
     }
@@ -1017,7 +1022,10 @@ mod tests {
             ..Default::default()
         };
         let e = init(&o).unwrap_err().to_string();
-        assert!(e.contains("uncommitted"), "{e}");
+        assert!(e.contains("(methods/guest/src/main.rs)"), "{e}");
+        // Staged counts too.
+        sh(&d, &["add", "methods/guest/src/main.rs"]);
+        assert_eq!(dirty_files(&d).unwrap(), vec!["methods/guest/src/main.rs"]);
         o.allow_dirty = true;
         init(&o).unwrap();
         // An unknown risc0-build is refused rather than guessed.

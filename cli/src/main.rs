@@ -1327,6 +1327,18 @@ async fn main() {
 mod tests {
     use super::*;
 
+    /// Every subcommand's arguments are consistent (no clashing ids such as `--binary` in
+    /// both `build` and its flattened build flags).
+    #[test]
+    fn cli_definition_is_consistent() {
+        use clap::CommandFactory as _;
+        Cli::command().debug_assert();
+        let p = Cli::try_parse_from(["lezreg", "publish", "--from-release", "x", "--elf", "y"]);
+        assert!(p.is_err(), "--from-release conflicts with --elf");
+        assert!(Cli::try_parse_from(["lezreg", "build", "--binary", "g"]).is_ok());
+        assert!(Cli::try_parse_from(["lezreg", "init", "--detect", "--version", "1.0.0"]).is_ok());
+    }
+
     /// Review fix (conformance 6, robustness 9): the write guard parses the URL.
     #[test]
     fn local_means_a_loopback_host() {
