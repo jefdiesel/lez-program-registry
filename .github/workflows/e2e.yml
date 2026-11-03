@@ -233,6 +233,12 @@ jobs:
           python3 -c 'import json;d=json.load(open("verify.json"));assert d["verdict"]=="Match", d;print("Match", d["rebuilt"])'
           "$RUNNER_TEMP/lezreg" verified
 
+      - name: Free disk again (the first Docker build's cache) before the Action's build
+        run: |
+          rm -rf "$RUNNER_TEMP/verify"
+          docker system prune -af --volumes >/dev/null
+          df -h / | tail -1
+
       # The M8 exit check: the Action itself (prepare mode, no upload) on the sample project:
       # canonical Docker build from lezreg.toml, live image of the sample program on this chain,
       # payload written. It fails on a mismatch.
