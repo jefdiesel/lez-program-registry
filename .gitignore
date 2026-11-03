@@ -11,3 +11,4 @@ _deps/
 /module/logos-rust-sdk-src
 /module/rust-lib/target/
 /module/rust-lib/generated/
+/.claude/
