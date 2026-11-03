@@ -33,6 +33,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      # Two Docker guest builds plus the all-platform fetch's git clones ran a runner out of
+      # space ("cannot extend packfile", 2026-11-03).
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
 
       - name: Install rzup and cargo-risczero
         run: |
