@@ -10,9 +10,9 @@ like LEZ's own `artifacts` job.
 | `lez_program_registry.imageid` | its image id (hex of LEZ `Program::id()`, 8 little-endian words) |
 | `build.json` | builder image digest, risc0-build, host rzup Rust, manifest, binary, commit, `Cargo.lock` sha256 |
 
-**Not committed yet: M1 is code complete, its exit check is pending.** CI (`ci.yml`, `repro.yml`) has
-never run, because nothing has been pushed yet; the smoke runs deployed local, non-reproducible builds. These come from CI, not from a developer machine: the M1 builds ran on
-the Mini with the local rzup toolchain and no Docker, which gives a different image id. `repro.yml`
-builds twice on separate runners, rebuilds once more with `RUN --network=none`, compares
-everything, and uploads `guest-a`/`guest-b`. Commit those files here after the first green run;
-from then on the job fails if a build differs from them.
+**Committed 2026-11-03 from `repro.yml` run on commit `1b1def2`:** two independent runners each
+built the guest with the stock `cargo risczero build`, rebuilt it with the network off, and got
+byte-identical binaries with image id `5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55`.
+Every later `repro.yml` run diffs its build against these files. Builds on a developer machine
+without Docker (the M1/M2 smoke and demo runs) give a different image id and are not canonical.
+`build.json`'s `host_risc0_rust` is empty: the workflow's `rzup show` parse needs fixing.
