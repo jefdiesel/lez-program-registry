@@ -177,10 +177,12 @@ pub fn run_checks(net: &Net, storage_api: &str) -> Vec<Check> {
         .or_else(|| which("r0vm"));
     v.push(match r0vm {
         Some(p) => check("r0vm", Level::Ok, p.display().to_string()),
+        // Not fatal: public writes simulate in-process (CI deploys and registers without it).
+        // Only local proving of private changes runs the prover binary.
         None => check(
             "r0vm",
-            Level::Fail,
-            "not on PATH and RISC0_SERVER_PATH unset: every write is simulated with it first (rzup install)",
+            Level::Warn,
+            "not on PATH and RISC0_SERVER_PATH unset: needed only to prove private changes locally (rzup install r0vm)",
         ),
     });
     v.push(match wallet::utils::fetch_persistent_storage_path() {
