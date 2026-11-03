@@ -202,7 +202,7 @@ impl BuildArgs {
     }
 
     /// `base` with these flags applied.
-    fn apply(&self, mut b: BuildConfig) -> Result<BuildConfig> {
+    pub fn apply(&self, mut b: BuildConfig) -> Result<BuildConfig> {
         if let Some(d) = &self.image_digest {
             b.image_digest = hex32(d, "--image-digest")?;
         }
@@ -236,7 +236,7 @@ impl BuildArgs {
     }
 }
 
-fn default_build(name: &str) -> Result<BuildConfig> {
+pub fn default_build(name: &str) -> Result<BuildConfig> {
     Ok(BuildConfig {
         schema: t::SCHEMA,
         builder: t::BUILDER_RISC0_DOCKER,

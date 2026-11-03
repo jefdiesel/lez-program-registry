@@ -1,0 +1,40 @@
+# M4 exit check, part 1 (DESIGN §4.2): `lezreg build` emits the Dockerfile itself, builds the
+# registry guest with the network off for the compile, and must reproduce the committed
+# canonical image (artifacts/, from repro.yml's stock `cargo risczero build`). This exercises
+# everything `lezreg verify` does after fetching the source: the Dockerfile emitter, the Docker
+# build and the image id calculation. Verifying a deployed entry against a chain is part 2, in
+# the e2e workflow (M5).
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-matches-artifacts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries (PC/SC for the wallet's Keycard support)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
+      - name: Install rzup (risc0 toolchain, needed to build the CLI's embedded guests)
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.risc0/bin:$PATH"
+          rzup install cargo-risczero 3.0.5
+          rzup install rust
+      - uses: Swatinem/rust-cache@v2
+      - name: Build lezreg
+        run: cargo build --release -p lezreg
+      - name: lezreg build (its own Dockerfile, compile offline) reproduces artifacts/
+        run: |
+          ./target/release/lezreg --json build . --binary lez_program_registry \
+            --manifest-path methods/guest/Cargo.toml --work "$RUNNER_TEMP/lezreg-build" | tee out.json
+          got=$(python3 -c 'import json;print(json.load(open("out.json"))["image_id"])')
+          want=$(cat artifacts/lez_program_registry.imageid)
+          echo "built $got, artifacts/ says $want"
+          test "$got" = "$want"

@@ -13,7 +13,7 @@ name = "lezreg_sdk"
 default = ["tx"]
 # Writes: pulls in the LEZ wallet and engine (for simulation) and the registry program crate
 # (for `Instruction` and `actors_to_declare`). Reads never need it.
-tx = ["dep:lezreg-program", "dep:lee_core", "dep:lee", "dep:common", "dep:wallet", "dep:program_loader_core", "dep:clock_core", "dep:risc0-binfmt", "dep:tokio", "dep:sequencer_service_rpc"]
+tx = ["dep:lezreg-program", "dep:lee_core", "dep:lee", "dep:common", "dep:wallet", "dep:program_loader_core", "dep:clock_core", "dep:risc0-binfmt", "dep:tokio", "dep:sequencer_service_rpc", "dep:risc0-zkos-v1compat", "dep:toml"]
 
 [dependencies]
 lezreg-types = { path = "../../crates/types" }
@@ -31,6 +31,8 @@ wallet = { workspace = true, optional = true }
 program_loader_core = { workspace = true, optional = true }
 clock_core = { workspace = true, optional = true }
 risc0-binfmt = { workspace = true, optional = true }
+risc0-zkos-v1compat = { version = "2.2.2", optional = true }
+toml = { version = "0.8", optional = true }
 tokio = { version = "1.50", features = ["macros", "rt-multi-thread", "time"], optional = true }
 sequencer_service_rpc = { workspace = true, optional = true }
 

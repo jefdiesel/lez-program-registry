@@ -11,6 +11,7 @@ mod config;
 mod out;
 mod render;
 mod storage_cmd;
+mod verify_cmd;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
@@ -221,6 +222,36 @@ enum Command {
         target: String,
         #[command(flatten)]
         storage: storage_cmd::StorageOpts,
+    },
+    /// Rebuild an entry's recorded source in Docker (network off for the compile) and compare
+    /// image ids: rebuilt vs claimed vs the live program. Verdict Match, MatchStale, Mismatch or
+    /// NotReproducible. Needs Docker with buildx.
+    Verify {
+        /// The program id.
+        program: String,
+        /// Verify this recorded release instead of the current revision.
+        #[arg(long)]
+        revision: Option<u32>,
+        /// Work directory (kept afterwards). Default: a temporary one.
+        #[arg(long)]
+        work: Option<std::path::PathBuf>,
+        /// If the network-off build fails, retry with the network on (reported as weaker).
+        #[arg(long)]
+        allow_network: bool,
+    },
+    /// The canonical reproducible build of a local source tree, printing its image id: what
+    /// `verify` will rebuild. Needs Docker with buildx.
+    Build {
+        /// Source root (the docker root).
+        #[arg(default_value = ".")]
+        dir: std::path::PathBuf,
+        /// Guest bin target name.
+        #[arg(long)]
+        binary: String,
+        #[command(flatten)]
+        build: args::BuildArgs,
+        #[arg(long)]
+        work: Option<std::path::PathBuf>,
     },
     /// Start a Logos Storage node in the background (for authors who don't run one).
     Storage {
@@ -720,6 +751,30 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 storage_cmd::push(out, &file, &storage)?;
             }
         },
+        Command::Verify {
+            program,
+            revision,
+            work,
+            allow_network,
+        } => {
+            verify_cmd::verify(
+                out,
+                &reader(&net)?,
+                &program,
+                revision,
+                work.as_deref(),
+                allow_network,
+            )?;
+        }
+        Command::Build {
+            dir,
+            binary,
+            build,
+            work,
+        } => {
+            let b = build.apply(args::default_build(&binary)?)?;
+            verify_cmd::build(out, &dir, &b, work.as_deref())?;
+        }
         Command::Storage {
             cmd: StorageCmd::Up { o },
         } => storage_cmd::up(out, &o)?,

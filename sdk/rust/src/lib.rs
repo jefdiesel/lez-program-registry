@@ -37,6 +37,8 @@ pub mod rpc;
 pub mod storage;
 #[cfg(feature = "tx")]
 pub mod tx;
+#[cfg(feature = "tx")]
+pub mod verify;
 
 use std::path::PathBuf;
 
