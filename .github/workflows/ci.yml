@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      # The LEZ wallet (and spel, which links it) builds Keycard support, which needs PC/SC.
+      - name: System libraries (PC/SC for the wallet's Keycard support)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
       - name: Install rzup (risc0 toolchain for the guests)
         run: |
           curl -L https://risczero.com/install | bash
@@ -34,6 +37,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      # The LEZ wallet (and spel, which links it) builds Keycard support, which needs PC/SC.
+      - name: System libraries (PC/SC for the wallet's Keycard support)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
       - name: Install rzup (the drift tests link the program crate)
         run: |
           curl -L https://risczero.com/install | bash
