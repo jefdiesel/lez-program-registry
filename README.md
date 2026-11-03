@@ -29,7 +29,7 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M2: Rust SDK, `lezreg` CLI, `chain/deploy.sh` | **done** ([`docs/demo-m2.log`](docs/demo-m2.log)) |
 | M3: IDLs on Logos Storage | **done:** `idl push`, `--idl-cid push` inside register/update, `idl get` (hash-checked fetch ladder), `pin`, `pin-all`, `storage up` |
 | M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets `5f42948a…` again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
-| M5: end to end in CI | in progress: `e2e.yml`: rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
+| M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
 | M6: Basecamp core module `program_registry` | reads done and loading in a Logos host; writes, UI example and catalog next |
 | M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
 | M8: adoption tools (`publish`, `adopt`, GitHub Action) | planned |
