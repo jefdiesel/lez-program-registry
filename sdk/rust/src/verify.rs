@@ -107,9 +107,13 @@ fn version_above_1_81(v: &str) -> Result<bool> {
     Ok((a, b, c) > (1, 81, 0))
 }
 
-/// A value for a Dockerfile `ENV k="v"` line.
+/// A Dockerfile `ENV k="v"` value, written as risc0-build's `DockerFile::env` writes it: inside
+/// double quotes, as is. The rustflags are already `escape_default`ed by `encode_rust_flags`,
+/// and Docker removes exactly that one level; escaping again hands rustc `\"custom\"` (the
+/// first verify run in CI failed that way). Values from chain data are checked first
+/// (`check_build_config`).
 fn quoted(v: &str) -> String {
-    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""))
+    format!("\"{v}\"")
 }
 
 /// The Dockerfile for `b`. `rustc_flags`: the guest's `[package.metadata.risc0] rustc-flags`.
@@ -448,6 +452,15 @@ mod tests {
             d.contains("\nRUN cargo +risc0 fetch --locked --manifest-path $CARGO_MANIFEST_PATH\n")
         );
         assert!(d.ends_with("COPY --from=build /src/target/riscv32im-risc0-zkvm-elf/release /\n"));
+    }
+
+    #[test]
+    fn the_rustflags_env_line_is_the_one_repro_yml_uses() {
+        // repro.yml writes this line with a bash heredoc, and it builds the canonical image.
+        let d = dockerfile(&config(), &[], true).unwrap();
+        let us = '\u{1f}';
+        let want = format!("ENV CARGO_ENCODED_RUSTFLAGS=\"-C{us}passes=lower-atomic{us}-C{us}link-arg=-Ttext=0x00200800{us}-C{us}link-arg=--fatal-warnings{us}-C{us}panic=abort{us}--cfg{us}getrandom_backend=\\\"custom\\\"\"\n");
+        assert!(d.contains(&want), "{d}");
     }
 
     #[test]
