@@ -315,7 +315,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "lezreg-sdk"
 version = "0.1.0"
-source = "git+https://github.com/jefdiesel/lez-program-registry?rev=ac06000914b200846af612446c6e1a14012c70ed#ac06000914b200846af612446c6e1a14012c70ed"
+source = "git+https://github.com/jefdiesel/lez-program-registry?rev=aee304535e15f9433ee8eadbc8ab24bdb6d01539#aee304535e15f9433ee8eadbc8ab24bdb6d01539"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -330,7 +330,7 @@ dependencies = [
 [[package]]
 name = "lezreg-types"
 version = "0.1.0"
-source = "git+https://github.com/jefdiesel/lez-program-registry?rev=ac06000914b200846af612446c6e1a14012c70ed#ac06000914b200846af612446c6e1a14012c70ed"
+source = "git+https://github.com/jefdiesel/lez-program-registry?rev=aee304535e15f9433ee8eadbc8ab24bdb6d01539#aee304535e15f9433ee8eadbc8ab24bdb6d01539"
 dependencies = [
  "borsh",
  "bs58",
@@ -579,7 +579,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 [[package]]
 name = "spel04-shim-macros"
 version = "0.1.0"
-source = "git+https://github.com/jefdiesel/lez-program-registry?rev=ac06000914b200846af612446c6e1a14012c70ed#ac06000914b200846af612446c6e1a14012c70ed"
+source = "git+https://github.com/jefdiesel/lez-program-registry?rev=aee304535e15f9433ee8eadbc8ab24bdb6d01539#aee304535e15f9433ee8eadbc8ab24bdb6d01539"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
