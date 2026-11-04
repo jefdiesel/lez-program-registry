@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use lezreg_sdk::{
     HttpRpc, Kind, Registry,
+    apps::{self, Manifest, Names},
     idl::{self, FetchConfig, IdlStatus},
     json as js,
     types::AccountId,
@@ -28,6 +29,9 @@ use serde_json::{Value, json};
 const DEFAULT_SEQUENCER: &str = "http://127.0.0.1:3062";
 /// Most entries a list or search call returns.
 const MAX_LIMIT: i64 = 200;
+/// How long an app check is kept: a name's records change rarely, and deriving a name takes a
+/// second of Argon2.
+const APP_CHECK_TTL_MS: u64 = 5 * 60 * 1000;
 
 pub trait ProgramRegistryModule: Send + 'static {
     /// Everything the registry says about a program: `{program, deployer, header, freshness,
@@ -57,11 +61,31 @@ pub trait ProgramRegistryModule: Send + 'static {
     /// Community (third-party) entries for a program.
     fn third_party_entries(&mut self, program_id: String) -> String;
 
-    /// `{sequencer, registry, storage_api}`.
+    /// Whether the installed Basecamp module `module_name` is really published by the LNS name
+    /// its package names (docs/APPS.md): `{status, publisher, module, version, root, record}`.
+    /// `status` is `verified` (the name vouches for this exact package), `mismatch` (the name
+    /// publishes this module but not this package: a copy, or a release not yet vouched for),
+    /// `not_published`, `no_such_name`, or `unclaimed` (the package names no LNS publisher).
+    /// `record.programs` are the programs the app says it calls. Reads the installed
+    /// `manifest.json` from Basecamp's data folder and one LNS record from the sequencer.
+    fn verify_app(&mut self, module_name: String) -> String;
+
+    /// The same check for a package not yet installed, given its `manifest.json` as JSON text
+    /// (the `manifest` of a catalog's index.json entry will do): for an install view.
+    fn verify_package(&mut self, manifest_json: String) -> String;
+
+    /// The apps an LNS name publishes: `{name, apps: [{module, version, roots, catalog,
+    /// programs: [label]}]}`, each program with its `program_label`. Only someone who knows a name
+    /// can read its apps: nothing lists them.
+    fn publisher_apps(&mut self, name: String) -> String;
+
+    /// `{sequencer, registry, storage_api, lns, basecamp_data}`.
     fn config_get(&mut self) -> String;
 
-    /// Changes any of `sequencer`, `registry`, `storage_api` from a JSON object, and remembers
-    /// them. The sequencer must be `https://`, or `http://` to this machine.
+    /// Changes any of `sequencer`, `registry`, `storage_api`, `lns` (the LNS program id, for
+    /// the app checks) and `basecamp_data` (Basecamp's data folder, if not the default) from a
+    /// JSON object, and remembers them. The sequencer must be `https://`, or `http://` to this
+    /// machine.
     fn config_set(&mut self, settings_json: String) -> String;
 
     /// Called once the module is wired to the host.
@@ -75,11 +99,23 @@ pub struct ProgramRegistry {
     sequencer: String,
     registry: Option<AccountId>,
     storage_api: String,
+    lns: Option<AccountId>,
+    basecamp_data: Option<PathBuf>,
+    /// LNS reads, kept with their derived names, for the sequencer and LNS program they read.
+    names: Option<(String, AccountId, Names<HttpRpc>)>,
+    /// `(module, root)` → (verdict, when), for [`APP_CHECK_TTL_MS`].
+    checked: std::collections::HashMap<(String, [u8; 32]), (Value, u64)>,
+}
+
+impl ProgramRegistry {
+    fn with_settings(sequencer: String, registry: Option<AccountId>, storage_api: String, lns: Option<AccountId>, basecamp_data: Option<PathBuf>) -> Self {
+        Self { sequencer, registry, storage_api, lns, basecamp_data, names: None, checked: std::collections::HashMap::new() }
+    }
 }
 
 impl Default for ProgramRegistry {
     fn default() -> Self {
-        let mut me = Self { sequencer: DEFAULT_SEQUENCER.to_owned(), registry: None, storage_api: lezreg_sdk::storage::DEFAULT_API.to_owned() };
+        let mut me = Self::with_settings(DEFAULT_SEQUENCER.to_owned(), None, lezreg_sdk::storage::DEFAULT_API.to_owned(), None, None);
         if let Some(saved) = config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
             let _ = me.apply(&saved);
         }
@@ -154,11 +190,18 @@ impl ProgramRegistry {
             }
             s.clone_into(&mut self.storage_api);
         }
+        if let Some(l) = v.get("lns").and_then(Value::as_str) {
+            self.lns = if l.is_empty() { None } else { Some(program_arg(l)?) };
+        }
+        if let Some(d) = v.get("basecamp_data").and_then(Value::as_str) {
+            self.basecamp_data = if d.is_empty() { None } else { Some(PathBuf::from(d)) };
+        }
         Ok(())
     }
 
     fn shown(&self) -> Value {
-        json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api})
+        json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api,
+               "lns": self.lns.map(|l| l.to_base58()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string())})
     }
 
     fn reader(&self) -> Result<Registry<HttpRpc>, String> {
@@ -201,6 +244,81 @@ impl ProgramRegistry {
         Ok(json!({"text": text, "kind": "deployer", "verified": verified, "stale": stale, "upgradeable": upgradeable,
                   "name": e.name, "version": e.version, "author": e.author.to_base58(), "author_label_unproven": e.author_label}))
     }
+
+    /// LNS reads for the configured sequencer and LNS program, kept across calls.
+    fn names(&mut self) -> Result<&mut Names<HttpRpc>, String> {
+        let lns = self.lns.ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
+        let current = matches!(&self.names, Some((seq, l, _)) if *seq == self.sequencer && *l == lns);
+        if !current {
+            self.names = Some((self.sequencer.clone(), lns, Names::new(HttpRpc::new(&self.sequencer), lns)));
+        }
+        Ok(&mut self.names.as_mut().expect("just set").2)
+    }
+
+    /// A package checked against its publisher, kept for [`APP_CHECK_TTL_MS`].
+    fn check(&mut self, manifest: &Manifest) -> Result<Value, String> {
+        let now = now_ms();
+        let key = (manifest.name.clone(), manifest.root);
+        if let Some((verdict, at)) = self.checked.get(&key) {
+            if now.saturating_sub(*at) < APP_CHECK_TTL_MS {
+                return Ok(verdict.clone());
+            }
+        }
+        let verdict = if manifest.publisher().is_none() {
+            apps::Verdict::Unclaimed
+        } else {
+            self.names()?.verify(manifest, now).map_err(|e| e.to_string())?
+        };
+        let mut shown = verdict.to_json(manifest);
+        if let Some(programs) = shown["record"]["programs"].as_array().cloned() {
+            let labels: Vec<Value> = programs.iter().filter_map(Value::as_str).map(|p| self.label(p).unwrap_or_else(|e| json!({"text": p, "error": e}))).collect();
+            shown["record"]["program_labels"] = json!(labels);
+        }
+        if self.checked.len() > 256 {
+            self.checked.clear();
+        }
+        self.checked.insert(key, (shown.clone(), now));
+        Ok(shown)
+    }
+
+    /// Basecamp's data folder: the configured one, else where Basecamp keeps it.
+    fn basecamp_data(&self) -> Option<PathBuf> {
+        self.basecamp_data.clone().or_else(default_basecamp_data)
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Where Basecamp keeps installed modules: Qt's app data folder for `Logos/LogosBasecamp`.
+fn default_basecamp_data() -> Option<PathBuf> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    Some(if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/Logos/LogosBasecamp")
+    } else {
+        std::env::var_os("XDG_DATA_HOME").map_or_else(|| home.join(".local/share"), PathBuf::from).join("Logos/LogosBasecamp")
+    })
+}
+
+/// The installed manifest of `module`: core modules under `modules/`, ui apps under `plugins/`.
+fn installed_manifest(data: &std::path::Path, module: &str) -> Result<Manifest, String> {
+    // A module name becomes a path: only the characters an app record's key allows, no `..`.
+    if !apps::is_module_name(module) || module.contains("..") || module.starts_with('.') {
+        return Err(format!("'{module}' is not a module name"));
+    }
+    for dir in ["modules", "plugins"] {
+        let path = data.join(dir).join(module).join("manifest.json");
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            let json: Value = serde_json::from_str(&text).map_err(|_| format!("{} is not JSON", path.display()))?;
+            let manifest = Manifest::parse(&json).map_err(|e| e.to_string())?;
+            if manifest.name != module {
+                return Err(format!("{} names another module ({})", path.display(), manifest.name));
+            }
+            return Ok(manifest);
+        }
+    }
+    Err(format!("{module} is not installed in {}", data.display()))
 }
 
 impl ProgramRegistryModule for ProgramRegistry {
@@ -257,6 +375,40 @@ impl ProgramRegistryModule for ProgramRegistry {
         })())
     }
 
+    fn verify_app(&mut self, module_name: String) -> String {
+        reply((|| {
+            let data = self.basecamp_data().ok_or("no Basecamp data folder: call config_set with {\"basecamp_data\": \"<path>\"}")?;
+            let manifest = installed_manifest(&data, module_name.trim())?;
+            self.check(&manifest)
+        })())
+    }
+
+    fn verify_package(&mut self, manifest_json: String) -> String {
+        reply((|| {
+            let json: Value = serde_json::from_str(&manifest_json).map_err(|e| format!("not JSON: {e}"))?;
+            let manifest = Manifest::parse(&json).map_err(|e| e.to_string())?;
+            self.check(&manifest)
+        })())
+    }
+
+    fn publisher_apps(&mut self, name: String) -> String {
+        reply((|| {
+            let name = name.trim().strip_prefix("lns:").unwrap_or(name.trim()).to_owned();
+            let profile = self.names()?.profile(&name, now_ms()).map_err(|e| e.to_string())?.ok_or_else(|| format!("{name} is not a registered LNS name"))?;
+            let mut shown = Vec::new();
+            for (module, record) in apps::apps_of(&profile) {
+                match record {
+                    Ok(r) => {
+                        let labels: Vec<Value> = r.programs.iter().map(|p| self.label(&p.to_base58()).unwrap_or_else(|e| json!({"text": p.to_base58(), "error": e}))).collect();
+                        shown.push(json!({"module": module, "version": r.version, "roots": r.roots.iter().map(hex::encode).collect::<Vec<_>>(), "catalog": r.catalog, "programs": labels}));
+                    }
+                    Err(e) => shown.push(json!({"module": module, "error": e.to_string()})),
+                }
+            }
+            Ok(json!({"name": name, "apps": shown}))
+        })())
+    }
+
     fn config_get(&mut self) -> String {
         reply(Ok(self.shown()))
     }
@@ -264,7 +416,7 @@ impl ProgramRegistryModule for ProgramRegistry {
     fn config_set(&mut self, settings_json: String) -> String {
         reply((|| {
             let v: Value = serde_json::from_str(&settings_json).map_err(|e| format!("not JSON: {e}"))?;
-            let mut next = Self { sequencer: self.sequencer.clone(), registry: self.registry, storage_api: self.storage_api.clone() };
+            let mut next = Self::with_settings(self.sequencer.clone(), self.registry, self.storage_api.clone(), self.lns, self.basecamp_data.clone());
             next.apply(&v)?;
             next.save()?;
             *self = next;
@@ -293,7 +445,7 @@ mod tests {
     }
 
     fn fresh() -> ProgramRegistry {
-        ProgramRegistry { sequencer: DEFAULT_SEQUENCER.into(), registry: None, storage_api: lezreg_sdk::storage::DEFAULT_API.into() }
+        ProgramRegistry::with_settings(DEFAULT_SEQUENCER.into(), None, lezreg_sdk::storage::DEFAULT_API.into(), None, None)
     }
 
     #[test]
@@ -318,5 +470,45 @@ mod tests {
     fn limits_are_clamped() {
         assert_eq!(limit_arg(-5), 1);
         assert_eq!(limit_arg(10_000), 200);
+    }
+
+    /// A Basecamp data folder with one core module and one ui app installed.
+    fn basecamp(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lezreg-module-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = "ab".repeat(32);
+        for (kind, name, author) in [("modules", "names", "lns:jef"), ("plugins", "forumer_ui", "")] {
+            std::fs::create_dir_all(dir.join(kind).join(name)).unwrap();
+            let manifest = json!({"name": name, "version": "1.0.0", "author": author, "hashes": {"root": root}});
+            std::fs::write(dir.join(kind).join(name).join("manifest.json"), manifest.to_string()).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn installed_apps_are_read_from_basecamp_and_checked() {
+        let data = basecamp("apps");
+        let mut m = fresh();
+        assert_eq!(parsed(&m.config_set(json!({"basecamp_data": data.display().to_string()}).to_string()))["success"], true);
+        // A ui app that names no publisher is unclaimed, without any chain read.
+        let v = parsed(&m.verify_app("forumer_ui".into()));
+        assert_eq!(v["value"]["status"], "unclaimed", "{v}");
+        assert_eq!(v["value"]["module"], "forumer_ui");
+        // One that does needs the LNS program to check it.
+        let v = parsed(&m.verify_app("names".into()));
+        assert!(v["error"].as_str().unwrap().contains("no LNS program"), "{v}");
+        // Module names can't reach outside the data folder.
+        for bad in ["../names", "..", ".hidden", "a/b", "Names", ""] {
+            assert_eq!(parsed(&m.verify_app(bad.into()))["success"], false, "{bad}");
+        }
+        assert!(parsed(&m.verify_app("missing".into()))["error"].as_str().unwrap().contains("not installed"));
+        // A package not yet installed, as a catalog index lists it.
+        let v = parsed(&m.verify_package(json!({"name": "faucet_ui", "version": "0.1.0", "author": "", "hashes": {"root": "cd".repeat(32)}}).to_string()));
+        assert_eq!(v["value"]["status"], "unclaimed");
+        assert_eq!(parsed(&m.verify_package("{}".into()))["success"], false);
+        assert!(parsed(&m.publisher_apps("jef".into()))["error"].as_str().unwrap().contains("no LNS program"));
+        let shown = parsed(&m.config_get());
+        assert_eq!(shown["value"]["basecamp_data"], data.display().to_string());
+        let _ = std::fs::remove_dir_all(data);
     }
 }
