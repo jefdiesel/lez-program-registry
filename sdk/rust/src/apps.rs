@@ -285,6 +285,43 @@ pub fn check(
     })
 }
 
+/// The LNS text entry that points a name to another (logos-names SPEC.md §7, Forwarding).
+pub const FORWARD_KEY: &str = "forward";
+
+/// Where `profile` (of `name`) forwards to: a valid name other than `name`, normalised.
+#[must_use]
+pub fn forward_of(name: &str, profile: &Profile) -> Option<String> {
+    let value = profile.text(FORWARD_KEY)?.trim().to_ascii_lowercase();
+    let value = value.strip_prefix("lns:").unwrap_or(&value);
+    let value = value.strip_prefix('@').unwrap_or(value);
+    (lns::is_valid_name(value) && value != name).then(|| value.to_owned())
+}
+
+/// [`check`], following the publisher's `forward` one hop: a package naming `lns:nameswallet`
+/// is checked against `names` when `nameswallet` forwards there. Returns the verdict (naming the
+/// name whose records decided it) and the name it was forwarded from, if any.
+pub fn check_following(
+    manifest: &Manifest,
+    mut profile_of: impl FnMut(&str) -> Result<Option<Profile>>,
+) -> Result<(Verdict, Option<String>)> {
+    let Some(name) = manifest.publisher() else {
+        return Ok((Verdict::Unclaimed, None));
+    };
+    let Some(profile) = profile_of(&name)? else {
+        return Ok((Verdict::NoSuchName { name }, None));
+    };
+    match forward_of(&name, &profile) {
+        None => Ok((check(manifest, |_| Ok(Some(profile)))?, None)),
+        Some(target) => {
+            let Some(forwarded) = profile_of(&target)? else {
+                return Ok((Verdict::NoSuchName { name: target }, Some(name)));
+            };
+            let as_target = Manifest { author: format!("{AUTHOR_PREFIX}{target}"), ..manifest.clone() };
+            Ok((check(&as_target, |_| Ok(Some(forwarded)))?, Some(name)))
+        }
+    }
+}
+
 /// Reads LNS names from a sequencer for [`check`], keeping each name's (slow) derivation.
 pub struct Names<R> {
     rpc: R,
@@ -322,9 +359,9 @@ impl<R: Rpc> Names<R> {
         )
     }
 
-    /// [`check`] against the chain.
-    pub fn verify(&mut self, manifest: &Manifest, now_ms: u64) -> Result<Verdict> {
-        check(manifest, |name| self.profile(name, now_ms))
+    /// [`check_following`] against the chain: the verdict, and the name it forwarded from.
+    pub fn verify(&mut self, manifest: &Manifest, now_ms: u64) -> Result<(Verdict, Option<String>)> {
+        check_following(manifest, |name| self.profile(name, now_ms))
     }
 }
 
@@ -398,15 +435,21 @@ mod tests {
         rpc.set(crate::lns::record_address(&lns, &id), lns, sealed_record("forumer", &[("app.forumer_ui", good)]));
         let mut names = Names::new(&rpc, lns);
         let real = manifest("lns:forumer", ROOT);
-        let verdict = names.verify(&real, 0).unwrap();
-        assert_eq!(verdict.status(), "verified");
+        let (verdict, via) = names.verify(&real, 0).unwrap();
+        assert_eq!((verdict.status(), via), ("verified", None));
         assert_eq!(verdict.to_json(&real)["record"]["programs"][0], AccountId([5; 32]).to_base58());
-        assert_eq!(names.verify(&manifest("lns:forumer", &"ee".repeat(32)), 0).unwrap().status(), "mismatch");
-        assert_eq!(names.verify(&manifest("lns:nobody", ROOT), 0).unwrap().status(), "no_such_name");
+        assert_eq!(names.verify(&manifest("lns:forumer", &"ee".repeat(32)), 0).unwrap().0.status(), "mismatch");
+        assert_eq!(names.verify(&manifest("lns:nobody", ROOT), 0).unwrap().0.status(), "no_such_name");
+        // A brand name forwarding to the publisher: checked against the publisher's records.
+        let id = crate::lns::derive("forumerapp").id;
+        rpc.set(crate::lns::record_address(&lns, &id), lns, sealed_record("forumerapp", &[("forward", "forumer".into())]));
+        let (verdict, via) = names.verify(&manifest("lns:forumerapp", ROOT), 0).unwrap();
+        assert_eq!((verdict.status(), via.as_deref()), ("verified", Some("forumerapp")));
+        assert_eq!(verdict.to_json(&real)["publisher"], "forumer");
         // A record sealed for another name (copied to this address) opens as nothing set.
         let id = crate::lns::derive("copycat").id;
         rpc.set(crate::lns::record_address(&lns, &id), lns, sealed_record("forumer", &[("app.forumer_ui", format!(r#"{{"v":1,"root":"{ROOT}"}}"#))]));
-        assert_eq!(names.verify(&manifest("lns:copycat", ROOT), 0).unwrap().status(), "not_published");
+        assert_eq!(names.verify(&manifest("lns:copycat", ROOT), 0).unwrap().0.status(), "not_published");
     }
 
     #[test]

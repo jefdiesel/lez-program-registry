@@ -50,6 +50,10 @@ Key `app.<module>`: 1–32 bytes total, so module names up to 28 bytes. Value: J
 - `root` is required; the rest is optional. A new release changes `root` in the same
   profile update that publishes it. Several roots (`"roots":[...]`, newest first, at most 4)
   let an older install stay verified during an upgrade.
+- **Forwarding.** A name with a `forward` entry (logos-names SPEC.md §7) is checked where it
+  points, one hop: a package naming `lns:nameswallet` is checked against `names` when
+  `nameswallet` forwards there, and the verdict carries `forwarded_from`. Brand names can then
+  lead to the publisher without copying its records.
 - `app.signer`: optional, the `did:key` that signs the publisher's catalog releases, for a
   catalog's `trustedSigners`. The name vouches for the key.
 - One name may publish several modules (`app.names`, `app.names_ui`, ...): a profile holds

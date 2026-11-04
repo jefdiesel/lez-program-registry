@@ -264,12 +264,14 @@ impl ProgramRegistry {
                 return Ok(verdict.clone());
             }
         }
-        let verdict = if manifest.publisher().is_none() {
-            apps::Verdict::Unclaimed
+        let (verdict, via) = if manifest.publisher().is_none() {
+            (apps::Verdict::Unclaimed, None)
         } else {
             self.names()?.verify(manifest, now).map_err(|e| e.to_string())?
         };
         let mut shown = verdict.to_json(manifest);
+        // A publisher name that forwards was checked where it points; the prompt says so.
+        shown["forwarded_from"] = json!(via);
         if let Some(programs) = shown["record"]["programs"].as_array().cloned() {
             let labels: Vec<Value> = programs.iter().filter_map(Value::as_str).map(|p| self.label(p).unwrap_or_else(|e| json!({"text": p, "error": e}))).collect();
             shown["record"]["program_labels"] = json!(labels);

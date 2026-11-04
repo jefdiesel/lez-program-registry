@@ -151,14 +151,17 @@ pub fn run(
         }
         AppCmd::Verify { file } => {
             let manifest = read_manifest(&file)?;
-            let verdict = match manifest.publisher() {
-                None => Verdict::Unclaimed,
+            let (verdict, via) = match manifest.publisher() {
+                None => (Verdict::Unclaimed, None),
                 Some(_) => {
                     let lns = lns_program(lns)?;
                     let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
                     Names::new(HttpRpc::new(&rpc), lns).verify(&manifest, now_ms())?
                 }
             };
+            if let Some(from) = &via {
+                out.text(&format!("{from} forwards to {}", verdict.to_json(&manifest)["publisher"].as_str().unwrap_or("?")));
+            }
             let line = match &verdict {
                 Verdict::Verified { name, .. } => format!("verified: {} {} is published by {name}", manifest.name, manifest.version),
                 Verdict::Mismatch { name, .. } => format!("MISMATCH: {name} publishes {} but does not vouch for this package (root {})", manifest.name, hex::encode(manifest.root)),
@@ -167,7 +170,9 @@ pub fn run(
                 Verdict::Unclaimed => format!("unclaimed: {} does not name an LNS publisher", manifest.name),
             };
             out.text(&line);
-            out.json(verdict.to_json(&manifest));
+            let mut shown = verdict.to_json(&manifest);
+            shown["forwarded_from"] = json!(via);
+            out.json(shown);
             if !matches!(verdict, Verdict::Verified { .. }) {
                 crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
             }
