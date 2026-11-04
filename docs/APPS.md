@@ -123,7 +123,8 @@ program, a redeploy and fresh verification evidence; it is left for a v2.
 
 ## 8. Open
 
-- Confirm `metadata.json` `author` reaches the built manifest (the manifest has the field,
-  empty today): a test build.
+- ~~Confirm `metadata.json` `author` reaches the built manifest~~ **confirmed 2026-11-04**: a
+  build of the names module with `"author": "lns:example"` (builder de169fd, `.#lgx-portable`)
+  carries it in `manifest.json`, under the package's root hash.
 - The approval sheet trusts the module name the host reports for the caller; a host-provided
   package root for the caller would remove the step of reading the installed manifest.
