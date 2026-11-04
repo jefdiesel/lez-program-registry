@@ -16,6 +16,12 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
   longer change.
 - Every entry joins **on-chain linked lists**: global, per name, per author, and per program
   for third-party entries. Clients list and search with plain sequencer reads, with no indexer.
+- It is also an **app store for Basecamp apps**, with no list to curate: an app's identity is
+  an LNS name, and the registry checks that an installed app is exactly the package that name
+  vouches for, so a copy can't pass as the real app. Publishers can stay anonymous (a name can
+  be held privately) and apps unlisted (a name's records are sealed, so only someone who knows
+  the name can find its apps). Packages can be fetched from Logos Storage by CID, with no web
+  host on the path. See [Apps](#apps-verified-by-publisher) and [`docs/APPS.md`](docs/APPS.md).
 - **No server of ours is ever on the path.** The SDK and `lezreg` talk directly to the LEZ
   sequencer you choose, and later to your Logos Storage node. There are no analytics. Reads
   refuse HTTP redirects and ignore `HTTP(S)_PROXY` unless you set `LEZREG_USE_PROXY=1`, and
@@ -294,6 +300,32 @@ a checkout of the payload's commit, the `Cargo.lock` hash; then it publishes exa
 builds `lezreg` from its own source unless given `lezreg-bin` (a cold build takes about 30
 minutes). The source tarball and the Action's opt-in `publish` mode (DESIGN §7.6) are not built
 yet; `verify` rebuilds from the recorded repository and commit.
+
+### Apps, verified by publisher
+
+An app published by the LNS name `forumer` names it in its `metadata.json`
+(`"author": "lns:forumer"`), and `forumer`'s profile vouches for each release with an
+`app.<module>` entry ([`docs/APPS.md`](docs/APPS.md)). Pass `--lns <LNS program id>` (or set
+`LEZREG_LNS`) to the commands that read names.
+
+```sh
+# Publisher: the entry for a release, with the package put on your Logos Storage node.
+lezreg app record forumer_ui-1.2.0.lgx --upload \
+    --catalog https://raw.githubusercontent.com/<you>/<catalog>/main/logos-repo.json \
+    --program <program id the app calls> --keep <previous root>
+#   names set-text forumer app.forumer_ui '{"v":1,"root":"…","sha256":"…","cid":"zDvZ…",…}'
+# Run the printed line: the name's holder signs the change, which is what vouches for it.
+
+# Anyone who knows the name:
+lezreg app show forumer                       # its apps, and their programs' registry status
+lezreg app verify forumer_ui-1.2.0.lgx        # verified / mismatch / not published / unclaimed
+lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, written only if sha256 and root match
+```
+
+A name that forwards (`nameswallet` → `names`, logos-names SPEC.md §7) is checked where it
+points. In Basecamp, the `program_registry` module does the same check
+(`verify_app`, `verify_package`, `publisher_apps`), and Names Wallet shows it on every approval
+prompt: "forumer ✓ verified publisher", or a warning that the app may be a copy.
 
 ### Deploy the registry itself
 
