@@ -22,6 +22,10 @@ hex.workspace = true
 serde_json.workspace = true
 bs58 = { workspace = true, features = ["std"] }
 ureq = "3.4.2"
+# Reading LNS names for app verification (src/lns.rs, docs/APPS.md): Argon2id derivation
+# and the AES-256-GCM seal, as logos-names SPEC.md §3 specifies them.
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+aes-gcm = "0.10"
 
 lezreg-program = { path = "../../program", optional = true }
 lee_core = { workspace = true, optional = true }

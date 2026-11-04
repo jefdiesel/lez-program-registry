@@ -27,11 +27,13 @@
 //! # Ok::<(), lezreg_sdk::Error>(())
 //! ```
 
+pub mod apps;
 pub mod cid;
 pub mod error;
 pub mod idl;
 pub mod jcs;
 pub mod json;
+pub mod lns;
 pub mod read;
 pub mod rpc;
 pub mod storage;
