@@ -3721,6 +3721,7 @@ dependencies = [
  "bs58",
  "clap",
  "clock_core",
+ "flate2",
  "hex",
  "lee_core",
  "lezreg-sdk",
@@ -3729,6 +3730,7 @@ dependencies = [
  "sequencer_service_rpc",
  "serde",
  "serde_json",
+ "tar",
  "tokio",
  "toml",
  "toml_edit 0.22.27",
@@ -3793,6 +3795,8 @@ dependencies = [
 name = "lezreg-sdk"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
+ "argon2",
  "borsh",
  "bs58",
  "clock_core",
