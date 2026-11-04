@@ -30,8 +30,9 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M3: IDLs on Logos Storage | **done:** `idl push`, `--idl-cid push` inside register/update, `idl get` (hash-checked fetch ladder), `pin`, `pin-all`, `storage up` |
 | M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets `5f42948a…` again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
 | M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
-| M6: Basecamp core module `program_registry` | reads done and loading in a Logos host; writes, UI example and catalog next |
+| M6: Basecamp core module `program_registry` | **done:** `resolve_program`, `program_label`, `get_idl`, list and search, and the app checks below; built with `mkLogosModule` and published to the module catalog [`jefdiesel/logos-modules`](https://github.com/jefdiesel/logos-modules) (forked from `logos-modules-release-base`, released with `logos-modules-release-action`) for macOS and Linux. Names Wallet's approval sheet uses it. Writes go through the SDK and CLI |
 | M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
+| Apps by LNS name ([`docs/APPS.md`](docs/APPS.md)) | **done:** Basecamp apps checked against the LNS name that publishes them, so a copy can't pass as the real app; publishers can stay anonymous and apps unlisted. `lezreg app show/verify/record`, the module's `verify_app`, `verify_package`, `publisher_apps`. No change to the deployed program. Tested on a real chain (logos-names `wallet-e2e.sh` step 7) |
 | M8: adoption tools | **done** (e2e green on 6f0dc66): `init --detect`, `publish` (deploy+register, register or update, idempotent), `publish --from-release`, `adopt`, `stats`, `doctor`, `release prepare`, and the GitHub Action ([`action/`](action/action.yml), `verify` and `prepare` modes). Run end to end on a local rc1 chain; `e2e.yml` now runs the same flow and the Action. Not yet: `idl gen`/`idl check`, source-archive upload, the Action's opt-in `publish` mode |
 
 LEZ testnet 0.4 has not launched. The `testnet` network is a placeholder: it has no RPC and no
@@ -309,6 +310,9 @@ as its key is in the wallet, so a failure part-way is finished at the same `R` o
 a read that fails stops the script instead of deploying a second registry.
 
 ## SDK
+
+**Start with [`docs/sdk.md`](docs/sdk.md)**: resolving a program ID to its metadata and IDL, in
+Rust, JavaScript and from a Basecamp app, with a runnable example CI runs on every push.
 
 `sdk/rust` is the `lezreg-sdk` crate. Reads need only `lezreg-types` and an HTTP client. Writes
 sit behind the default feature `tx` (the LEZ wallet and engine).

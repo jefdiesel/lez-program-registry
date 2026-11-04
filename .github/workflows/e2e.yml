@@ -143,6 +143,15 @@ jobs:
           assert sys.argv[1] in text, "the live header's image id is not artifacts/"
           EOF
 
+      # docs/sdk.md's worked example, run as written against the registry's own entry.
+      - name: SDK worked example (resolve a program id to metadata and IDL)
+        run: |
+          cargo run --release -p lezreg-sdk --no-default-features --example resolve_program -- \
+            "$RPC" "$REG" "$REG" http://127.0.0.1:8090/api/storage/v1 | tee example.out
+          grep -q "^lez_program_registry " example.out
+          grep -q "fresh: the program runs the image the entry claims" example.out
+          grep -qE "IDL: [0-9]+ instructions" example.out
+
       - name: IDL across nodes, pinning, degradation
         env:
           LEZREG_NETWORK: e2e
