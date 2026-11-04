@@ -36,8 +36,13 @@ pub struct AppRecord {
     /// Package root hashes the name vouches for, newest first; at least one.
     pub roots: Vec<[u8; 32]>,
     pub version: Option<String>,
-    /// The catalog's `logos-repo.json` URL (https).
+    /// The catalog's `logos-repo.json` URL (https): one place to download it.
     pub catalog: Option<String>,
+    /// SHA-256 of the `.lgx` file itself, checked before installing whatever source it came
+    /// from. (`roots` checks the installed copy; this checks the download.)
+    pub sha256: Option<[u8; 32]>,
+    /// The `.lgx` on Logos Storage: a download that depends on no web host.
+    pub cid: Option<String>,
     /// LEZ programs the app calls; each one's source status comes from this registry.
     pub programs: Vec<AccountId>,
 }
@@ -94,6 +99,14 @@ impl AppRecord {
         if catalog.as_deref().is_some_and(|c| !c.starts_with("https://")) {
             return Err(Error::Invalid("an app record's catalog is an https:// URL".into()));
         }
+        let sha256 = match o.get("sha256").and_then(Value::as_str) {
+            Some(h) => Some(hex32(h)?),
+            None => None,
+        };
+        let cid = text("cid");
+        if cid.as_deref().is_some_and(|c| !is_cid(c)) {
+            return Err(Error::Invalid("an app record's cid is not a Logos Storage CID".into()));
+        }
         let mut programs = Vec::new();
         for p in o.get("programs").and_then(Value::as_array).into_iter().flatten() {
             let id = p
@@ -111,6 +124,8 @@ impl AppRecord {
             roots,
             version: text("version"),
             catalog,
+            sha256,
+            cid,
             programs,
         })
     }
@@ -137,6 +152,12 @@ impl AppRecord {
         if let Some(c) = &self.catalog {
             o.insert("catalog".into(), json!(c));
         }
+        if let Some(h) = &self.sha256 {
+            o.insert("sha256".into(), json!(hex::encode(h)));
+        }
+        if let Some(c) = &self.cid {
+            o.insert("cid".into(), json!(c));
+        }
         if !self.programs.is_empty() {
             o.insert(
                 "programs".into(),
@@ -152,6 +173,22 @@ impl AppRecord {
         }
         Ok(value)
     }
+}
+
+impl AppRecord {
+    /// Whether `bytes` (a downloaded `.lgx`) are the file this record vouches for: `None` when
+    /// the record names no `sha256` (then only the installed copy's root can be checked).
+    #[must_use]
+    pub fn matches_download(&self, bytes: &[u8]) -> Option<bool> {
+        self.sha256.map(|want| lezreg_types::pda::sha256(bytes) == want)
+    }
+}
+
+/// A Logos Storage CID as text: multibase base58btc (`z…`) or another plain alphanumeric
+/// encoding, 10 to 100 characters.
+#[must_use]
+pub fn is_cid(text: &str) -> bool {
+    (10..=100).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
 /// Every `app.<module>` entry of a profile, parsed (a malformed one is kept as its error).
@@ -253,6 +290,8 @@ impl Verdict {
             "record": record.map(|r| json!({
                 "version": r.version,
                 "catalog": r.catalog,
+                "sha256": r.sha256.map(hex::encode),
+                "cid": r.cid,
                 "programs": r.programs.iter().map(AccountId::to_base58).collect::<Vec<_>>(),
             })),
         })
@@ -458,11 +497,18 @@ mod tests {
             roots: vec![[1; 32], [2; 32]],
             version: Some("1.2.0".into()),
             catalog: Some("https://raw.githubusercontent.com/o/r/main/logos-repo.json".into()),
+            sha256: Some(lezreg_types::pda::sha256(b"the package")),
+            cid: Some("zDvZRwzm8K4nJ2a7q9WTqN1kZt5v7wHcX1yYbP3sQ4rT6uE8f".into()),
             programs: vec![AccountId([7; 32])],
         };
         let value = record.to_value().unwrap();
         assert_eq!(AppRecord::parse(&value).unwrap(), record);
-        assert!(value.len() <= MAX_VALUE);
+        assert!(value.len() <= MAX_VALUE, "{} bytes", value.len());
+        assert_eq!(record.matches_download(b"the package"), Some(true));
+        assert_eq!(record.matches_download(b"a copy"), Some(false));
+        assert_eq!(AppRecord { sha256: None, ..record.clone() }.matches_download(b"x"), None);
+        assert!(AppRecord::parse(&format!(r#"{{"v":1,"root":"{ROOT}","cid":"not a cid!"}}"#)).is_err());
+        assert!(AppRecord::parse(&format!(r#"{{"v":1,"root":"{ROOT}","sha256":"00"}}"#)).is_err());
         for bad in [
             r#"{"v":2,"root":"00"}"#,
             r#"{"v":1}"#,

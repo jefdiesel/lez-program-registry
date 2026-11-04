@@ -39,8 +39,30 @@ pub enum AppCmd {
         /// An older root to keep vouching for while installs upgrade (repeatable, hex).
         #[arg(long = "keep")]
         keep: Vec<String>,
+        /// The package's Logos Storage CID, if it is already there.
+        #[arg(long, conflicts_with = "upload")]
+        cid: Option<String>,
+        /// Upload the package to your Logos Storage node and record its CID: a download that
+        /// depends on no web host.
+        #[arg(long)]
+        upload: bool,
+        #[arg(long, env = "LEZREG_STORAGE_API", default_value = lezreg_sdk::storage::DEFAULT_API)]
+        storage_api: String,
+    },
+    /// Download an app a name publishes from Logos Storage (its record's `cid`), check it against
+    /// the record (`sha256` of the file, the package root), and only then write it to OUT.
+    Get {
+        name: String,
+        module: String,
+        #[arg(short, long)]
+        out: PathBuf,
+        #[arg(long, env = "LEZREG_STORAGE_API", default_value = lezreg_sdk::storage::DEFAULT_API)]
+        storage_api: String,
     },
 }
+
+/// The most a package may be: a download larger than any Basecamp module is refused.
+const MAX_PACKAGE: usize = 256 * 1024 * 1024;
 
 /// The LNS program to read names from: `--lns`, `LEZREG_LNS`.
 fn lns_program(lns: Option<&str>) -> Result<AccountId> {
@@ -59,8 +81,18 @@ fn now_ms() -> u64 {
 /// A package's manifest: the `manifest.json` inside a `.lgx` (a gzipped tar), or the file itself.
 pub fn read_manifest(file: &Path) -> Result<Manifest> {
     let bytes = std::fs::read(file).with_context(|| format!("cannot read {}", file.display()))?;
-    let json: Value = if bytes.starts_with(&[0x1f, 0x8b]) {
-        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(bytes.as_slice()));
+    manifest_of(&bytes, &file.display().to_string())
+}
+
+/// Whether `bytes` are a `.lgx` package (gzip), not a bare `manifest.json`.
+fn is_package(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x1f, 0x8b])
+}
+
+fn manifest_of(bytes: &[u8], what: &str) -> Result<Manifest> {
+    let file = what;
+    let json: Value = if is_package(bytes) {
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(bytes));
         let mut found = None;
         for entry in archive.entries().context("not a .lgx package")? {
             let entry = entry.context("a damaged .lgx package")?;
@@ -72,9 +104,9 @@ pub fn read_manifest(file: &Path) -> Result<Manifest> {
                 break;
             }
         }
-        found.ok_or_else(|| anyhow!("{} has no manifest.json", file.display()))?
+        found.ok_or_else(|| anyhow!("{file} has no manifest.json"))?
     } else {
-        serde_json::from_slice(&bytes).context("not a .lgx package or a manifest.json")?
+        serde_json::from_slice(bytes).context("not a .lgx package or a manifest.json")?
     };
     Ok(Manifest::parse(&json)?)
 }
@@ -177,8 +209,36 @@ pub fn run(
                 crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        AppCmd::Record { file, catalog, programs, keep } => {
-            let manifest = read_manifest(&file)?;
+        AppCmd::Get { name, module, out: path, storage_api } => {
+            let lns = lns_program(lns)?;
+            let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
+            let profile = Names::new(HttpRpc::new(&rpc), lns)
+                .profile(&name, now_ms())?
+                .ok_or_else(|| anyhow!("{name} is not a registered LNS name"))?;
+            let value = profile
+                .text(&format!("{}{module}", apps::APP_KEY_PREFIX))
+                .ok_or_else(|| anyhow!("{name} doesn't publish {module}"))?;
+            let record = AppRecord::parse(value)?;
+            let cid = record.cid.clone().ok_or_else(|| anyhow!("{name} gives no Logos Storage CID for {module}; download it from its catalog ({})", record.catalog.as_deref().unwrap_or("none given")))?;
+            eprintln!("fetching {module} ({cid}) from Logos Storage through {storage_api}");
+            let bytes = lezreg_sdk::StorageClient::new(&storage_api)
+                .fetch(&cid, MAX_PACKAGE, false)
+                .map_err(|e| anyhow!("Logos Storage didn't give {cid}: {e}"))?;
+            if record.matches_download(&bytes) == Some(false) {
+                bail!("the file Storage gave is not the one {name} vouches for (sha256 differs); nothing written");
+            }
+            let manifest = manifest_of(&bytes, &cid)?;
+            if manifest.name != module || !record.roots.contains(&manifest.root) {
+                bail!("the package inside is not the {module} {name} vouches for (module {} root {}); nothing written", manifest.name, hex::encode(manifest.root));
+            }
+            std::fs::write(&path, &bytes).with_context(|| format!("cannot write {}", path.display()))?;
+            out.text(&format!("{module} {} from {name}: checked (sha256 {}, root), written to {}", manifest.version,
+                record.sha256.map_or_else(|| "not given".to_owned(), |_| "matches".to_owned()), path.display()));
+            out.json(json!({"name": name, "module": module, "version": manifest.version, "cid": cid, "bytes": bytes.len(), "out": path}));
+        }
+        AppCmd::Record { file, catalog, programs, keep, cid, upload, storage_api } => {
+            let bytes = std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))?;
+            let manifest = manifest_of(&bytes, &file.display().to_string())?;
             let Some(name) = manifest.publisher() else {
                 bail!("{} names no publisher: set \"author\": \"lns:<name>\" in its metadata.json and rebuild", file.display());
             };
@@ -197,7 +257,25 @@ pub fn run(
                 .iter()
                 .map(|p| AccountId::from_base58(p.trim()).ok_or_else(|| anyhow!("--program is not a base58 id: {p}")))
                 .collect::<Result<Vec<_>>>()?;
-            let record = AppRecord { roots, version: Some(manifest.version.clone()), catalog, programs };
+            // A package file is hashed as downloaded; a bare manifest.json has no file to hash.
+            let sha256 = is_package(&bytes).then(|| lezreg_types::pda::sha256(&bytes));
+            let cid = if upload {
+                if sha256.is_none() {
+                    bail!("--upload takes the .lgx package, not a manifest.json");
+                }
+                let name_on_storage = format!("{}-{}.lgx", manifest.name, manifest.version);
+                let cid = lezreg_sdk::StorageClient::new(&storage_api)
+                    .upload_as(&name_on_storage, "application/octet-stream", &bytes)
+                    .map_err(|e| anyhow!("uploading to {storage_api}: {e}"))?;
+                eprintln!("uploaded {name_on_storage} to Logos Storage: {cid} (keep your node online, or pin it elsewhere, so others can fetch it)");
+                Some(cid)
+            } else {
+                cid
+            };
+            if cid.as_deref().is_some_and(|c| !apps::is_cid(c)) {
+                bail!("--cid is not a Logos Storage CID");
+            }
+            let record = AppRecord { roots, version: Some(manifest.version.clone()), catalog, sha256, cid, programs };
             let value = record.to_value()?;
             let key = format!("{}{}", apps::APP_KEY_PREFIX, manifest.name);
             out.text(&format!("names set-text {name} {key} '{value}'"));

@@ -133,7 +133,10 @@ The same module checks Basecamp **apps** against the LNS name that publishes the
 ([APPS.md](APPS.md)): `verify_app(module_name)` for an installed app, `verify_package(manifest)`
 before installing, `publisher_apps(name)` to list a name's apps. Set the LNS program once with
 `config_set({"lns": "<program id>"})`. The CLI equivalents are `lezreg app show`,
-`lezreg app verify` and `lezreg app record`.
+`lezreg app verify`, `lezreg app record` (with `--upload`, the package goes on Logos Storage and
+its CID into the record) and `lezreg app get`, which installs a package by CID only if its
+sha256 and root match what the name vouches for. In Rust, `AppRecord::matches_download(bytes)`
+does the download check.
 
 ## 5. Search and listing
 

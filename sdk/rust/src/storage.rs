@@ -122,6 +122,12 @@ impl StorageClient {
 
     /// Uploads `bytes` as `filename` and returns the manifest CID text (`zDv…`).
     pub fn upload(&self, filename: &str, bytes: &[u8]) -> SResult<String> {
+        self.upload_as(filename, IDL_MIME, bytes)
+    }
+
+    /// [`StorageClient::upload`] with another content type: an app package is
+    /// `application/octet-stream` (docs/APPS.md).
+    pub fn upload_as(&self, filename: &str, mime: &str, bytes: &[u8]) -> SResult<String> {
         if filename.is_empty() || filename.contains(['"', '\r', '\n', '/', '\\']) {
             return Err(StorageError::BadReply {
                 op: "upload",
@@ -134,7 +140,7 @@ impl StorageClient {
             .config()
             .timeout_global(Some(Duration::from_secs(120)))
             .build()
-            .header("Content-Type", IDL_MIME)
+            .header("Content-Type", mime)
             .header(
                 "Content-Disposition",
                 &format!("attachment; filename=\"{filename}\""),

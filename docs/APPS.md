@@ -43,11 +43,18 @@ Key `app.<module>`: 1–32 bytes total, so module names up to 28 bytes. Value: J
 
 ```json
 {"v":1,"root":"<64 hex: manifest hashes.root>","version":"0.12.0",
+ "sha256":"<64 hex: the .lgx file>","cid":"zDvZ…",
  "catalog":"https://raw.githubusercontent.com/<owner>/<repo>/main/logos-repo.json",
  "programs":["<base58 program id>", "..."]}
 ```
 
-- `root` is required; the rest is optional. A new release changes `root` in the same
+- `root` is required; the rest is optional.
+- **Where to get it:** `cid` is the `.lgx` on Logos Storage, a download that depends on no web
+  host; `catalog` is a catalog that lists it (GitHub releases, say). Either will do, because
+  `sha256` (of the `.lgx` file) is checked before installing whatever the source, and `root` is
+  checked again on the installed copy. `lezreg app record --upload` puts the package on your
+  Storage node and fills in `cid` and `sha256`; `lezreg app get <name> <module>` downloads it by
+  CID and writes it only if both hashes match. A new release changes `root` in the same
   profile update that publishes it. Several roots (`"roots":[...]`, newest first, at most 4)
   let an older install stay verified during an upgrade.
 - **Forwarding.** A name with a `forward` entry (logos-names SPEC.md §7) is checked where it
