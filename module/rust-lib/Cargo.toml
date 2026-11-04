@@ -13,7 +13,7 @@ description = "LEZ Program Registry as a Logos core module: program labels, entr
 crate-type = ["staticlib"]
 
 [dependencies]
-lezreg-sdk = { git = "https://github.com/jefdiesel/lez-program-registry", rev = "f00c7458a234cec4a7c58cb2a2560f4fabfce34a", default-features = false }
+lezreg-sdk = { git = "https://github.com/jefdiesel/lez-program-registry", rev = "d7c4688517058c2ab29b667abe792bb6e086eec0", default-features = false }
 serde_json = "1"
 hex = "0.4"
 # Staged by the builder from the logos-rust-sdk revision its code generator comes from.
