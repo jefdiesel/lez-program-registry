@@ -6,6 +6,7 @@
 //! `~/.lee/wallet`). Every write is simulated first, sent with gas = 1.5 × simulated cycles,
 //! and read back from the chain. No server of ours is ever on the path.
 
+mod app_cmd;
 mod args;
 mod config;
 mod doctor;
@@ -61,6 +62,9 @@ struct Cli {
     /// Sequencer RPC URL (overrides the network's).
     #[arg(long, env = "LEZREG_RPC", global = true)]
     rpc: Option<String>,
+    /// LNS (logos-names) program id, for `lezreg app` (docs/APPS.md).
+    #[arg(long, env = "LEZREG_LNS", global = true)]
+    lns: Option<String>,
     /// Registry program id (overrides the network's).
     #[arg(long, env = "LEZREG_REGISTRY", global = true)]
     registry: Option<String>,
@@ -107,6 +111,11 @@ struct SearchOpts {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Apps published under LNS names, verified by publisher (docs/APPS.md).
+    App {
+        #[command(subcommand)]
+        cmd: app_cmd::AppCmd,
+    },
     /// Show a program's registry entries: the deployer entry (fresh/stale against the live
     /// program) and community entries. TARGET is a program id or a name.
     Show {
@@ -822,8 +831,10 @@ fn check_registry(rpc: &str, registry: &lezreg_types::AccountId) -> Result<()> {
 
 async fn run(cli: Cli, out: &mut Out) -> Result<()> {
     let net = config::resolve(&cli.network, cli.rpc.as_deref(), cli.registry.as_deref())?;
+    let lns = cli.lns.clone();
     match cli.command {
         Command::Wallet { .. } => unreachable!("handled in main"),
+        Command::App { cmd } => app_cmd::run(out, cmd, net.rpc().ok(), reader(&net).ok(), lns.as_deref())?,
         Command::Network { cmd } => match cmd {
             NetworkCmd::Show => {
                 out.text(&format!(

@@ -351,6 +351,64 @@ mod tests {
         }
     }
 
+    /// A name's record as the LNS program stores it, with `texts` sealed under the name's key,
+    /// the same way logos-names seals a profile (SPEC.md §5).
+    fn sealed_record(name: &str, texts: &[(&str, String)]) -> Vec<u8> {
+        use aes_gcm::{
+            Aes256Gcm, KeyInit as _, Nonce,
+            aead::{Aead as _, Payload},
+        };
+        let derived = crate::lns::derive(name);
+        let mut plain = Vec::new();
+        let string = |out: &mut Vec<u8>, s: &str| {
+            out.extend((s.len() as u32).to_le_bytes());
+            out.extend(s.as_bytes());
+        };
+        string(&mut plain, name);
+        plain.extend([0, 0]); // no account, no npk
+        plain.extend(0_u32.to_le_bytes()); // no vpk
+        plain.extend((texts.len() as u32).to_le_bytes());
+        for (k, v) in texts {
+            string(&mut plain, k);
+            string(&mut plain, v);
+        }
+        plain.resize(plain.len().div_ceil(256) * 256, 0);
+        let nonce = [9_u8; 12];
+        let sealed = Aes256Gcm::new_from_slice(&derived.key)
+            .unwrap()
+            .encrypt(Nonce::from_slice(&nonce), Payload { msg: &plain, aad: b"logos-names/v5/record" })
+            .unwrap();
+        let sealed = [nonce.as_slice(), &sealed].concat();
+        let mut record = vec![6];
+        record.extend([1_u8; 32]); // owner tag
+        record.extend(u64::MAX.to_le_bytes()); // held by a deposit
+        record.extend((sealed.len() as u32).to_le_bytes());
+        record.extend(&sealed);
+        record.push(0);
+        record
+    }
+
+    /// The whole path against a (mocked) chain: derive, read the record, open it, check.
+    #[test]
+    fn a_package_is_checked_against_the_name_on_chain() {
+        let lns = AccountId([7; 32]);
+        let rpc = crate::rpc::MockRpc::new();
+        let good = format!(r#"{{"v":1,"root":"{ROOT}","version":"1.2.0","programs":["{}"]}}"#, AccountId([5; 32]).to_base58());
+        let id = crate::lns::derive("forumer").id;
+        rpc.set(crate::lns::record_address(&lns, &id), lns, sealed_record("forumer", &[("app.forumer_ui", good)]));
+        let mut names = Names::new(&rpc, lns);
+        let real = manifest("lns:forumer", ROOT);
+        let verdict = names.verify(&real, 0).unwrap();
+        assert_eq!(verdict.status(), "verified");
+        assert_eq!(verdict.to_json(&real)["record"]["programs"][0], AccountId([5; 32]).to_base58());
+        assert_eq!(names.verify(&manifest("lns:forumer", &"ee".repeat(32)), 0).unwrap().status(), "mismatch");
+        assert_eq!(names.verify(&manifest("lns:nobody", ROOT), 0).unwrap().status(), "no_such_name");
+        // A record sealed for another name (copied to this address) opens as nothing set.
+        let id = crate::lns::derive("copycat").id;
+        rpc.set(crate::lns::record_address(&lns, &id), lns, sealed_record("forumer", &[("app.forumer_ui", format!(r#"{{"v":1,"root":"{ROOT}"}}"#))]));
+        assert_eq!(names.verify(&manifest("lns:copycat", ROOT), 0).unwrap().status(), "not_published");
+    }
+
     #[test]
     fn a_record_round_trips_and_its_limits_hold() {
         let record = AppRecord {
