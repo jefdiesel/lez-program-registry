@@ -1,28 +1,36 @@
 #!/bin/sh
 # Installs a released `lezreg` (the LEZ Program Registry command line) for this user, no sudo.
 #
-#   curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --with-r0vm --with-storage     # options after `-s --`
-#   sh install.sh --dry-run                                             # print the plan only
+#   curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh
+#   curl ... | sh -s -- --with-r0vm --with-storage     # options go after `-s --`
+#   sh install.sh --dry-run                            # print the plan only
 #
 # What it does: picks the build for this OS and CPU, downloads it and the release's SHA256SUMS
-# from GitHub, refuses unless the SHA-256 matches, and copies `lezreg` into
+# from GitHub over HTTPS, refuses unless the SHA-256 matches, and copies `lezreg` into
 # ${LEZREG_HOME:-$HOME/.lezreg}/bin. It edits no shell startup file: it prints the PATH line for
 # you to add. With --with-r0vm / --with-storage it also fetches RISC Zero's `r0vm` 3.0.5 and the
 # Logos Storage v0.5.3 node from their own GitHub releases, each checked against a SHA-256
-# pinned below. It sends nothing about you or this machine anywhere: the only requests are
-# plain downloads from github.com (and its download host).
+# pinned in this script.
+#
+# What the checks prove, and what they don't: the SHA-256 check catches a damaged or truncated
+# download. It is not a signature: SHA256SUMS comes from the same GitHub release as the
+# tarball, so your trust rests on GitHub's TLS and on whoever can write to this repository.
+# To check where a file was built, use the attestation (`gh attestation verify`, see the README).
+#
+# Privacy: the script sends nothing about you or this machine. Like any download, GitHub (and
+# the hosts it redirects to) sees your IP address and your curl or wget user agent.
 #
 # Options:
 #   --version X     install release X (e.g. 0.1.0) instead of the latest. Env: LEZREG_VERSION.
 #   --with-r0vm     also install r0vm 3.0.5, which every lezreg write needs (macOS arm64 and
 #                   Linux x86_64 only: RISC Zero publishes no other prebuilt r0vm 3.0.5).
 #   --with-storage  also install the Logos Storage v0.5.3 node as `logos-storage`, which
-#                   `lezreg storage up` starts to upload your IDL.
+#                   `lezreg storage up` starts to upload your IDL (Linux: glibc 2.38 or newer).
+#   --allow-root    install even when run as root (refused by default).
 #   --dry-run       print what would be downloaded and installed, and stop.
 #   -h, --help      this text.
-# Environment: LEZREG_HOME (default ~/.lezreg), LEZREG_VERSION, LEZREG_BASE_URL (a mirror or a
-# local directory as file:///path holding the release files; for testing).
+# Environment: LEZREG_HOME (default ~/.lezreg), LEZREG_VERSION, LEZREG_BASE_URL (an https://
+# mirror, or file:///dir holding the release files, for tests).
 
 set -eu
 
@@ -37,9 +45,14 @@ STORAGE_MACOS_ARM64=7f32f62a14e555399ee003f11d1e29bba9b6ff842d973f38b5b280f018c2
 STORAGE_LINUX_X86_64=1086fae4f283cab882f133abe4d5a88cfae8d61edba9f0094c7f75b368ec9d56
 STORAGE_LINUX_AARCH64=ecbc32536565096b75b2330dab4ff47a993714a1f3ce345099396968bc69796b
 
+installed=
+
 say() { printf '%s\n' "$*"; }
 die() {
   printf 'lezreg install: %s\n' "$*" >&2
+  if [ -n "$installed" ]; then
+    printf 'lezreg install: already installed before this error:%s\n' "$installed" >&2
+  fi
   exit 1
 }
 
@@ -47,16 +60,18 @@ usage() {
   cat <<EOF
 Installs a released lezreg into \${LEZREG_HOME:-\$HOME/.lezreg}/bin (no sudo).
 
-  curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- [options]
+  curl --proto '=https' --tlsv1.2 -fsSL https://github.com/$REPO/releases/latest/download/install.sh | sh -s -- [options]
 
   --version X     install release X (e.g. 0.1.0) instead of the latest (env LEZREG_VERSION)
   --with-r0vm     also install RISC Zero's r0vm 3.0.5, which every write needs
                   (macOS arm64 and Linux x86_64: the only prebuilt r0vm 3.0.5 builds)
   --with-storage  also install the Logos Storage v0.5.3 node as logos-storage
+  --allow-root    install even when run as root (refused by default)
   --dry-run       print what would be downloaded and installed, and stop
   -h, --help      this text
 
-Environment: LEZREG_HOME, LEZREG_VERSION, LEZREG_BASE_URL (mirror or file:///dir, for tests).
+Environment: LEZREG_HOME, LEZREG_VERSION, LEZREG_BASE_URL (https:// mirror or file:///dir).
+The SHA-256 check catches a damaged download; provenance is checked with gh attestation verify.
 More: https://github.com/$REPO#install
 EOF
 }
@@ -72,14 +87,17 @@ sha256_of() {
   fi
 }
 
+# Downloads over HTTPS only (TLS 1.2 or newer); file:// is a local copy, for tests and mirrors.
 fetch() { # url dest
+  case $1 in
+    file://*) cp "${1#file://}" "$2"; return ;;
+    https://*) ;;
+    *) die "refusing a non-https URL: $1" ;;
+  esac
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --proto '=https,file' --retry 3 -o "$2" "$1"
+    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$2" "$1"
   elif command -v wget >/dev/null 2>&1; then
-    case $1 in
-      file://*) cp "${1#file://}" "$2" ;;
-      *) wget -q -O "$2" "$1" ;;
-    esac
+    wget -q --https-only --secure-protocol=TLSv1_2 -O "$2" "$1"
   else
     die "needs curl or wget to download"
   fi
@@ -88,7 +106,19 @@ fetch() { # url dest
 check_sha() { # file want what
   got=$(sha256_of "$1")
   [ -n "$got" ] || die "no SHA-256 tool (sha256sum, shasum or openssl) found: refusing to install an unchecked $3"
-  [ "$got" = "$2" ] || die "SHA-256 mismatch for $3: expected $2, got $got. Nothing installed."
+  [ "$got" = "$2" ] || die "SHA-256 mismatch for $3: expected $2, got $got. $3 was not installed."
+}
+
+# Copies $1 to $2/$3 with mode $4 without ever writing through a name someone else could have
+# planted: a fresh mktemp file in the same directory, then a rename over the final name (a
+# rename replaces a symlink there instead of following it).
+put() { # src dir name mode
+  t=$(mktemp "$2/.lezreg.XXXXXX") || die "cannot create a temporary file in $2"
+  if cp "$1" "$t" && chmod "$4" "$t" && mv -f "$t" "$2/$3"; then
+    return 0
+  fi
+  rm -f "$t"
+  die "cannot install $2/$3"
 }
 
 detect_target() {
@@ -118,10 +148,19 @@ unsupported() {
 (Windows: use WSL and run this installer inside it.)"
 }
 
+# This system's glibc version as "2.35"; empty if it reports none (musl, or no getconf).
+glibc_version() {
+  getconf GNU_LIBC_VERSION 2>/dev/null | sed -n 's/^glibc \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p'
+}
+version_num() { # "2.35" -> 2035 (the input is digits.digits, from glibc_version)
+  echo $((${1%%.*} * 1000 + ${1#*.}))
+}
+
 main() {
   version=${LEZREG_VERSION:-}
   with_r0vm=0
   with_storage=0
+  allow_root=0
   dry=0
   while [ $# -gt 0 ]; do
     case $1 in
@@ -129,13 +168,34 @@ main() {
       --version=*) version=${1#--version=} ;;
       --with-r0vm) with_r0vm=1 ;;
       --with-storage) with_storage=1 ;;
+      --allow-root) allow_root=1 ;;
       --dry-run) dry=1 ;;
       -h | --help) usage; exit 0 ;;
       *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
   done
+
+  # Every tool used below, checked first, so a missing one is named as such.
+  for t in uname id sed grep head cut mktemp tar gzip cp mv chmod mkdir rm; do
+    command -v "$t" >/dev/null 2>&1 || die "needs $t, which is not on PATH"
+  done
+
+  if [ "$(id -u)" = 0 ] && [ "$allow_root" != 1 ]; then
+    die "refusing to run as root: lezreg installs per user, no sudo needed. Run it as your own
+user, or pass --allow-root (e.g. in a container) to install into ${LEZREG_HOME:-\$HOME/.lezreg}."
+  fi
+
   version=${version#v}
+  case $version in
+    "") ;;
+    [0-9]*)
+      case $version in
+        *[!0-9A-Za-z.-]*) die "bad version '$version': only digits, letters, '.' and '-' (e.g. 0.1.0)" ;;
+      esac
+      ;;
+    *) die "bad version '$version': it must start with a digit (e.g. 0.1.0)" ;;
+  esac
 
   detect_target
   case $target in
@@ -143,10 +203,30 @@ main() {
     *) unsupported ;;
   esac
 
+  glibc=
+  if [ "$os" = linux ]; then
+    glibc=$(glibc_version)
+    [ -n "$glibc" ] || die "the Linux builds of lezreg need glibc (this system does not report one;
+musl distributions such as Alpine are not supported). Use a glibc distribution or container,
+or build from source: https://github.com/$REPO#build-from-source"
+    [ "$(version_num "$glibc")" -ge 2034 ] || die "the Linux builds of lezreg need glibc 2.34 or
+newer; this system has glibc $glibc. Build from source: https://github.com/$REPO#build-from-source"
+  fi
+
+  [ -n "${LEZREG_HOME:-}" ] || [ -n "${HOME:-}" ] || die "neither LEZREG_HOME nor HOME is set"
   home=${LEZREG_HOME:-$HOME/.lezreg}
+  case $home in
+    /*) ;;
+    *) home=$(pwd)/$home ;;
+  esac
   bin=$home/bin
+
   if [ -n "${LEZREG_BASE_URL:-}" ]; then
     base=${LEZREG_BASE_URL%/}
+    case $base in
+      https://* | file:///*) ;;
+      *) die "LEZREG_BASE_URL must be https://... or file:///...: refusing '$base'" ;;
+    esac
   elif [ -n "$version" ]; then
     base=https://github.com/$REPO/releases/download/v$version
   else
@@ -169,19 +249,14 @@ main() {
   st_why="Logos Storage v0.5.3 has no build for $target"
   # The official Linux builds of Logos Storage v0.5.3 need glibc 2.38 (Ubuntu 24.04, Debian 13,
   # Fedora 39 and newer); on older systems they do not start, so do not install them there.
-  if [ "$os" = linux ] && [ -n "$st_asset" ]; then
-    glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | sed -n 's/^glibc \([0-9]*\.[0-9]*\).*/\1/p')
-    gmaj=${glibc%%.*}
-    gmin=${glibc#*.}
-    if [ -z "$glibc" ] || [ "$gmaj" -lt 2 ] || { [ "$gmaj" -eq 2 ] && [ "$gmin" -lt 38 ]; }; then
-      st_asset=
-      st_why="the Logos Storage v0.5.3 Linux build needs glibc 2.38 or newer, and this system has ${glibc:+glibc }${glibc:-no glibc}"
-    fi
+  if [ "$os" = linux ] && [ "$(version_num "$glibc")" -lt 2038 ]; then
+    st_asset=
+    st_why="the Logos Storage v0.5.3 Linux build needs glibc 2.38 or newer, and this system has glibc $glibc"
   fi
 
   if [ "$dry" = 1 ]; then
     say "Dry run: nothing is downloaded or written."
-    say "  platform:  $target"
+    say "  platform:  $target${glibc:+ (glibc $glibc)}"
     say "  release:   ${version:-latest} from $base"
     say "  download:  $base/SHA256SUMS"
     say "  download:  $base/lezreg-${version:-<version>}-$target.tar.gz (checked against SHA256SUMS)"
@@ -203,8 +278,6 @@ main() {
     exit 0
   fi
 
-  command -v tar >/dev/null 2>&1 || die "needs tar"
-  command -v gzip >/dev/null 2>&1 || die "needs gzip"
   [ -n "$(sha256_of /dev/null)" ] || die "no SHA-256 tool (sha256sum, shasum or openssl) found: refusing to install unchecked files"
 
   tmp=$(mktemp -d 2>/dev/null || mktemp -d -t lezreg)
@@ -213,8 +286,9 @@ main() {
 
   say "Downloading lezreg (${version:-latest}) for $target..."
   fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || die "cannot download $base/SHA256SUMS"
-  line=$(grep -E "  lezreg-[^ ]+-$target\.tar\.gz\$" "$tmp/SHA256SUMS" | head -n 1 || true)
-  [ -n "$line" ] || unsupported
+  # Only a well-formed line for this platform: 64 hex digits, two spaces, a plain file name.
+  line=$(grep -E "^[0-9a-f]{64}  lezreg-[0-9A-Za-z._-]+-$target\.tar\.gz\$" "$tmp/SHA256SUMS" | head -n 1 || true)
+  [ -n "$line" ] || die "SHA256SUMS from $base lists no lezreg build for $target"
   want=${line%% *}
   name=${line##* }
   [ -z "$version" ] || [ "$name" = "lezreg-$version-$target.tar.gz" ] ||
@@ -226,12 +300,12 @@ main() {
   dir=$tmp/x/${name%.tar.gz}
   [ -f "$dir/lezreg" ] || die "$name has no lezreg in it"
 
-  mkdir -p "$bin"
-  cp "$dir/lezreg" "$bin/lezreg.new"
-  chmod 755 "$bin/lezreg.new"
-  mv -f "$bin/lezreg.new" "$bin/lezreg"
-  mkdir -p "$home/share/lezreg"
-  cp "$dir"/LICENSE* "$home/share/lezreg/" 2>/dev/null || true
+  mkdir -p "$bin" "$home/share/lezreg"
+  put "$dir/lezreg" "$bin" lezreg 755
+  installed="$installed $bin/lezreg"
+  for f in "$dir"/LICENSE*; do
+    [ -f "$f" ] && put "$f" "$home/share/lezreg" "${f##*/}" 644
+  done
   say "Installed $bin/lezreg ($("$bin/lezreg" --version 2>/dev/null || echo "version unknown"))"
 
   if [ "$with_r0vm" = 1 ]; then
@@ -241,12 +315,11 @@ main() {
     else
       say "Downloading RISC Zero's r0vm 3.0.5 (about 70 MB) from github.com/risc0/risc0..."
       fetch "$R0VM_URL/$r0_asset" "$tmp/r0.tgz" || die "cannot download $R0VM_URL/$r0_asset"
-      check_sha "$tmp/r0.tgz" "$r0_sha" "$r0_asset"
+      check_sha "$tmp/r0.tgz" "$r0_sha" "$r0_asset (r0vm)"
       mkdir "$tmp/r0"
       tar -xzf "$tmp/r0.tgz" -C "$tmp/r0" r0vm || die "$r0_asset has no r0vm in it"
-      cp "$tmp/r0/r0vm" "$bin/r0vm.new"
-      chmod 755 "$bin/r0vm.new"
-      mv -f "$bin/r0vm.new" "$bin/r0vm"
+      put "$tmp/r0/r0vm" "$bin" r0vm 755
+      installed="$installed $bin/r0vm"
       say "Installed $bin/r0vm"
     fi
   fi
@@ -261,17 +334,15 @@ main() {
     else
       say "Downloading Logos Storage v0.5.3 from github.com/logos-storage/logos-storage-nim..."
       fetch "$STORAGE_URL/$st_asset.zip" "$tmp/st.zip" || die "cannot download $STORAGE_URL/$st_asset.zip"
-      check_sha "$tmp/st.zip" "$st_sha" "$st_asset.zip"
+      check_sha "$tmp/st.zip" "$st_sha" "$st_asset.zip (Logos Storage)"
       mkdir "$tmp/st"
       unzip -q "$tmp/st.zip" "$st_asset" -d "$tmp/st" || die "$st_asset.zip has no $st_asset in it"
-      cp "$tmp/st/$st_asset" "$bin/logos-storage.new"
-      chmod 755 "$bin/logos-storage.new"
-      mv -f "$bin/logos-storage.new" "$bin/logos-storage"
-      if "$bin/logos-storage" --version >/dev/null 2>&1; then
+      if "$tmp/st/$st_asset" --version >/dev/null 2>&1; then
+        put "$tmp/st/$st_asset" "$bin" logos-storage 755
+        installed="$installed $bin/logos-storage"
         say "Installed $bin/logos-storage"
       else
-        rm -f "$bin/logos-storage"
-        say "--with-storage: the downloaded Logos Storage node does not run on this system; removed it (see below)."
+        say "--with-storage: the downloaded Logos Storage node does not run on this system; not installed (see below)."
       fi
     fi
   fi

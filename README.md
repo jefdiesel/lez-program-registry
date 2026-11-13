@@ -86,16 +86,18 @@ Options:
 
 ## Install
 
-One line, no sudo. It downloads the `lezreg` build for your machine from this repo's latest
-GitHub release, checks its SHA-256 against the release's `SHA256SUMS`, and puts it in
-`~/.lezreg/bin` (or `$LEZREG_HOME/bin`):
+One line, no sudo (it refuses to run as root unless you pass `--allow-root`). It downloads the
+`lezreg` build for your machine from this repo's latest GitHub release over HTTPS, checks its
+SHA-256 against the release's `SHA256SUMS`, and puts it in `~/.lezreg/bin` (or
+`$LEZREG_HOME/bin`):
 
 ```sh
-curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh -s -- --with-r0vm --with-storage
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh -s -- --with-r0vm --with-storage
 ```
 
 - Builds exist for Linux x86_64 and aarch64 and macOS arm64 (macOS 12 or newer).
-  - Linux needs glibc 2.34 or newer, and on aarch64 also libstdc++ from GCC 11 or newer.
+  - Linux needs glibc 2.34 or newer, and on aarch64 also libstdc++ from GCC 11 or newer. musl
+    distributions (Alpine) are not supported; the installer says so.
     Nothing else: no libpcsclite, no Rust. Ubuntu 22.04, Debian 13 and Fedora 45 are tested
     in bare containers by the release workflow. Debian 12 and RHEL 9 meet the same minimum
     but are not tested.
@@ -113,8 +115,13 @@ curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/dow
   installer skips it and says so; use a Storage node on another machine
   (`LEZREG_STORAGE_API`).
 - Other options: `--version 0.1.0` for a given release, `--dry-run` to print what it would
-  download and install, `--help`. It sends nothing about you anywhere; the only requests are
-  the downloads.
+  download and install, `--help`.
+- It sends nothing about you. Like any download, GitHub and the hosts it redirects to see your
+  IP address and your curl or wget user agent.
+- **What the checksum proves.** The SHA-256 check catches a damaged or cut-off download. It is
+  not a signature: `SHA256SUMS` comes from the same release as the files. Your trust in the
+  one-liner rests on GitHub's TLS and on whoever can write to this repository. To check where a
+  file was built, use the attestation (below).
 - Run `lezreg doctor` afterwards to see what this machine still lacks.
 
 **By hand, with your own checks.** Download `lezreg-<version>-<os>-<arch>.tar.gz` and
@@ -123,13 +130,28 @@ then:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing      # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
-gh attestation verify lezreg-0.1.0-linux-x86_64.tar.gz -R jefdiesel/lez-program-registry
+gh attestation verify lezreg-0.1.0-linux-x86_64.tar.gz -R jefdiesel/lez-program-registry \
+  --signer-workflow jefdiesel/lez-program-registry/.github/workflows/release.yml \
+  --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
 tar -xzf lezreg-0.1.0-linux-x86_64.tar.gz && install lezreg-0.1.0-linux-x86_64/lezreg ~/.local/bin/
 ```
 
-`gh attestation verify` checks GitHub's signed build provenance: that this exact file was built
-by this repo's `release` workflow, from which commit, in which run. `install.sh` and
-`SHA256SUMS` are attested too.
+Use the version you downloaded in the file name and in `--source-ref refs/tags/v<version>`.
+
+**What the attestation proves.** `gh attestation verify` checks GitHub's signed build
+provenance. With those flags it passes only if this exact file was built by this repo's
+`release.yml`, from the tag `v<version>`, on a GitHub-hosted runner. The output names the
+commit and the run. `install.sh` and `SHA256SUMS` are attested the same way. Releases are made
+only from tags: a run started by hand builds and tests but attests nothing.
+
+**What it does not prove:**
+- that the source at that tag is benign;
+- that the build inputs were clean: the GitHub runner image, the Rust toolchain, the crates in
+  `Cargo.lock`, and the prebuilt logos-blockchain-circuits library (checked against a pinned
+  SHA-256, but built by its own project);
+- anything beyond this repository: the trust root is whoever has write access to
+  `jefdiesel/lez-program-registry`. They can push a tag and the workflow will build and attest
+  it.
 
 **Writes need `r0vm` at run time.** Every write is simulated locally with the risc0 executor
 `r0vm` 3.0.5 before it is sent. `lezreg` finds it on PATH, or set `RISC0_SERVER_PATH` to the

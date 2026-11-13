@@ -1,15 +1,19 @@
 # Release binaries of the `lezreg` CLI (DESIGN §7.4) and the one-line installer.
 #
-# On a tag `vX.Y.Z`, or by hand (Actions → release → Run workflow, version X.Y.Z):
+# On a tag `vX.Y.Z`:
 #   1. build `lezreg` in release mode for Linux x86_64 and aarch64 (on Ubuntu 22.04 runners, the
-#      oldest that still exist) and macOS arm64;
+#      oldest that still exist) and macOS arm64, from a clean checkout with no build cache;
 #   2. pack each as lezreg-X.Y.Z-<os>-<arch>.tar.gz with the licence files, and attest its
-#      build provenance (`gh attestation verify <file> -R jefdiesel/lez-program-registry`);
+#      build provenance (verify: see the README, "By hand");
 #   3. install each Linux build with scripts/install.sh in bare containers (Debian stable,
-#      Ubuntu 22.04, Fedora) and run `lezreg --version` and `lezreg doctor`;
+#      Ubuntu 22.04, Fedora) and run `lezreg --version` and `lezreg doctor`, plus the
+#      installer's refusal tests;
 #   4. write SHA256SUMS and attach everything, install.sh included, to a DRAFT release for tag
 #      vX.Y.Z. Publishing the draft is left to a person. A rerun replaces an earlier draft of
 #      the same version; a published release is never touched.
+# By hand (Actions → release → Run workflow, version X.Y.Z): a dry build. Steps 1 and 3 run and
+# the tarballs are kept as workflow artefacts, but nothing is attested and no release is made:
+# release provenance only ever names a tag.
 #
 # What the build does not need: the RISC Zero toolchain. lezreg builds no guest (the LEZ crates
 # embed their programs from LEZ's committed artifacts/), so rzup is not installed here.
@@ -24,14 +28,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, X.Y.Z without the v (must equal the workspace version in Cargo.toml)"
+        description: "Version for a dry build, X.Y.Z without the v (must equal the workspace version in Cargo.toml). Releases come only from tags."
         required: true
 
 permissions:
   contents: read
 
+# One run per version at a time, whether started by a tag (v0.1.0) or by hand (0.1.0).
 concurrency:
-  group: release-${{ github.ref }}-${{ inputs.version || github.ref_name }}
+  group: release-${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
   cancel-in-progress: false
 
 env:
@@ -56,22 +61,30 @@ jobs:
           INPUT: ${{ inputs.version }}
         run: |
           cargo_v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          if [ "$GITHUB_REF_TYPE" = tag ]; then v=${GITHUB_REF_NAME#v}; elif [ -n "$INPUT" ]; then v=${INPUT#v}; else v=$cargo_v; fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v=${GITHUB_REF_NAME#v}; else v=$INPUT; fi
           echo "release $v, Cargo.toml $cargo_v"
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "bad version '$v'"; exit 1; }
           [ "$v" = "$cargo_v" ] || { echo "the release version must equal [workspace.package] version in Cargo.toml"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - name: shellcheck scripts/install.sh
         run: shellcheck -s sh scripts/install.sh
+      - name: install.sh on Alpine (musl) refuses with a clear message
+        run: |
+          if docker run --rm -v "$PWD/scripts:/s:ro" alpine:3.22 sh /s/install.sh --allow-root --dry-run 2>err; then
+            echo "FAILED: accepted on musl"; exit 1
+          fi
+          cat err; grep -q "need glibc" err
 
   build:
     needs: version
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 75
+    # No build cache: a release binary is built from the checkout alone, never from a cache an
+    # earlier run (on any branch) wrote. A cold build takes about 10 (Linux) to 15 (macOS) min.
+    timeout-minutes: 120
     permissions:
       contents: read
-      id-token: write
+      id-token: write # for the attestation, which runs only on a tag
       attestations: write
     strategy:
       fail-fast: false
@@ -127,11 +140,6 @@ jobs:
           rustup toolchain install 2>/dev/null || rustup show
           rustc --version && cargo --version
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          key: release-${{ matrix.target }}
-          cache-on-failure: true
-
       - name: Fetch dependencies (locked)
         run: cargo fetch --locked
 
@@ -167,7 +175,8 @@ jobs:
           rm -rf "dist/$n"
           (cd dist && { sha256sum "$n.tar.gz" 2>/dev/null || shasum -a 256 "$n.tar.gz"; })
 
-      - name: Attest build provenance
+      - name: Attest build provenance (tags only)
+        if: github.ref_type == 'tag'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/lezreg-*.tar.gz
@@ -199,6 +208,7 @@ jobs:
           - { target: linux-aarch64, runner: ubuntu-24.04-arm, image: "ubuntu:22.04" }
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      TARGET: ${{ matrix.target }}
     steps:
       - name: Tools a user would have (curl, tar, unzip); no PC/SC, no Rust
         run: |
@@ -218,20 +228,72 @@ jobs:
           path: rel
       - name: SHA256SUMS for the local release directory
         run: cd rel && sha256sum lezreg-*.tar.gz | tee SHA256SUMS
-      - name: install.sh --dry-run
-        run: sh scripts/install.sh --dry-run --with-r0vm --with-storage
-      - name: A tampered SHA256SUMS is refused and installs nothing
+      # These containers run as root, so every install below passes --allow-root; this step
+      # checks the refusals first.
+      - name: Installer refusals (root, hostile versions, crafted SHA256SUMS, non-https URL, bad checksum)
         run: |
+          fail() { echo "FAILED: $*"; exit 1; }
+          I=scripts/install.sh
+          echo "== root without --allow-root"
+          if sh $I --dry-run 2>err; then fail "ran as root without --allow-root"; fi
+          cat err; grep -q "refusing to run as root" err
+          echo "== hostile versions are refused before any download"
+          for v in '0.1.0/../../../../evil/x' '1;id' '../x' '0.1.0?x=1' '-x' ' 0.1.0' 'x0.1.0'; do
+            if LEZREG_VERSION="$v" sh $I --allow-root 2>err; then fail "version '$v' accepted"; fi
+            cat err; grep -q "bad version" err
+          done
+          echo "== a crafted SHA256SUMS (path in the name, junk after it) matches nothing"
+          mkdir craft && cp rel/*.tar.gz craft/
+          h=$(cut -d' ' -f1 rel/SHA256SUMS)
+          printf '%s  lezreg-x/../../evil-%s.tar.gz\n%s  lezreg-%s-%s.tar.gz?x\n%s  ../lezreg-%s-%s.tar.gz\n' \
+            "$h" "$TARGET" "$h" "$VERSION" "$TARGET" "$h" "$VERSION" "$TARGET" > craft/SHA256SUMS
+          if LEZREG_HOME="$PWD/h-craft" LEZREG_BASE_URL="file://$PWD/craft" sh $I --allow-root 2>err; then fail "crafted SHA256SUMS accepted"; fi
+          cat err; grep -q "lists no lezreg build" err; test ! -e h-craft/bin/lezreg
+          echo "== non-https base URLs are refused"
+          for u in http://github.com/x ftp://x/y file:relative; do
+            if LEZREG_BASE_URL="$u" sh $I --allow-root --dry-run 2>err; then fail "base URL $u accepted"; fi
+            cat err; grep -q "must be https" err
+          done
+          echo "== a tampered SHA256SUMS is refused and installs nothing"
           mkdir bad && cp rel/*.tar.gz bad/
           sed 's/^./0/' rel/SHA256SUMS > bad/SHA256SUMS
-          if LEZREG_HOME="$PWD/h-bad" LEZREG_BASE_URL="file://$PWD/bad" sh scripts/install.sh; then
-            echo "a bad checksum was accepted"; exit 1
-          fi
-          test ! -e h-bad/bin/lezreg
+          if LEZREG_HOME="$PWD/h-bad" LEZREG_BASE_URL="file://$PWD/bad" sh $I --allow-root 2>err; then fail "bad checksum accepted"; fi
+          cat err; grep -q "SHA-256 mismatch" err; test ! -e h-bad/bin/lezreg
+          echo "== a relative LEZREG_HOME becomes absolute"
+          LEZREG_HOME=h-rel sh $I --allow-root --dry-run | tee out; grep -q "install:   $PWD/h-rel/bin/lezreg" out
+      - name: Planted symlinks in bin are replaced, never written through
+        run: |
+          mkdir -p h-sym/bin h-sym/share/lezreg && echo keep > victim
+          for n in lezreg lezreg.new r0vm.new logos-storage.new .lezreg.new; do ln -s "$PWD/victim" "h-sym/bin/$n"; done
+          ln -s "$PWD/victim" h-sym/share/lezreg/LICENSE-MIT
+          LEZREG_HOME="$PWD/h-sym" LEZREG_BASE_URL="file://$PWD/rel" sh scripts/install.sh --allow-root
+          test "$(cat victim)" = keep
+          test -f h-sym/bin/lezreg && test ! -L h-sym/bin/lezreg
+          test -f h-sym/share/lezreg/LICENSE-MIT && test ! -L h-sym/share/lezreg/LICENSE-MIT
+          ls -la h-sym/bin
+          h-sym/bin/lezreg --version
+          echo "victim untouched: $(cat victim)"
+      - name: wget only (no curl on PATH)
+        run: |
+          fail() { echo "FAILED: $*"; exit 1; }
+          if ! command -v apt-get >/dev/null; then echo "(apt images only)"; exit 0; fi
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends wget
+          mkdir wonly
+          for t in sh uname id sed grep head cut mktemp tar gzip cp mv chmod mkdir rm sha256sum getconf wget cat; do
+            ln -s "$(command -v $t)" "wonly/$t"
+          done
+          echo "== no curl here"; if PATH="$PWD/wonly" wonly/sh -c 'command -v curl'; then fail "curl is on PATH"; fi
+          echo "== a non-https base URL is refused before wget runs"
+          if PATH="$PWD/wonly" LEZREG_BASE_URL=http://github.com/x wonly/sh scripts/install.sh --allow-root 2>err; then fail "http accepted"; fi
+          cat err; grep -q "must be https" err
+          echo "== install with wget: the tarball from file://, r0vm over https (wget --https-only)"
+          PATH="$PWD/wonly" LEZREG_HOME="$PWD/h-wget" LEZREG_BASE_URL="file://$PWD/rel" wonly/sh scripts/install.sh --allow-root --with-r0vm
+          h-wget/bin/lezreg --version
+          if [ "$TARGET" = linux-x86_64 ]; then h-wget/bin/r0vm --version; fi
       - name: Install, piped as `curl ... | sh` would (with r0vm and Storage)
         run: |
           export LEZREG_HOME="$PWD/h" LEZREG_BASE_URL="file://$PWD/rel"
-          cat scripts/install.sh | sh -s -- --with-r0vm --with-storage
+          cat scripts/install.sh | sh -s -- --allow-root --with-r0vm --with-storage
       - name: lezreg --version, doctor, r0vm, logos-storage
         run: |
           export PATH="$PWD/h/bin:$PATH" HOME="$PWD/home" LEE_WALLET_HOME_DIR="$PWD/home/wallet"
@@ -246,10 +308,11 @@ jobs:
           if [ -x h/bin/r0vm ]; then h/bin/r0vm --version; fi
           # The Storage v0.5.3 Linux build needs glibc 2.38: installed and running on newer
           # images, refused by the installer (not installed) on older ones.
-          if [ -x h/bin/logos-storage ]; then h/bin/logos-storage --version; else echo "logos-storage not installed (glibc $(getconf GNU_LIBC_VERSION))"; fi
+          if [ -x h/bin/logos-storage ]; then h/bin/logos-storage --version; else echo "logos-storage not installed ($(getconf GNU_LIBC_VERSION))"; fi
 
   release:
     needs: [version, build, test-linux]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -270,7 +333,8 @@ jobs:
         run: |
           cp scripts/install.sh dist/
           cd dist && sha256sum lezreg-*.tar.gz install.sh > SHA256SUMS && cat SHA256SUMS && ls -l
-      - name: Attest install.sh and SHA256SUMS
+      - name: Attest install.sh and SHA256SUMS (tags only)
+        if: github.ref_type == 'tag'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -284,12 +348,12 @@ jobs:
 
           Install (no sudo; installs to ~/.lezreg/bin):
 
-              curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
+              curl --proto '=https' --tlsv1.2 -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
 
           Writes also need RISC Zero's \`r0vm\` 3.0.5, and IDL upload needs a Logos Storage node: add \`-s -- --with-r0vm --with-storage\` after \`sh\`, or see the README.
 
-          Check a download by hand: \`sha256sum -c SHA256SUMS --ignore-missing\` and
-          \`gh attestation verify <file> -R $GITHUB_REPOSITORY\`.
+          Check a download by hand: \`sha256sum -c SHA256SUMS --ignore-missing\` (catches a damaged download only), and its provenance with
+          \`gh attestation verify <file> -R $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/release.yml --source-ref refs/tags/$tag --deny-self-hosted-runners\`.
 
           Built by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA.
           EOF

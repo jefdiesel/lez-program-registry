@@ -233,8 +233,24 @@ fn r0vm_check(found: Option<PathBuf>) -> Check {
         None => check(
             "r0vm",
             Level::Warn,
-            "not on PATH and RISC0_SERVER_PATH unset: every write (register, update, publish, adopt, deploy) is simulated with r0vm 3.0.5 and stops without it; reads work (rzup install cargo-risczero 3.0.5, or install.sh --with-r0vm)",
+            format!(
+                "not on PATH and RISC0_SERVER_PATH unset: every write (register, update, publish, adopt, deploy) is simulated with r0vm 3.0.5 and stops without it; reads work ({})",
+                r0vm_hint()
+            ),
         ),
+    }
+}
+
+/// Where to get r0vm 3.0.5 on this platform. RISC Zero publishes prebuilt builds only for macOS
+/// arm64 and Linux x86_64, so install.sh --with-r0vm and rzup can only fetch it there.
+const fn r0vm_hint() -> &'static str {
+    if cfg!(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )) {
+        "rzup install cargo-risczero 3.0.5, or install.sh --with-r0vm"
+    } else {
+        "no prebuilt r0vm 3.0.5 for this platform: cargo install --locked risc0-r0vm --version 3.0.5"
     }
 }
 
@@ -275,6 +291,12 @@ mod tests {
         assert_eq!(c.level, Level::Warn);
         assert!(c.detail.contains("every write"), "{}", c.detail);
         assert!(!c.detail.contains("private"), "{}", c.detail);
+        // The installer's --with-r0vm only where RISC Zero publishes a prebuilt r0vm.
+        let prebuilt = cfg!(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "linux", target_arch = "x86_64")
+        ));
+        assert_eq!(c.detail.contains("--with-r0vm"), prebuilt, "{}", c.detail);
         assert_eq!(r0vm_check(Some("/x/r0vm".into())).level, Level::Ok);
     }
 
