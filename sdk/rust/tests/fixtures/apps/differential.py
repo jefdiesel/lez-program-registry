@@ -47,7 +47,10 @@ for pkg, line in zip(pkgs, lines):
                 if want != got:
                     diff = sorted(set(want.items()) ^ set(got.items()))
                     problems.append(f"{v}: extracted files differ: {diff[:4]}")
-            lm = json.load(open(os.path.join(out, "manifest.json")))
+            raw = open(os.path.join(out, "manifest.json"), "rb").read()
+            if lz.get("canonical") == "yes" and sha(raw) != lz["manifest_sha256"]:
+                problems.append("lgx-layout package, but liblgx's manifest.json bytes are not the ones lezreg hashed")
+            lm = json.loads(raw)
             for k, val in lm.items():
                 if lz["manifest"].get(k) != val:
                     problems.append(f"manifest {k}: lezreg {lz['manifest'].get(k)!r} liblgx {val!r}")

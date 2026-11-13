@@ -52,8 +52,10 @@ package's files, but not its manifest: the same files with another `author`, `ma
 `version` or `dependencies` have the same root. The record covers the rest: its `sha256` (of
 the whole `.lgx`) proves a package file, manifest included, and its `manifest` (the SHA-256 of
 `manifest.json` as lgx writes it, which is byte for byte what the package manager installs:
-`lgx_get_manifest_json`, checked on six real packages and thirteen real installs) proves an
-installed copy's manifest. Without them only the files are proven, and the verdict says so
+`lgx_get_manifest_json`) proves an installed copy's manifest. Checked: for seven lgx-built packages `lgx_get_manifest_json`
+returns exactly the archive's `manifest.json` bytes, and two real Basecamp installs (chat_ui
+0.3.0 from the official release, and onesecret_ui) hold exactly their package's
+`manifest.json`. Without these hashes only the files are proven, and the verdict says so
 (`files_verified`, never `verified`).
 
 ## 3. Records on the name (logos-names SPEC.md §7, text entries)
@@ -164,9 +166,9 @@ guessable name as public.
 
 **Exit codes and JSON.** `lezreg app verify` exits 0 for `verified` only, 3 for
 `files_verified` (the files are the publisher's, the manifest is not proven: not success), and
-1 for everything else. With `--json`, **consumers key on `status` only**. `publisher` is set
-only for `verified` and `files_verified`, and `version` only for `verified`, where it is the
-release's version from the record, never the manifest's. What the package and the name
+1 for everything else. With `--json`, **consumers key on `status` only**. `publisher` and
+`version` are set only for `verified`; `version` is the release's version from the record,
+never the manifest's. What the package and the name
 merely claim (author, the manifest's version, the record) is under `claimed`, whatever the
 status. The text output never prints the manifest's version as the published one.
 

@@ -489,10 +489,10 @@ impl Verdict {
         }
     }
 
-    /// The verdict as JSON. **Consumers key on `status` only.** `publisher` is set only for
-    /// `verified` and `files_verified`, and `version` (the release's, never the manifest's) only
-    /// for `verified`; what the package and the name merely claim is under `claimed`, whatever
-    /// the status. `root` is the recomputed root.
+    /// The verdict as JSON. **Consumers key on `status` only.** `publisher` and `version` (the
+    /// release's, never the manifest's) are set only for `verified`; what the package and the
+    /// name merely claim (the author, the name checked, the manifest's version, the record) is
+    /// under `claimed`, whatever the status. `root` is the recomputed root.
     #[must_use]
     pub fn to_json(&self, contents: &Contents) -> Value {
         let (name, record, release) = match self {
@@ -514,7 +514,7 @@ impl Verdict {
         };
         json!({
             "status": self.status(),
-            "publisher": matches!(self, Self::Verified { .. } | Self::FilesVerified { .. }).then(|| name.cloned()).flatten(),
+            "publisher": matches!(self, Self::Verified { .. }).then(|| name.cloned()).flatten(),
             "version": match self { Self::Verified { release, .. } => release.version.clone(), _ => None },
             "module": manifest.name,
             "root": hex::encode(contents.root),
@@ -872,7 +872,8 @@ mod tests {
         let v = check(&real, named(vec![("app.forumer_ui", record(&root))])).unwrap();
         assert_eq!((v.status(), v.exit_code()), ("files_verified", EXIT_FILES_ONLY));
         let shown = v.to_json(&real);
-        assert_eq!((shown["publisher"].as_str(), &shown["version"]), (Some("forumer"), &Value::Null));
+        assert_eq!((&shown["publisher"], &shown["version"]), (&Value::Null, &Value::Null));
+        assert_eq!(shown["claimed"]["name_checked"], "forumer");
         assert_eq!(shown["not_covered"], json!(["manifest.json"]));
 
         // Another build claiming the same publisher: its root isn't vouched for.

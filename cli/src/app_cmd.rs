@@ -325,6 +325,13 @@ pub fn run(
                 .iter()
                 .map(|p| AccountId::from_base58(p.trim()).ok_or_else(|| anyhow!("--program is not a base58 id: {p}")))
                 .collect::<Result<Vec<_>>>()?;
+            // The record must fit before anything is uploaded (a Storage CID is about 50
+            // characters; 64 leaves room).
+            if upload {
+                AppRecord { releases: releases.clone(), catalog: catalog.clone(), cid: Some("z".repeat(64)), programs: programs.clone() }
+                    .to_value()
+                    .context("the record would not fit in an LNS text entry; nothing uploaded")?;
+            }
             let cid = if upload {
                 let name_on_storage = format!("{}-{}.lgx", manifest.name, manifest.version);
                 let cid = lezreg_sdk::StorageClient::new(&storage_api)
