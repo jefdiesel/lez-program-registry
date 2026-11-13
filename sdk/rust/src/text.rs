@@ -40,6 +40,15 @@ pub fn shown(text: &str) -> String {
     out
 }
 
+/// The sink's safety net: `text` with every unsafe character escaped, but backslashes left
+/// alone, so a string [`shown`] already escaped passes through unchanged (escaping once).
+#[must_use]
+pub fn inert(text: &str) -> String {
+    text.chars()
+        .map(|c| if is_unsafe_char(c) { format!("\\u{{{:x}}}", u32::from(c)) } else { c.to_string() })
+        .collect()
+}
+
 /// [`shown`] for bytes that may not be UTF-8 (invalid bytes as `\x..`).
 #[must_use]
 pub fn shown_bytes(bytes: &[u8]) -> String {
@@ -64,7 +73,8 @@ pub fn is_semver(v: &str) -> bool {
         Some((c, p)) => (c, Some(p)),
         None => (rest, None),
     };
-    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && (s == "0" || !s.starts_with('0'));
+    // Numbers must fit lgx's uint64_t (cpp-semver), as lgx refuses larger ones.
+    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && (s == "0" || !s.starts_with('0')) && s.parse::<u64>().is_ok();
     let ident = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
     let parts: Vec<&str> = core.split('.').collect();
     parts.len() == 3
@@ -96,7 +106,9 @@ mod tests {
         for ok in ["1.2.0", "0.0.1", "10.20.30", "1.0.0-alpha.1", "1.0.0-0.3.7", "1.0.0+build.5", "1.0.0-rc.1+sha.5114f85"] {
             assert!(is_semver(ok), "{ok}");
         }
-        for bad in ["", "1.2", "1.2.0.4", "01.2.0", "1.2.0-", "1.2.0-01", "1.2.0'$(id)'", "1.2.0 ", "v1.2.0", "1.2.0-a..b", "1.2.0+"] {
+        assert!(is_semver("18446744073709551615.0.0"));
+        assert_eq!(inert(&shown("a\u{1b}b\\")), shown("a\u{1b}b\\"), "escaping once");
+        for bad in ["99999999999999999999.0.0", "1.18446744073709551616.0", "", "1.2", "1.2.0.4", "01.2.0", "1.2.0-", "1.2.0-01", "1.2.0'$(id)'", "1.2.0 ", "v1.2.0", "1.2.0-a..b", "1.2.0+"] {
             assert!(!is_semver(bad), "{bad}");
         }
     }

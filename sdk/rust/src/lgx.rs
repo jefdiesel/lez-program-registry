@@ -717,7 +717,7 @@ pub fn lgx_writes_back(manifest: &Value) -> Result<()> {
     const ALWAYS: [&str; 10] = ["manifestVersion", "name", "version", "description", "author", "type", "category", "icon", "dependencies", "main"];
     const IF_SET: [&str; 7] = ["hashes", "optional_dependencies", "interface_dependencies", "view", "backend", "display_name", "provides"];
     if let Some(k) = o.keys().find(|k| !ALWAYS.contains(&k.as_str()) && !IF_SET.contains(&k.as_str())) {
-        return Err(refuse(format!("lgx drops the field {:?}", crate::text::shown(k))));
+        return Err(refuse(format!("lgx drops the field \"{}\"", crate::text::shown(k))));
     }
     if let Some(k) = ALWAYS.iter().find(|k| !o.contains_key(**k)) {
         return Err(refuse(format!("lgx always writes {k:?}")));

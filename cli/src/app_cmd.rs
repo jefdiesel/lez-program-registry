@@ -28,7 +28,9 @@ pub enum AppCmd {
     /// 0: the whole package, by the record's sha256 for a .lgx or its manifest hash for an
     /// installed copy), files_verified (exit 3: the files only, the manifest unproven),
     /// mismatch, file_mismatch, manifest_mismatch, ambiguous, not published, no such name, or
-    /// unclaimed (exit 1). With --json, key on `status` only.
+    /// unclaimed (exit 1). With --json, key on `status` only, and treat every JSON string as
+    /// untrusted (it comes from the package or the name): never print one raw. Control and
+    /// bidi characters in `claimed.author`, catalogs and errors are escaped already.
     Verify { file: PathBuf },
     /// The `app.<module>` entry a publisher sets on their name for a package, printed as the
     /// `names set-text` command to run. Takes the `.lgx`; refused unless its files match its
@@ -123,13 +125,23 @@ fn vouchable(file: &Path) -> Result<(Vec<u8>, Contents, String)> {
             hex::encode(contents.manifest.root)
         );
     }
+    // A file in a variant named like an installer's own file would be overwritten by it, or
+    // overwrite it, once installed (lgpm writes manifest.json, manifest.sig, variant and
+    // .lgpm-source into the variant's directory).
+    if let Some(p) = contents.files.keys().find(|p| {
+        p.strip_prefix("variants/")
+            .and_then(|r| r.split_once('/'))
+            .is_some_and(|(_, rel)| lezreg_sdk::lgx::INSTALL_SIDECARS.iter().any(|s| s.eq_ignore_ascii_case(rel)))
+    }) {
+        bail!("{} holds {}, which the installer writes itself; rename it", file.display(), shown(p));
+    }
     lezreg_sdk::lgx::check_canonical_layout(&bytes).with_context(|| {
         format!("{} is not laid out exactly as lgx writes a package; vouch only for a package lgx built (rebuild it with lgx)", file.display())
     })?;
     let name = match contents.manifest.claim() {
         Ok(Some(name)) => name,
         Ok(None) => bail!("{} names no publisher: set \"author\": \"lns:<name>\" in its metadata.json and rebuild", file.display()),
-        Err(why) => bail!("{}'s author {:?} is {why}", file.display(), shown(&contents.manifest.author)),
+        Err(why) => bail!("{}'s author \"{}\" is {why}", file.display(), shown(&contents.manifest.author)),
     };
     Ok((bytes, contents, name))
 }
@@ -202,13 +214,13 @@ pub fn run(
                             "module": module,
                             "version": record.newest().version,
                             "roots": record.roots().iter().map(hex::encode).collect::<Vec<_>>(),
-                            "catalog": record.catalog,
+                            "catalog": record.catalog.as_deref().map(shown),
                             "programs": programs,
                         }));
                     }
                     Err(error) => {
                         out.text(&format!("{}  (vouches for nothing: {})", shown(&module), shown(&error.to_string())));
-                        listed.push(json!({ "module": module, "error": error.to_string() }));
+                        listed.push(json!({ "module": shown(&module), "error": shown(&error.to_string()) }));
                     }
                 }
             }
@@ -261,7 +273,7 @@ pub fn run(
                 Verdict::NotPublished { name } => format!("not published: {name} says nothing about {}", manifest.name),
                 Verdict::NoSuchName { name } => format!("no such name: the package claims {name}, which is not registered"),
                 Verdict::Unclaimed => match manifest.claim() {
-                    Err(why) => format!("unclaimed: {} names {:?}, which is {why}", manifest.name, shown(&manifest.author)),
+                    Err(why) => format!("unclaimed: {} names \"{}\", which is {why}", manifest.name, shown(&manifest.author)),
                     Ok(_) => format!("unclaimed: {} does not name an LNS publisher", manifest.name),
                 },
             };
@@ -279,7 +291,7 @@ pub fn run(
             let lns = lns_program(lns)?;
             let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
             if !apps::is_module_name(&module) {
-                bail!("{:?} is not a module name", shown(&module));
+                bail!("\"{}\" is not a module name", shown(&module));
             }
             let mut names = Names::new(HttpRpc::new(&rpc), lns);
             let profile = names
@@ -344,9 +356,12 @@ pub fn run(
                     releases.push(release);
                 }
             }
+            if catalog.as_deref().is_some_and(|c| !apps::is_catalog_url(c)) {
+                bail!("--catalog: {}", apps::CATALOG_RULE);
+            }
             let programs = programs
                 .iter()
-                .map(|p| AccountId::from_base58(p.trim()).ok_or_else(|| anyhow!("--program is not a base58 id: {p}")))
+                .map(|p| AccountId::from_base58(p.trim()).ok_or_else(|| anyhow!("--program is not a base58 id: {}", shown(p))))
                 .collect::<Result<Vec<_>>>()?;
             // The record must fit before anything is uploaded (a Storage CID is about 50
             // characters; 64 leaves room).
@@ -360,6 +375,9 @@ pub fn run(
                 let cid = lezreg_sdk::StorageClient::new(&storage_api)
                     .upload_as(&name_on_storage, "application/octet-stream", &bytes)
                     .map_err(|e| anyhow!("uploading to {storage_api}: {}", shown(&e.to_string())))?;
+                if !apps::is_cid(&cid) {
+                    bail!("the Storage node answered with something that is not a CID: \"{}\"", shown(&cid));
+                }
                 eprintln!("uploaded {name_on_storage} to Logos Storage: {cid} (keep your node online, or pin it elsewhere, so others can fetch it)");
                 Some(cid)
             } else {
@@ -373,10 +391,14 @@ pub fn run(
             }
             let record = AppRecord { releases, catalog, cid, programs };
             let value = record.to_value()?;
+            // The record as anyone will read it: what is printed must parse back to this.
+            AppRecord::parse(&value)?;
             let key = format!("{}{}", apps::APP_KEY_PREFIX, manifest.name);
             // Printed to be pasted into a shell: the value is single-quoted with every quote in it
             // escaped, so no record content can end the quoting (review 3, B-3).
-            out.text(&format!("names set-text {name} {key} {}", shell_quote(&value)));
+            // name: an LNS name; key: app.<module name>; both of plain characters. The value is
+            // JSON of validated fields (hex, base58, SemVer, a plain catalog URL, a CID), quoted.
+            out.paste_line(&format!("names set-text {name} {key} {}", shell_quote(&value)));
             out.json(json!({ "name": name, "key": key, "value": value, "root": hex::encode(contents.root) }));
         }
     }

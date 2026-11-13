@@ -176,6 +176,13 @@ guessable name as public.
 never the manifest's. What the package and the name
 merely claim (author, the manifest's version, the record) is under `claimed`, whatever the
 status. The text output never prints the manifest's version as the published one.
+**JSON string values are untrusted** (they come from the package or the name): a consumer must
+not print them raw. lezreg escapes control, ESC and bidi characters (as `\u{…}`) in the strings
+that carry free text, `claimed.author`, `catalog` (in `claimed.record` and `app show`) and
+`error`; module names, versions, hashes, CIDs and names are refused unless they are plain.
+The `names set-text` line `record` prints is the one output not escaped, because it is built
+only from validated parts (an LNS name, `app.<module>`, and a record whose catalog must be a
+plain URL) with the value single-quoted for the shell.
 
 The Basecamp module (`verify_app`, `verify_package`) still compares the manifest's claimed
 root at commit 74a0010 and must move to these SDK calls; until then its "verified" means only

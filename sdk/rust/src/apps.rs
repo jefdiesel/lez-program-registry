@@ -83,9 +83,18 @@ fn hex32(text: &str) -> Result<[u8; 32]> {
 /// A module name an `app.` key can carry: 1..=28 bytes of `a-z 0-9 - _ .` (an LNS text key).
 #[must_use]
 pub fn is_module_name(module: &str) -> bool {
-    !module.is_empty()
-        && module.len() <= MAX_MODULE
-        && module
+    is_manifest_name(module) && module.len() <= MAX_MODULE
+}
+
+/// A module name as Basecamp modules are named (`names_ui`, `liblogos_rln_module`): 1–64 of
+/// `a-z 0-9 _ - .`, not starting with `-` or `.` (so never `.`, `..` or an option). Anything
+/// else (escape sequences included) is refused when a manifest is read.
+#[must_use]
+pub fn is_manifest_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with(['-', '.'])
+        && name
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"-_.".contains(&b))
 }
@@ -134,7 +143,7 @@ impl<'de> serde::Deserialize<'de> for Strict {
                 let mut m = Map::new();
                 while let Some(k) = a.next_key::<String>()? {
                     if m.contains_key(&k) {
-                        return Err(serde::de::Error::custom(format!("the key {:?} appears twice", crate::text::shown(&k))));
+                        return Err(serde::de::Error::custom(format!("the key \"{}\" appears twice", crate::text::shown(&k))));
                     }
                     let Strict(v) = a.next_value()?;
                     m.insert(k, v);
@@ -222,8 +231,8 @@ impl AppRecord {
         }
         let text = |key: &str| o.get(key).and_then(Value::as_str).map(str::to_owned);
         let catalog = text("catalog");
-        if catalog.as_deref().is_some_and(|c| !c.starts_with("https://")) {
-            return Err(Error::Invalid("an app record's catalog is an https:// URL".into()));
+        if catalog.as_deref().is_some_and(|c| !is_catalog_url(c)) {
+            return Err(Error::Invalid(CATALOG_RULE.into()));
         }
         let cid = text("cid");
         if cid.as_deref().is_some_and(|c| !is_cid(c)) {
@@ -300,6 +309,19 @@ impl AppRecord {
     }
 }
 
+/// What a record's `catalog` may hold.
+pub const CATALOG_RULE: &str = "an app record's catalog is a plain https:// URL of at most 256 characters, letters, digits and - . _ ~ : / ? # [ ] @ ! & ( ) * + , ; = % only (percent-encode anything else)";
+
+/// A plain https URL: no quote, backslash, backtick, `$`, space or control character can be in
+/// it, so it is inert in a terminal and in the shell line `record` prints.
+#[must_use]
+pub fn is_catalog_url(url: &str) -> bool {
+    url.len() <= 256
+        && url.len() > "https://".len()
+        && url.starts_with("https://")
+        && url.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~:/?#[]@!&()*+,;=%".contains(&b))
+}
+
 /// A Logos Storage CID as text: multibase base58btc (`z…`) or another plain alphanumeric
 /// encoding, 10 to 100 characters.
 #[must_use]
@@ -355,9 +377,13 @@ pub fn check_download(module: &str, publishers: &[&str], record: &AppRecord, byt
     }
     if !contents.manifest.publisher().is_some_and(|p| publishers.contains(&p.as_str())) {
         return Err(Error::Invalid(format!(
-            "the package names {:?} as its publisher, not {}",
+            "the package names \"{}\" as its publisher, not {}",
             crate::text::shown(&contents.manifest.author),
-            publishers.join(" or ")
+            {
+                let mut p = publishers.to_vec();
+                p.dedup();
+                p.join(" or ")
+            }
         )));
     }
     if release.version.as_ref().is_some_and(|v| *v != contents.manifest.version) {
@@ -385,13 +411,6 @@ pub fn apps_of(profile: &Profile) -> Vec<(String, Result<AppRecord>)> {
     out
 }
 
-/// A module name as Basecamp modules are named (`names_ui`, `liblogos_rln_module`): 1–64 of
-/// `a-z 0-9 _ - .`. Anything else (escape sequences included) is refused when a manifest is read.
-#[must_use]
-pub fn is_manifest_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 64 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-.".contains(&b))
-}
-
 /// The parts of a package's `manifest.json` that verification reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
@@ -413,14 +432,14 @@ impl Manifest {
         let name = text("name");
         if !is_manifest_name(&name) {
             return Err(Error::Invalid(format!(
-                "the manifest's name {:?} is not a module name (1-64 of a-z, 0-9, _, - and .)",
+                "the manifest's name \"{}\" is not a module name (1-64 of a-z, 0-9, _, - and ., not starting with - or .)",
                 crate::text::shown(&name)
             )));
         }
         let version = text("version");
         if !crate::text::is_semver(&version) {
             return Err(Error::Invalid(format!(
-                "the manifest's version {:?} is not a SemVer 2.0.0 version, which lgx requires",
+                "the manifest's version \"{}\" is not a SemVer 2.0.0 version, which lgx requires",
                 crate::text::shown(&version)
             )));
         }
@@ -550,13 +569,13 @@ impl Verdict {
             "not_covered": contents.not_covered,
             "why": why,
             "claimed": {
-                "author": manifest.author,
+                "author": crate::text::shown(&manifest.author),
                 "manifest_version": manifest.version,
                 "name_checked": name,
                 "release": release.map(release_json),
                 "record": record.map(|r| json!({
                     "releases": r.releases.iter().map(release_json).collect::<Vec<_>>(),
-                    "catalog": r.catalog,
+                    "catalog": r.catalog.as_deref().map(crate::text::shown),
                     "cid": r.cid,
                     "programs": r.programs.iter().map(AccountId::to_base58).collect::<Vec<_>>(),
                 })),
@@ -569,7 +588,7 @@ impl Verdict {
 fn judge(contents: &Contents, release: &Release) -> std::result::Result<bool, (bool, String)> {
     // Ok(true): whole package proven; Ok(false): files only; Err((file, why)): file or manifest mismatch.
     if let Some(v) = release.version.as_ref().filter(|v| **v != contents.manifest.version) {
-        return Err((false, format!("the manifest says version {:?}, the release is {:?}", contents.manifest.version, crate::text::shown(v))));
+        return Err((false, format!("the manifest says version {:?}, the release is \"{}\"", contents.manifest.version, crate::text::shown(v))));
     }
     match &contents.form {
         Form::Lgx { sha256 } => match release.sha256 {
@@ -665,7 +684,7 @@ pub fn forward_of(name: &str, profile: &Profile) -> Forward {
         Entry::One(value) => match lns::parse_name(value) {
             Ok(target) if target != name => Forward::To(target),
             Ok(_) | Err(NameError::Invalid | NameError::AccountId) => Forward::None,
-            Err(NameError::Ambiguous) => Forward::Ambiguous(format!("forward {:?} has whitespace LNS clients trim differently", crate::text::shown(value))),
+            Err(NameError::Ambiguous) => Forward::Ambiguous(format!("forward \"{}\" has whitespace LNS clients trim differently", crate::text::shown(value))),
         },
     }
 }
@@ -719,7 +738,7 @@ impl<R: Rpc> Names<R> {
     /// an account ID, is an error. A name with a record this key can't open counts as
     /// registered with nothing set.
     pub fn profile(&mut self, name: &str, now_ms: u64) -> Result<Option<Profile>> {
-        let name = lns::parse_name(name).map_err(|e| Error::Invalid(format!("{:?}: {e}", crate::text::shown(name))))?;
+        let name = lns::parse_name(name).map_err(|e| Error::Invalid(format!("\"{}\": {e}", crate::text::shown(name))))?;
         let derived = self
             .derived
             .entry(name.clone())
@@ -933,6 +952,24 @@ mod tests {
         assert!(apps[0].1.is_err() && apps[1].1.is_ok());
         assert!(apps[2].1.as_ref().unwrap_err().to_string().contains("ambiguous"));
         assert!(is_module_name("forumer_ui") && !is_module_name(&"a".repeat(29)) && !is_module_name("Bad"));
+        for bad in [".", "..", "-rf", ".hidden", "a b", "a/b"] {
+            assert!(!is_manifest_name(bad), "{bad}");
+        }
+        for (url, ok) in [
+            ("https://raw.githubusercontent.com/o/r/main/logos-repo.json", true),
+            ("https://x/a?b=1&c=(2);d=*%27", true),
+            ("https://x/'$(id)'", false),
+            ("https://x/a\"b", false),
+            ("https://x/`id`", false),
+            ("https://x/a\\b", false),
+            ("https://x/a b", false),
+            ("https://x/a\nb", false),
+            ("https://x/\u{1b}[2K", false),
+            ("http://x", false),
+            ("https://", false),
+        ] {
+            assert_eq!(is_catalog_url(url), ok, "{url:?}");
+        }
     }
 
     /// B2: the root doesn't cover manifest.json; the record's sha256, manifest and version do.
