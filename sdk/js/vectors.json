@@ -23,6 +23,1567 @@
     "count": 42,
     "newest": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"
   },
+  "idl_formats": {
+    "idl/lez_program_registry.idl.json": {
+      "calls": [
+        {
+          "args": [
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "register_deployer",
+          "tag": 0
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "program",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "register_third_party",
+          "tag": 1
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "version",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "description",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<vec<string>>",
+              "name": "tags",
+              "type": {
+                "option": {
+                  "vec": "string"
+                }
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "author_label",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<ContentRef>",
+              "name": "idl",
+              "type": {
+                "option": {
+                  "defined": "ContentRef"
+                }
+              }
+            },
+            {
+              "label": "option<SourceRef>",
+              "name": "source",
+              "type": {
+                "option": {
+                  "defined": "SourceRef"
+                }
+              }
+            },
+            {
+              "label": "option<BuildConfig>",
+              "name": "build",
+              "type": {
+                "option": {
+                  "defined": "BuildConfig"
+                }
+              }
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "image_id",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "update",
+          "tag": 2
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "new_author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "transfer_author",
+          "tag": 3
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "freeze",
+          "tag": 4
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "first_segment",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "bool",
+              "name": "immutable",
+              "type": "bool"
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "deploy_and_register",
+          "tag": 5
+        }
+      ],
+      "info": {
+        "format": "spel-v1",
+        "format_version": "0.1.0",
+        "name": "lez_program_registry",
+        "program_version": "0.1.0"
+      },
+      "sha256": "0dd074b84752d6db56e5421faa967c1f634c62542e3fd5572f8ba9c726415613",
+      "status": "ok"
+    },
+    "sdk/fixtures/idl/garbage.json": {
+      "calls": [],
+      "info": null,
+      "sha256": "962e39a57792e651c7b058250bb6b9c70797caa7c380a13faf34c0fb01fcc63f",
+      "status": "unparseable"
+    },
+    "sdk/fixtures/idl/spel-v2-no-state.json": {
+      "calls": [
+        {
+          "args": [
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "RegisterDeployer",
+          "tag": 0
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "program",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "RegisterThirdParty",
+          "tag": 1
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "version",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "description",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<vec<string>>",
+              "name": "tags",
+              "type": {
+                "option": {
+                  "vec": "string"
+                }
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "author_label",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<ContentRef>",
+              "name": "idl",
+              "type": {
+                "option": {
+                  "defined": "ContentRef"
+                }
+              }
+            },
+            {
+              "label": "option<SourceRef>",
+              "name": "source",
+              "type": {
+                "option": {
+                  "defined": "SourceRef"
+                }
+              }
+            },
+            {
+              "label": "option<BuildConfig>",
+              "name": "build",
+              "type": {
+                "option": {
+                  "defined": "BuildConfig"
+                }
+              }
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "image_id",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "Update",
+          "tag": 2
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "new_author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "TransferAuthor",
+          "tag": 3
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "Freeze",
+          "tag": 4
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "first_segment",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "bool",
+              "name": "immutable",
+              "type": "bool"
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "DeployAndRegister",
+          "tag": 5
+        }
+      ],
+      "info": {
+        "format": "spel-v2",
+        "format_version": "2",
+        "name": "lez_program_registry",
+        "program_version": null
+      },
+      "sha256": "9388b3ace3ad2c1b69a320207fd60f48fbde3e674dbd6e1e0f0073d97a89153d",
+      "status": "ok"
+    },
+    "sdk/fixtures/idl/spel-v2-state-entry.json": {
+      "calls": [
+        {
+          "args": [
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "RegisterDeployer",
+          "tag": 0
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "program",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "RegisterThirdParty",
+          "tag": 1
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "version",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "description",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<vec<string>>",
+              "name": "tags",
+              "type": {
+                "option": {
+                  "vec": "string"
+                }
+              }
+            },
+            {
+              "label": "option<string>",
+              "name": "author_label",
+              "type": {
+                "option": "string"
+              }
+            },
+            {
+              "label": "option<ContentRef>",
+              "name": "idl",
+              "type": {
+                "option": {
+                  "defined": "ContentRef"
+                }
+              }
+            },
+            {
+              "label": "option<SourceRef>",
+              "name": "source",
+              "type": {
+                "option": {
+                  "defined": "SourceRef"
+                }
+              }
+            },
+            {
+              "label": "option<BuildConfig>",
+              "name": "build",
+              "type": {
+                "option": {
+                  "defined": "BuildConfig"
+                }
+              }
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "image_id",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "Update",
+          "tag": 2
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "new_author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "TransferAuthor",
+          "tag": 3
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "entry_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            },
+            {
+              "label": "option<[u8; 32]>",
+              "name": "via_pda_seed",
+              "type": {
+                "option": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "Freeze",
+          "tag": 4
+        },
+        {
+          "args": [
+            {
+              "label": "[u8; 32]",
+              "name": "first_segment",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "bool",
+              "name": "immutable",
+              "type": "bool"
+            },
+            {
+              "label": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "author_label",
+              "type": "string"
+            },
+            {
+              "label": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "label": "vec<string>",
+              "name": "tags",
+              "type": {
+                "vec": "string"
+              }
+            },
+            {
+              "label": "ContentRef",
+              "name": "idl",
+              "type": {
+                "defined": "ContentRef"
+              }
+            },
+            {
+              "label": "SourceRef",
+              "name": "source",
+              "type": {
+                "defined": "SourceRef"
+              }
+            },
+            {
+              "label": "BuildConfig",
+              "name": "build",
+              "type": {
+                "defined": "BuildConfig"
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "image_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "author_id",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u32",
+              "name": "revision",
+              "type": "u32"
+            },
+            {
+              "label": "[u8; 32]",
+              "name": "revision_seed",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "label": "u64",
+              "name": "now",
+              "type": "u64"
+            }
+          ],
+          "name": "DeployAndRegister",
+          "tag": 5
+        }
+      ],
+      "info": {
+        "format": "spel-v2",
+        "format_version": "2",
+        "name": "lez_program_registry",
+        "program_version": null
+      },
+      "sha256": "5620f132cdaa27a4f3d727f67d1b28f33d9b53edb56a7f10b499114ce41576e2",
+      "status": "ok"
+    },
+    "sdk/fixtures/idl/unknown-object.json": {
+      "calls": [],
+      "info": {
+        "format": "unknown",
+        "format_version": null,
+        "name": null,
+        "program_version": null
+      },
+      "sha256": "0332fbed5b357ac8b64b7df8c4b5a02e15791f57e9a9e977206e0dc2019a9076",
+      "status": "unknown-format"
+    }
+  },
   "link": {
     "borsh": "01290000000000000001070707070707070707070707070707070707070707070707070707070707070708000000746f6b656e2dc3a908080808080808080808080808080808080808080808080808080808080808080101010101010101010101010101010101010101010101010101010101010101010001020202020202020202020202020202020202020202020202020202020202020200",
     "prev_global": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
