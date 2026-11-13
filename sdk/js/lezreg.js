@@ -20,8 +20,9 @@ const SEEDS = {
   authorNode: "lezreg/v1/anode",
 };
 const PDA_PREFIX = new TextEncoder().encode("/LEE/v0.2/AccountId/PDA/\0\0\0\0\0\0\0\0");
-/** The loader program's id: program headers live under it. */
-export const LOADER = "11111111111111111111111111111111";
+/** The loader program's id (`lee_core::program::PROGRAM_LOADER_ACCOUNT_ID`, 32 bytes of 0xFE):
+ * program headers live under it. */
+export const LOADER = "JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ";
 /** IDLs above this are refused before parsing (DESIGN §5.2). */
 export const MAX_IDL = 120 * 1024;
 const FLAG_FROZEN = 1;
