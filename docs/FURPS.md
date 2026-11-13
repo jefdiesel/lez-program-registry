@@ -218,7 +218,9 @@ testnet 0.4."
 
 - **Status: not yet.** Testnet 0.4 has not launched. `lezreg`'s `testnet` network is a placeholder
   that refuses to run (demo `X.i`). `scripts/demo.sh --testnet --rpc … --registry …` is the
-  read-only walk to run on launch day; until then it stops at once with a message. The repo is
+  read-only walk to run on launch day; until then it stops at once with a message. That walk has
+  been exercised once, against a local rc3 chain standing in for the testnet
+  (`docs/demo-testnet-mode.log`: 9 PASS, verify skipped for lack of Docker). The repo is
   pinned to LEZ `v0.4.0-rc3` (`bafd07be`), read by `scripts/demo.sh` from `e2e.yml` and
   `Cargo.toml`.
 
