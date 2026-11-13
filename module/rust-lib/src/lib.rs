@@ -15,8 +15,11 @@
 
 use std::path::PathBuf;
 
+mod bridge;
+pub mod writes;
+
 use lezreg_sdk::{
-    HttpRpc, Kind, Registry,
+    HttpRpc, Kind, Registry, Rpc as _,
     apps::{self, Manifest, Names},
     idl::{self, FetchConfig, IdlStatus},
     json as js,
@@ -41,14 +44,18 @@ pub trait ProgramRegistryModule: Send + 'static {
     fn resolve_program(&mut self, program_id: String) -> String;
 
     /// A one-line label for a wallet prompt: `{text, kind, verified, stale, upgradeable,
-    /// name, version, author}`. `kind` is `deployer`, `community` or `unregistered`;
-    /// `verified` is true only when this machine rebuilt the running image from its recorded
-    /// source (`lezreg verify --mark`) and it still runs that image.
+    /// name, version, author, author_short, author_label_unproven, community_count}`. `kind` is
+    /// `deployer` (written by the program's own header key), `community` (no deployer entry, but
+    /// others described it: unproven) or `unregistered`; `verified` is true only when this
+    /// machine rebuilt the running image from its recorded source (`lezreg verify --mark`) and
+    /// it still runs that image.
     fn program_label(&mut self, program_id: String) -> String;
 
-    /// The program's IDL from Logos Storage, hash-checked against the chain: `{status, idl}`.
-    /// `status` is `ok` or why not (`unavailable: …`, `hash mismatch …`). Never fails because
-    /// of the IDL.
+    /// The program's IDL from Logos Storage, hash-checked against the chain: `{status, reason,
+    /// format, format_version, calls, idl}`. `status` is `ok` (a format the SDK knows: SPEL v1 or
+    /// v2), `unknown-format` (the right bytes, a JSON object, but no format the SDK knows: `idl`
+    /// still holds it), `unavailable`, `hash-mismatch` or `unparseable`, with `reason` in words;
+    /// `calls` is the common call view (`[{name, tag, args}]`). Never fails because of the IDL.
     fn get_idl(&mut self, program_id: String) -> String;
 
     /// The global list, newest first: `{items, next, total}`. Pass `next` back as `after`
@@ -79,21 +86,87 @@ pub trait ProgramRegistryModule: Send + 'static {
     /// can read its apps: nothing lists them.
     fn publisher_apps(&mut self, name: String) -> String;
 
-    /// `{sequencer, registry, storage_api, lns, basecamp_data}`.
+    /// `{sequencer, registry, storage_api, lns, basecamp_data, cli}`.
     fn config_get(&mut self) -> String;
 
     /// Changes any of `sequencer`, `registry`, `storage_api`, `lns` (the LNS program id, for
-    /// the app checks) and `basecamp_data` (Basecamp's data folder, if not the default) from a
-    /// JSON object, and remembers them. The sequencer must be `https://`, or `http://` to this
-    /// machine.
+    /// the app checks; empty for the network's default), `basecamp_data` (Basecamp's data
+    /// folder, if not the default) and `cli` (the `lezreg` that signs changes, if not found by
+    /// itself) from a JSON object, and remembers them. The sequencer must be `https://`, or
+    /// `http://` to this machine. **Only the registry browser, the Names Wallet or the host may
+    /// call it** (`code: "not_allowed"` otherwise): the settings decide what every app is told.
     fn config_set(&mut self, settings_json: String) -> String;
+
+    /// A deployer entry for a program (DESIGN §2.4 `RegisterDeployer`), as a change to sign:
+    /// input `{program, author?, name, version, author_label?, description?, tags?, idl, source,
+    /// build, image_id?, payer?, allow_remote?}`. `idl`, `source` and `build` take the shapes
+    /// `resolve_program` shows; `image_id` defaults to the live program's. The program's header
+    /// key and `author` (default: the program) sign. Nothing is sent: pass the answer to
+    /// `submit`. Errors carry a `code` (`bad_input`, `no_registry`, `no_program`, `exists`, …).
+    fn prepare_register(&mut self, input_json: String) -> String;
+
+    /// A community (third-party) entry for someone else's program, by `publisher`: the same
+    /// input with `publisher` instead of `author`. The publisher signs.
+    fn prepare_register_third_party(&mut self, input_json: String) -> String;
+
+    /// An update by the entry's author: `{entry (or program, for its deployer entry), author?,
+    /// version?, description?, tags?, author_label?, idl?, source?, build?, image_id?}`; only the
+    /// fields given change. Reads the entry for its revision, author and frozen flag.
+    fn prepare_update(&mut self, input_json: String) -> String;
+
+    /// Hands an entry to `new_author`: `{entry (or program), new_author, author?}`. Both the
+    /// current and the new author sign, in one transaction, so one wallet must hold both keys.
+    fn prepare_transfer(&mut self, input_json: String) -> String;
+
+    /// Freezes an entry for good (no more updates or transfers): `{entry (or program), author?}`.
+    fn prepare_freeze(&mut self, input_json: String) -> String;
+
+    /// Signs and sends a change a `prepare_*` method returned. Answers at once with
+    /// `{job, state: "running"}`; `submit_status(job)` follows it and the `change_settled`
+    /// event fires when it ends. From any app other than the registry browser, the Names Wallet
+    /// or the host, nothing is signed yet: the change waits as a request
+    /// (`{request, state: "awaiting_approval"}`) until the person approves it in the registry
+    /// browser (`approve_request`), and its job id then shows in `submit_status(request)`. Signed by the person's `lezreg` CLI wallet (`signer` absent or
+    /// `"cli"`); `"signer": "lez_core"` answers `code: "lez_core_unavailable"` until a usable
+    /// release of that module exists. A change prepared more than 10 minutes ago is refused
+    /// (`code: "expired"`): the registry's time window has passed.
+    fn submit(&mut self, change_json: String) -> String;
+
+    /// A submitted change: `{job, what, entry, state (running|applied|failed), receipt,
+    /// error, code, log_tail, requested_by}`, or a request still `awaiting_approval` /
+    /// `denied`. An empty `job` lists the recent ones. An app sees only what it submitted.
+    fn submit_status(&mut self, job: String) -> String;
+
+    /// Who would sign: `{cli, cli_version, cli_error, lez_core}`. Trusted callers only.
+    fn signer_status(&mut self) -> String;
+
+    /// Changes other apps submitted that wait for the person's approval: `[{request, from,
+    /// at, change}]`. Trusted callers only (the registry browser shows them).
+    fn pending_requests(&mut self) -> String;
+
+    /// Signs and sends a waiting request (as `submit` does) and answers its job. Trusted callers.
+    fn approve_request(&mut self, request: String) -> String;
+
+    /// Refuses a waiting request; nothing is signed. Trusted callers only.
+    fn deny_request(&mut self, request: String) -> String;
 
     /// Called once the module is wired to the host.
     fn on_context_ready(&mut self, _ctx: &RustModuleContext) {}
 }
 
+/// Events (the builder generates an `emit_<event>` for each).
+pub trait ProgramRegistryModuleEvents {
+    /// A change handed to `submit` ended: its `job`, `state` (`applied` or `failed`) and
+    /// `submit_status`'s answer for it as JSON text.
+    fn change_settled(&self, job: String, state: String, detail: String);
+}
+
 #[cfg(test)]
 pub struct RustModuleContext;
+
+/// Unit tests build without the generated scaffold and its event emitters.
+#[cfg(test)]
+fn emit_change_settled(_job: &str, _state: &str, _detail: &str) {}
 
 pub struct ProgramRegistry {
     sequencer: String,
@@ -101,6 +174,8 @@ pub struct ProgramRegistry {
     storage_api: String,
     lns: Option<AccountId>,
     basecamp_data: Option<PathBuf>,
+    /// The `lezreg` that signs changes, when set (else found on PATH and the usual places).
+    cli: Option<PathBuf>,
     /// LNS reads, kept with their derived names, for the sequencer and LNS program they read.
     names: Option<(String, AccountId, Names<HttpRpc>)>,
     /// `(module, root)` → (verdict, when), for [`APP_CHECK_TTL_MS`].
@@ -109,7 +184,7 @@ pub struct ProgramRegistry {
 
 impl ProgramRegistry {
     fn with_settings(sequencer: String, registry: Option<AccountId>, storage_api: String, lns: Option<AccountId>, basecamp_data: Option<PathBuf>) -> Self {
-        Self { sequencer, registry, storage_api, lns, basecamp_data, names: None, checked: std::collections::HashMap::new() }
+        Self { sequencer, registry, storage_api, lns, basecamp_data, cli: None, names: None, checked: std::collections::HashMap::new() }
     }
 }
 
@@ -130,6 +205,82 @@ fn reply(r: Result<Value, String>) -> String {
     }
     .to_string()
 }
+
+/// Like [`reply`], with a stable `code` beside the error text.
+fn reply_coded(r: Result<Value, writes::Failure>) -> String {
+    match r {
+        Ok(v) => json!({"success": true, "value": v, "error": null, "code": null}),
+        Err(f) => json!({"success": false, "value": null, "error": f.message, "code": f.code}),
+    }
+    .to_string()
+}
+
+/// The apps that may change this module's settings and sign through it without asking: its own
+/// browser and the Names Wallet (whose approval sheet relies on `verify_app`). Basecamp names
+/// each app's credential after the app, so the module knows which app calls. The host itself
+/// (Basecamp, or `logosctl` driving the module) is trusted too; a caller that can't be named is
+/// not. Reads stay open to everyone. (The Names module gates its settings the same way.)
+const TRUSTED_APPS: &[&str] = &["registry_browser", "names_ui"];
+
+fn trusted(caller: &logos_rust_sdk::LogosCaller) -> bool {
+    matches!(caller, logos_rust_sdk::LogosCaller::HostAnchor) || TRUSTED_APPS.iter().any(|app| caller.is_module(app))
+}
+
+#[cfg(not(test))]
+fn calling() -> logos_rust_sdk::LogosCaller {
+    logos_rust_sdk::current_caller()
+}
+
+// Tests run outside any dispatch; they act as the host unless a test says otherwise.
+#[cfg(test)]
+thread_local! {
+    static TEST_CALLER: std::cell::RefCell<logos_rust_sdk::LogosCaller> =
+        const { std::cell::RefCell::new(logos_rust_sdk::LogosCaller::HostAnchor) };
+}
+
+#[cfg(test)]
+fn calling() -> logos_rust_sdk::LogosCaller {
+    TEST_CALLER.with(|caller| caller.borrow().clone())
+}
+
+/// A stable name for who is calling, kept with what it submitted.
+fn caller_name(caller: &logos_rust_sdk::LogosCaller) -> String {
+    match caller {
+        logos_rust_sdk::LogosCaller::Module { name, .. } => name.clone(),
+        other => other.describe_for_human(),
+    }
+}
+
+fn only_trusted() -> Result<(), writes::Failure> {
+    let caller = calling();
+    if trusted(&caller) {
+        Ok(())
+    } else {
+        Err(writes::Failure::new("not_allowed", format!(
+            "only the registry browser, the Names Wallet or the host may do this; refused for {}", caller.describe_for_human()
+        )))
+    }
+}
+
+/// The LNS program the app checks read by default on a network the module knows: the LNS
+/// registry on the public LEZ testnet. A local chain has none (set `lns`).
+const TESTNET_SEQUENCER: &str = "https://testnet.lez.logos.co";
+const TESTNET_LNS: &str = "38jEfVV1RCyMzu1FGbYcCn5FqxCxKyY58VgzjruAh2gq";
+
+fn default_lns(sequencer: &str) -> Option<AccountId> {
+    (sequencer.trim_end_matches('/') == TESTNET_SEQUENCER).then(|| AccountId::from_base58(TESTNET_LNS).expect("a valid id"))
+}
+
+/// A change another app submitted, waiting for the person's approval.
+struct Request {
+    from: String,
+    at: u64,
+    change: Value,
+    /// Set once approved (the job) or denied.
+    outcome: Option<Result<String, ()>>,
+}
+
+static REQUESTS: std::sync::Mutex<std::collections::BTreeMap<String, Request>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 fn config_path() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
@@ -196,12 +347,19 @@ impl ProgramRegistry {
         if let Some(d) = v.get("basecamp_data").and_then(Value::as_str) {
             self.basecamp_data = if d.is_empty() { None } else { Some(PathBuf::from(d)) };
         }
+        if let Some(c) = v.get("cli").and_then(Value::as_str) {
+            if !c.is_empty() && !std::path::Path::new(c).is_absolute() {
+                return Err(format!("cli '{c}' must be an absolute path"));
+            }
+            self.cli = if c.is_empty() { None } else { Some(PathBuf::from(c)) };
+        }
         Ok(())
     }
 
     fn shown(&self) -> Value {
         json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api,
-               "lns": self.lns.map(|l| l.to_base58()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string())})
+               "lns": self.lns.or_else(|| default_lns(&self.sequencer)).map(|l| l.to_base58()), "lns_is_default": self.lns.is_none() && default_lns(&self.sequencer).is_some(), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
+               "cli": self.cli.as_ref().map(|d| d.display().to_string())})
     }
 
     fn reader(&self) -> Result<Registry<HttpRpc>, String> {
@@ -230,9 +388,19 @@ impl ProgramRegistry {
         let live = r.header.as_ref().map(|h| h.image_id);
         let upgradeable = r.header.as_ref().is_some_and(|h| !h.immutable);
         let Some(e) = &r.deployer else {
-            return Ok(json!({"text": format!("{short} (not in the registry)"), "kind": "unregistered", "verified": false, "stale": false, "upgradeable": upgradeable, "deployed": live.is_some()}));
+            // No deployer entry: what others say about it, shown as theirs (unproven).
+            let community: Vec<lezreg_sdk::types::Entry> = self.reader()?.third_party(&program, 20).map_err(|e| e.to_string())?
+                .into_iter().filter(|i| matches!(i.kind, Some(Kind::ThirdParty { .. }))).filter_map(|i| i.entry).collect();
+            if let Some(c) = community.first() {
+                return Ok(json!({"text": format!("{} {} (community entry, unproven)", c.name, c.version), "kind": "community", "verified": false,
+                                  "stale": live.is_some_and(|l| l != c.image_id), "upgradeable": upgradeable, "deployed": live.is_some(),
+                                  "name": c.name, "version": c.version, "author": c.author.to_base58(), "author_short": short_id(&c.author.to_base58()),
+                                  "author_label_unproven": c.author_label, "community_count": community.len()}));
+            }
+            return Ok(json!({"text": format!("{short} (not in the registry)"), "kind": "unregistered", "verified": false, "stale": false, "upgradeable": upgradeable, "deployed": live.is_some(), "community_count": 0}));
         };
-        let stale = live != Some(e.image_id);
+        // Stale: a program runs here, but not the code registered. No program at all is said so.
+        let stale = live.is_some_and(|l| l != e.image_id);
         let verified = !stale && live.is_some_and(|i| locally_verified(program_id, &i));
         let mut text = format!("{} {}", e.name, e.version);
         if verified {
@@ -241,13 +409,81 @@ impl ProgramRegistry {
         if stale {
             text.push_str(" (stale: the program runs other code than registered)");
         }
-        Ok(json!({"text": text, "kind": "deployer", "verified": verified, "stale": stale, "upgradeable": upgradeable,
-                  "name": e.name, "version": e.version, "author": e.author.to_base58(), "author_label_unproven": e.author_label}))
+        if live.is_none() {
+            text.push_str(" (no program deployed at this id)");
+        }
+        Ok(json!({"text": text, "kind": "deployer", "verified": verified, "stale": stale, "upgradeable": upgradeable, "deployed": live.is_some(),
+                  "name": e.name, "version": e.version, "author": e.author.to_base58(), "author_short": short_id(&e.author.to_base58()),
+                  "author_label_unproven": e.author_label}))
+    }
+
+    /// The registry a write is for, coded.
+    fn write_registry(&self) -> Result<AccountId, writes::Failure> {
+        self.registry.ok_or_else(|| writes::Failure::new("no_registry", "no registry configured: call config_set with {\"registry\": \"<id>\"}"))
+    }
+
+    /// The chain's clock (ms), which the registry checks a change's `now` against.
+    fn chain_now(&self) -> Result<u64, writes::Failure> {
+        let (account, program) = writes::clock_actor();
+        let state = HttpRpc::new(&self.sequencer).get_actor_state(&account, &program).map_err(|e| writes::Failure::new("transport", e.to_string()))?;
+        writes::clock_time(&state).ok_or_else(|| writes::Failure::new("no_clock", format!("the sequencer at {} has no clock account to time the change by", self.sequencer)))
+    }
+
+    /// A built change, with the caller's send options and a summary for a confirm sheet.
+    fn change(&self, built: &writes::Built, input: &Value, now: u64) -> Result<Value, writes::Failure> {
+        let reg = self.write_registry()?;
+        let summary = json!({"what": built.what, "entry": built.entry.to_base58(), "signers": built.signers.iter().map(AccountId::to_base58).collect::<Vec<_>>(),
+                             "registry": reg.to_base58(), "sequencer": self.sequencer, "irreversible": built.what == "Freeze"});
+        let mut c = built.change(&self.sequencer, &reg, now, summary);
+        if let Some(p) = input.get("payer").filter(|p| !p.is_null()) {
+            c["payer"] = json!(writes::account(p, "payer")?.to_base58());
+        }
+        c["allow_remote"] = json!(input.get("allow_remote") == Some(&json!(true)));
+        Ok(c)
+    }
+
+    /// `prepare_register` and `prepare_register_third_party`.
+    fn prepare_new(&self, input_json: &str, third_party: bool) -> Result<Value, writes::Failure> {
+        let input: Value = serde_json::from_str(input_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
+        let reg = self.write_registry()?;
+        let reader = Registry::new(HttpRpc::new(&self.sequencer), reg);
+        let program = writes::account(&input["program"], "program")?;
+        let live = reader.header(&program).map_err(|e| writes::Failure::new("transport", e.to_string()))?.map(|h| h.image_id);
+        let now = self.chain_now()?;
+        let built = if third_party { writes::register_third_party(&reg, &input, now, live)? } else { writes::register(&reg, &input, now, live)? };
+        if reader.entry(&built.entry).map_err(|e| writes::Failure::new("transport", e.to_string()))?.is_some() {
+            return Err(writes::Failure::new("exists", format!("{} already holds an entry: use prepare_update", built.entry.to_base58())));
+        }
+        self.change(&built, &input, now)
+    }
+
+    /// `prepare_update`, `prepare_transfer` and `prepare_freeze`: they read the entry first.
+    fn prepare_change(&self, input_json: &str, build: fn(&AccountId, &Value, u64, &writes::Stored) -> writes::Res<writes::Built>) -> Result<Value, writes::Failure> {
+        let input: Value = serde_json::from_str(input_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
+        let reg = self.write_registry()?;
+        let at = writes::target(&input)?;
+        let reader = Registry::new(HttpRpc::new(&self.sequencer), reg);
+        let e = reader.entry(&at).map_err(|e| writes::Failure::new("transport", e.to_string()))?
+            .ok_or_else(|| writes::Failure::new("no_entry", format!("there is no registry entry at {}", at.to_base58())))?;
+        let stored = writes::Stored { revision: e.revision, author: e.author, registrant: e.registrant, frozen: e.is_frozen() };
+        let now = self.chain_now()?;
+        let built = build(&reg, &input, now, &stored)?;
+        self.change(&built, &input, now)
+    }
+
+    /// Starts signing `change` with the lezreg CLI, for the app named `requested_by`.
+    fn start_job(&self, change: &Value, requested_by: &str) -> Result<Value, writes::Failure> {
+        let cli = bridge::find_cli(self.cli.as_deref())?;
+        let job = bridge::start(&cli, change, now_ms(), requested_by, |job| {
+            let detail = job.json().to_string();
+            emit_change_settled(&job.id, job.state, &detail);
+        })?;
+        Ok(job.json())
     }
 
     /// LNS reads for the configured sequencer and LNS program, kept across calls.
     fn names(&mut self) -> Result<&mut Names<HttpRpc>, String> {
-        let lns = self.lns.ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
+        let lns = self.lns.or_else(|| default_lns(&self.sequencer)).ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
         let current = matches!(&self.names, Some((seq, l, _)) if *seq == self.sequencer && *l == lns);
         if !current {
             self.names = Some((self.sequencer.clone(), lns, Names::new(HttpRpc::new(&self.sequencer), lns)));
@@ -287,6 +523,14 @@ impl ProgramRegistry {
     fn basecamp_data(&self) -> Option<PathBuf> {
         self.basecamp_data.clone().or_else(default_basecamp_data)
     }
+}
+
+/// `7Pq3…kZ9d`: an account id short enough for one line.
+fn short_id(id: &str) -> String {
+    if id.len() <= 12 {
+        return id.to_owned();
+    }
+    format!("{}…{}", &id[..4], &id[id.len() - 4..])
 }
 
 fn now_ms() -> u64 {
@@ -345,12 +589,24 @@ impl ProgramRegistryModule for ProgramRegistry {
             let program = program_arg(&program_id)?;
             let r = self.reader()?.resolve(&program).map_err(|e| e.to_string())?;
             let e = r.deployer.ok_or("the program has no deployer entry")?;
-            // Two quick attempts: a Basecamp call must not hang for the CLI's full ladder.
-            let cfg = FetchConfig { storage_api: Some(self.storage_api.clone()), backoff: vec![std::time::Duration::from_secs(2)], ..FetchConfig::default() };
-            Ok(match idl::fetch_idl(&e.idl, &cfg) {
-                IdlStatus::Ok(v) => json!({"status": "ok", "idl": v}),
-                other => json!({"status": other.to_string(), "idl": null}),
-            })
+            // One bounded attempt (at most ~12 s): a host call gives up after about 20 s (logosctl)
+            // and the module answers one call at a time, so it must not wait out the CLI's
+            // full ladder. Content no node has comes back as `unavailable`, not as a timeout.
+            let s = std::time::Duration::from_secs;
+            let cfg = FetchConfig {
+                storage_api: Some(self.storage_api.clone()),
+                backoff: Vec::new(),
+                timeouts: lezreg_sdk::storage::Timeouts { manifest: s(4), stream: s(6), dial: s(2) },
+                ..FetchConfig::default()
+            };
+            let fetched = idl::fetch_idl(&e.idl, &cfg);
+            let mut v = js::idl_status(&fetched);
+            // An IDL in a format the SDK does not know is still the IDL: hand it over.
+            v["idl"] = match &fetched {
+                IdlStatus::Ok(i) | IdlStatus::UnknownFormat(i) => i.clone(),
+                IdlStatus::Pending | IdlStatus::Unavailable(_) | IdlStatus::HashMismatch { .. } | IdlStatus::ParseError(_) => Value::Null,
+            };
+            Ok(v)
         })())
     }
 
@@ -416,14 +672,145 @@ impl ProgramRegistryModule for ProgramRegistry {
     }
 
     fn config_set(&mut self, settings_json: String) -> String {
-        reply((|| {
-            let v: Value = serde_json::from_str(&settings_json).map_err(|e| format!("not JSON: {e}"))?;
+        reply_coded((|| {
+            only_trusted()?;
+            let v: Value = serde_json::from_str(&settings_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
             let mut next = Self::with_settings(self.sequencer.clone(), self.registry, self.storage_api.clone(), self.lns, self.basecamp_data.clone());
-            next.apply(&v)?;
+            next.cli = self.cli.clone();
+            next.apply(&v).map_err(writes::Failure::input)?;
             next.save()?;
             *self = next;
             Ok(self.shown())
         })())
+    }
+
+    fn prepare_register(&mut self, input_json: String) -> String {
+        reply_coded(self.prepare_new(&input_json, false))
+    }
+
+    fn prepare_register_third_party(&mut self, input_json: String) -> String {
+        reply_coded(self.prepare_new(&input_json, true))
+    }
+
+    fn prepare_update(&mut self, input_json: String) -> String {
+        reply_coded(self.prepare_change(&input_json, writes::update))
+    }
+
+    fn prepare_transfer(&mut self, input_json: String) -> String {
+        reply_coded(self.prepare_change(&input_json, writes::transfer))
+    }
+
+    fn prepare_freeze(&mut self, input_json: String) -> String {
+        reply_coded(self.prepare_change(&input_json, writes::freeze))
+    }
+
+    fn submit(&mut self, change_json: String) -> String {
+        reply_coded((|| {
+            let change: Value = serde_json::from_str(&change_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
+            match change.get("signer").and_then(Value::as_str).unwrap_or("cli") {
+                "cli" => {}
+                "lez_core" => return Err(writes::Failure::new("lez_core_unavailable", bridge::LEZ_CORE_BLOCKED)),
+                other => return Err(writes::Failure::input(format!("unknown signer '{other}': use \"cli\""))),
+            }
+            // A change is only sent to the network this module is pointed at.
+            let reg = self.write_registry()?;
+            if change["registry"].as_str() != Some(reg.to_base58().as_str()) || change["sequencer"].as_str() != Some(self.sequencer.as_str()) {
+                return Err(writes::Failure::new("wrong_network", "this change was prepared for another registry or sequencer than the module is set to: prepare it again"));
+            }
+            if change["format"] != writes::FORMAT {
+                return Err(writes::Failure::input("not a change: pass what a prepare_* method returned"));
+            }
+            if change["expires_at"].as_u64().is_some_and(|e| now_ms() >= e) {
+                return Err(writes::Failure::new("expired", "this change was prepared more than 10 minutes ago and the registry would refuse it: prepare it again"));
+            }
+            let caller = calling();
+            if !trusted(&caller) {
+                // Nothing is signed for an app the person has not trusted: it waits for them.
+                let from = caller_name(&caller);
+                let at = now_ms();
+                static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let id = format!("req-{at}-{}", SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+                if let Ok(mut r) = REQUESTS.lock() {
+                    r.retain(|_, q| q.outcome.is_none() || at.saturating_sub(q.at) < 3_600_000);
+                    if r.values().filter(|q| q.from == from && q.outcome.is_none()).count() >= 5 {
+                        return Err(writes::Failure::new("too_many_requests", "this app already has 5 changes waiting for approval"));
+                    }
+                    r.insert(id.clone(), Request { from: from.clone(), at, change, outcome: None });
+                }
+                return Ok(json!({"request": id, "state": "awaiting_approval", "from": from,
+                                 "note": "the person approves or refuses it in the Program Registry app"}));
+            }
+            self.start_job(&change, &caller_name(&caller))
+        })())
+    }
+
+    fn submit_status(&mut self, job: String) -> String {
+        let caller = calling();
+        let me = caller_name(&caller);
+        let all = trusted(&caller);
+        let job = job.trim();
+        reply_coded(if job.is_empty() {
+            Ok(json!(bridge::jobs().into_iter().filter(|j| all || j["requested_by"] == me.as_str()).collect::<Vec<_>>()))
+        } else if let Some(state) = REQUESTS.lock().ok().and_then(|r| r.get(job).filter(|q| all || q.from == me).map(|q| match &q.outcome {
+            None => json!({"request": job, "state": "awaiting_approval"}),
+            Some(Err(())) => json!({"request": job, "state": "denied"}),
+            Some(Ok(j)) => bridge::status(j).map_or_else(|| json!({"request": job, "job": j}), |s| s.json()),
+        })) {
+            Ok(state)
+        } else {
+            bridge::status(job).filter(|j| all || j.requested_by == me).map(|j| j.json())
+                .ok_or_else(|| writes::Failure::new("no_job", format!("no change '{job}' was submitted by this app since the module started")))
+        })
+    }
+
+    fn pending_requests(&mut self) -> String {
+        reply_coded((|| {
+            only_trusted()?;
+            let r = REQUESTS.lock().map_err(|_| writes::Failure::new("error", "request list unavailable"))?;
+            Ok(json!(r.iter().filter(|(_, q)| q.outcome.is_none()).map(|(id, q)| json!({"request": id, "from": q.from, "at": q.at, "change": q.change})).collect::<Vec<_>>()))
+        })())
+    }
+
+    fn approve_request(&mut self, request: String) -> String {
+        reply_coded((|| {
+            only_trusted()?;
+            let (change, from) = {
+                let r = REQUESTS.lock().map_err(|_| writes::Failure::new("error", "request list unavailable"))?;
+                let q = r.get(request.trim()).filter(|q| q.outcome.is_none()).ok_or_else(|| writes::Failure::new("no_request", format!("no request '{request}' is waiting")))?;
+                (q.change.clone(), q.from.clone())
+            };
+            let job = self.start_job(&change, &from)?;
+            if let Ok(mut r) = REQUESTS.lock() {
+                if let Some(q) = r.get_mut(request.trim()) {
+                    q.outcome = Some(Ok(job["job"].as_str().unwrap_or_default().to_owned()));
+                }
+            }
+            Ok(job)
+        })())
+    }
+
+    fn deny_request(&mut self, request: String) -> String {
+        reply_coded((|| {
+            only_trusted()?;
+            let mut r = REQUESTS.lock().map_err(|_| writes::Failure::new("error", "request list unavailable"))?;
+            let q = r.get_mut(request.trim()).filter(|q| q.outcome.is_none()).ok_or_else(|| writes::Failure::new("no_request", format!("no request '{request}' is waiting")))?;
+            q.outcome = Some(Err(()));
+            Ok(json!({"request": request.trim(), "state": "denied"}))
+        })())
+    }
+
+    fn signer_status(&mut self) -> String {
+        if let Err(f) = only_trusted() {
+            return reply_coded(Err(f));
+        }
+        let cli = bridge::find_cli(self.cli.as_deref());
+        let version = cli.as_ref().ok().map(|c| bridge::cli_version(c));
+        reply(Ok(json!({
+            "cli": cli.as_ref().ok().map(|c| c.display().to_string()),
+            "cli_version": version.as_ref().and_then(|v| v.as_ref().ok()).cloned(),
+            "cli_error": cli.as_ref().err().map(|f| f.message.clone()).or_else(|| version.and_then(Result::err).map(|f| f.message)),
+            "lez_core": bridge::LEZ_CORE_BLOCKED,
+        })))
     }
 }
 
@@ -466,6 +853,86 @@ mod tests {
         assert!(m.apply(&json!({"storage_api": "file:///etc"})).is_err());
         assert!(m.apply(&json!({"sequencer": "https://testnet.lez.logos.co", "registry": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"})).is_ok());
         assert_eq!(m.shown()["registry"], "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN");
+    }
+
+    #[test]
+    fn writes_need_a_registry_and_go_only_to_the_configured_network() {
+        let mut m = fresh();
+        let v = parsed(&m.prepare_freeze(json!({"program": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"}).to_string()));
+        assert_eq!((v["success"].as_bool(), v["code"].as_str()), (Some(false), Some("no_registry")));
+        assert_eq!(parsed(&m.prepare_update("nope".into()))["code"], "bad_input");
+        m.registry = AccountId::from_base58("6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN");
+        let change = json!({"format": writes::FORMAT, "registry": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN", "sequencer": "http://127.0.0.1:9", "expires_at": u64::MAX});
+        assert_eq!(parsed(&m.submit(change.to_string()))["code"], "wrong_network");
+        let mut lez = change.clone();
+        lez["signer"] = json!("lez_core");
+        assert_eq!(parsed(&m.submit(lez.to_string()))["code"], "lez_core_unavailable");
+        assert_eq!(parsed(&m.submit_status("nope".into()))["code"], "no_job");
+        assert!(m.apply(&json!({"cli": "lezreg"})).is_err(), "the signer's path must be absolute");
+        assert!(m.apply(&json!({"cli": "/opt/lezreg/bin/lezreg"})).is_ok());
+        assert_eq!(m.shown()["cli"], "/opt/lezreg/bin/lezreg");
+        assert_eq!(short_id("6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"), "6YWH…VayN");
+    }
+
+    fn as_caller(caller: logos_rust_sdk::LogosCaller) {
+        TEST_CALLER.with(|c| *c.borrow_mut() = caller);
+    }
+
+    fn app(name: &str) -> logos_rust_sdk::LogosCaller {
+        logos_rust_sdk::LogosCaller::Module { name: name.into(), instance: None }
+    }
+
+    /// Settings and signing are for the registry browser, the Names Wallet and the host; any
+    /// other app may read, and its changes wait for the person's approval.
+    #[test]
+    fn only_trusted_apps_change_settings_or_sign() {
+        use logos_rust_sdk::LogosCaller;
+        assert!(trusted(&LogosCaller::HostAnchor));
+        assert!(trusted(&app("registry_browser")));
+        assert!(trusted(&app("names_ui")));
+        assert!(trusted(&LogosCaller::Module { name: "names_ui".into(), instance: Some("a41f".into()) }));
+        assert!(!trusted(&app("evil_ui")));
+        assert!(!trusted(&LogosCaller::Unknown));
+        assert!(!trusted(&LogosCaller::Derived { parent: "registry_browser".into(), leaf: "x".into() }));
+
+        let reg = "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN";
+        let mut m = fresh();
+        m.registry = AccountId::from_base58(reg);
+        as_caller(app("evil_ui"));
+        let v = parsed(&m.config_set(json!({"lns": reg}).to_string()));
+        assert_eq!((v["success"].as_bool(), v["code"].as_str()), (Some(false), Some("not_allowed")), "{v}");
+        assert!(m.lns.is_none(), "nothing changed");
+        assert_eq!(parsed(&m.signer_status())["code"], "not_allowed");
+        assert_eq!(parsed(&m.pending_requests())["code"], "not_allowed");
+        assert_eq!(parsed(&m.config_get())["success"], true, "reads stay open");
+        // A change from an untrusted app waits; nothing is signed.
+        let change = json!({"format": writes::FORMAT, "what": "Freeze", "registry": reg, "sequencer": DEFAULT_SEQUENCER, "expires_at": u64::MAX, "entry": reg});
+        let v = parsed(&m.submit(change.to_string()));
+        assert_eq!(v["value"]["state"], "awaiting_approval", "{v}");
+        let request = v["value"]["request"].as_str().unwrap().to_owned();
+        assert_eq!(parsed(&m.approve_request(request.clone()))["code"], "not_allowed", "it can't approve itself");
+        assert_eq!(parsed(&m.submit_status(request.clone()))["value"]["state"], "awaiting_approval");
+        as_caller(app("other_ui"));
+        assert_eq!(parsed(&m.submit_status(request.clone()))["code"], "no_job", "another app can't see it");
+        // The person (through the browser) sees it and refuses it.
+        as_caller(app("registry_browser"));
+        let pending = parsed(&m.pending_requests());
+        assert!(pending["value"].as_array().unwrap().iter().any(|q| q["request"] == request.as_str() && q["from"] == "evil_ui"), "{pending}");
+        assert_eq!(parsed(&m.deny_request(request.clone()))["value"]["state"], "denied");
+        assert_eq!(parsed(&m.deny_request(request.clone()))["code"], "no_request");
+        as_caller(app("evil_ui"));
+        assert_eq!(parsed(&m.submit_status(request))["value"]["state"], "denied");
+        as_caller(logos_rust_sdk::LogosCaller::HostAnchor);
+    }
+
+    #[test]
+    fn the_testnet_has_a_default_lns_program() {
+        let mut m = fresh();
+        assert_eq!(m.shown()["lns"], Value::Null, "a local chain has none");
+        assert!(m.apply(&json!({"sequencer": "https://testnet.lez.logos.co"})).is_ok());
+        assert_eq!((m.shown()["lns"].as_str(), m.shown()["lns_is_default"].as_bool()), (Some(TESTNET_LNS), Some(true)));
+        assert!(m.apply(&json!({"lns": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"})).is_ok());
+        assert_eq!(m.shown()["lns_is_default"], false);
     }
 
     #[test]
