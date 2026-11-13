@@ -653,7 +653,7 @@ EOF
   ok X.d "claiming the live image again shows fresh" \
     sh -c '"$1" --json show "$2" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"  \", d[\"freshness\"]); sys.exit(d[\"freshness\"][\"status\"]!=\"fresh\")"' _ "$LEZREG" "$X"
   ok X.e "a community entry claiming an account with no program is flagged NO-PROGRAM" \
-    sh -c '"$1" register --third-party --program "$2" --publisher "$3" --payer "$4" --name demo-sample --version 9.9.9 --label "Demo Labs" --description "claims a program that does not exist" --image-id "$5" --idl-cid raw --idl-file "$6" >/dev/null 2>&1 && "$1" list --limit 1 | tee /dev/stderr | grep -q NO-PROGRAM' _ "$LEZREG" "$M" "$Q" "$PAYER" "$LIVE" "$REG_IDL"
+    sh -c '"$1" register --third-party --program "$2" --publisher "$3" --payer "$4" --name demo-sample --version 9.9.9 --label "Demo Labs" --description "claims a program that does not exist" --image-id "$5" --idl-cid raw --idl-file "$6" --repo "$7" --commit "$8" --binary lez_program_registry --manifest-path methods/guest/Cargo.toml 2>&1 | tail -2 && "$1" list --limit 1 | tee /dev/stderr | grep -q NO-PROGRAM' _ "$LEZREG" "$M" "$Q" "$PAYER" "$LIVE" "$REG_IDL" "$REPO_URL" "$COMMIT"
   ok X.e2 "show <name> lists every entry of that name and ranks the NO-PROGRAM one last" \
     sh -c '"$1" show Demo-Sample | tee /dev/stderr | tail -1 | grep -q NO-PROGRAM' _ "$LEZREG"
   ok X.e3 "show --revision 2: the write-once release snapshot of X's revision 2" lz show "$X" --revision 2
@@ -666,7 +666,7 @@ EOF
   refused X.j "writes through a sequencer that is not on this machine need --yes" "is not on this machine" \
     --rpc http://192.0.2.1:3062 wallet auth-transfer send --from "Public/$PAYER" --to "Public/$A" --amount 1
   refused X.j2 "the URL is parsed, not prefix-matched: 127.0.0.1:PORT@elsewhere is elsewhere" "is not on this machine" \
-    --rpc "http://127.0.0.1:$RPC_PORT@example.invalid/" register --program "$X" --name x --version 1 --idl-cid raw --idl-file "$REG_IDL"
+    --rpc "http://127.0.0.1:$RPC_PORT@example.invalid/" register --program "$X" --name x --version 1 --idl-cid raw --idl-file "$REG_IDL" --repo "$REPO_URL" --commit "$COMMIT"
   refused X.j3 "lezreg wallet refuses change-network (it never moves to another sequencer behind your back)" "change-network" \
     wallet change-network testnet
   ok X.k "stats: the adoption table read from the chain" lz stats --by-month --by-author
