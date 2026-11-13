@@ -10,8 +10,15 @@ repository.workspace = true
 name = "lezreg"
 path = "src/main.rs"
 
+[features]
+# Simulate (execute) registry calls inside this process instead of through an external `r0vm`,
+# for machines that have none, or must not start one: build with `--features local-execute` and
+# run with RISC0_EXECUTOR=local (and RISC0_PROVER=local). Public writes never prove.
+local-execute = ["dep:lee", "lee/prove"]
+
 [dependencies]
 lezreg-sdk = { path = "../sdk/rust" }
+lee = { workspace = true, optional = true }
 lezreg-types = { path = "../crates/types" }
 lee_core.workspace = true
 wallet.workspace = true
