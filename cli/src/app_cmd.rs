@@ -6,7 +6,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use clap::Subcommand;
 use lezreg_sdk::{
     HttpRpc, Registry,
-    apps::{self, AppRecord, Names, Verdict},
+    apps::{self, AppRecord, Names, Release, Verdict},
     lgx::Contents,
     lns::Entry,
 };
@@ -22,13 +22,16 @@ pub enum AppCmd {
     Show { name: String },
     /// Check a package (`.lgx`, or an installed module's directory or its `manifest.json`) against
     /// the LNS name its manifest names as publisher. The root is recomputed from the package's
-    /// files first: root_mismatch if they aren't the files its manifest names. Then verified,
-    /// mismatch (a copy, or a release the name hasn't vouched for), file_mismatch (the files are
-    /// vouched for, this .lgx isn't), ambiguous, not published, no such name, or unclaimed.
+    /// files first: root_mismatch if they aren't the files its manifest names. Then verified (exit
+    /// 0: the whole package, by the record's sha256 for a .lgx or its manifest hash for an
+    /// installed copy), files_verified (exit 3: the files only, the manifest unproven),
+    /// mismatch, file_mismatch, manifest_mismatch, ambiguous, not published, no such name, or
+    /// unclaimed (exit 1). With --json, key on `status` only.
     Verify { file: PathBuf },
     /// The `app.<module>` entry a publisher sets on their name for a package, printed as the
     /// `names set-text` command to run. Takes the `.lgx`; refused unless its files match its
-    /// manifest's root and it names the publisher (`"author": "lns:<name>"` in metadata.json).
+    /// manifest's root, it is laid out exactly as lgx writes a package, and it names the
+    /// publisher (`"author": "lns:<name>"` in metadata.json).
     Record {
         file: PathBuf,
         /// The catalog's logos-repo.json URL (https).
@@ -37,9 +40,10 @@ pub enum AppCmd {
         /// A program id the app calls (repeatable).
         #[arg(long = "program")]
         programs: Vec<String>,
-        /// An older root to keep vouching for while installs upgrade (repeatable, hex).
+        /// An older release's `.lgx` to keep vouching for while installs upgrade (repeatable):
+        /// its root, file and manifest hashes and version go into the record's `keep`.
         #[arg(long = "keep")]
-        keep: Vec<String>,
+        keep: Vec<PathBuf>,
         /// The package's Logos Storage CID, if it is already there.
         #[arg(long, conflicts_with = "upload")]
         cid: Option<String>,
@@ -100,6 +104,34 @@ pub fn read_contents(file: &Path) -> Result<Contents> {
     bail!("{} is not a .lgx package, an installed package's directory, or its manifest.json", file.display())
 }
 
+/// A `.lgx` a publisher may vouch for: its files hash to its manifest's root, it is laid out
+/// exactly as lgx writes a package (so no reader can read it differently), and it names its
+/// publisher. Returns the bytes, the contents and the publisher's name.
+fn vouchable(file: &Path) -> Result<(Vec<u8>, Contents, String)> {
+    let bytes = std::fs::read(file).with_context(|| format!("cannot read {}", file.display()))?;
+    if !bytes.starts_with(&[0x1f, 0x8b]) {
+        bail!("{} is not a .lgx package: a record vouches for a package's files and the .lgx's sha256, so it is made from the .lgx", file.display());
+    }
+    let contents = Contents::from_lgx(&bytes).with_context(|| format!("reading {}", file.display()))?;
+    if !contents.root_matches() {
+        bail!(
+            "{}'s files are not the ones its manifest names (recomputed root {}, the manifest says {}); rebuild it, nothing to vouch for",
+            file.display(),
+            hex::encode(contents.root),
+            hex::encode(contents.manifest.root)
+        );
+    }
+    lezreg_sdk::lgx::check_canonical_layout(&bytes).with_context(|| {
+        format!("{} is not laid out exactly as lgx writes a package; vouch only for a package lgx built (rebuild it with lgx)", file.display())
+    })?;
+    let name = match contents.manifest.claim() {
+        Ok(Some(name)) => name,
+        Ok(None) => bail!("{} names no publisher: set \"author\": \"lns:<name>\" in its metadata.json and rebuild", file.display()),
+        Err(why) => bail!("{}'s author {:?} is {why}", file.display(), contents.manifest.author),
+    };
+    Ok((bytes, contents, name))
+}
+
 /// A program's registry status in a few words.
 fn program_status(registry: Option<&Registry<HttpRpc>>, program: &AccountId) -> Value {
     let Some(registry) = registry else {
@@ -151,8 +183,8 @@ pub fn run(
                             .collect();
                         out.text(&format!(
                             "{module}  {}  root {}{}",
-                            record.version.as_deref().unwrap_or("-"),
-                            hex::encode(record.roots[0]),
+                            record.newest().version.as_deref().unwrap_or("-"),
+                            hex::encode(record.newest().root),
                             record.catalog.as_deref().map(|c| format!("\n  catalog {c}")).unwrap_or_default()
                         ));
                         for p in &programs {
@@ -160,8 +192,8 @@ pub fn run(
                         }
                         shown.push(json!({
                             "module": module,
-                            "version": record.version,
-                            "roots": record.roots.iter().map(hex::encode).collect::<Vec<_>>(),
+                            "version": record.newest().version,
+                            "roots": record.roots().iter().map(hex::encode).collect::<Vec<_>>(),
                             "catalog": record.catalog,
                             "programs": programs,
                         }));
@@ -190,19 +222,27 @@ pub fn run(
                 Names::new(HttpRpc::new(&rpc), lns).verify(&contents, now_ms())?
             };
             if let Some(from) = &via {
-                out.text(&format!("{from} forwards to {}", verdict.to_json(&contents)["publisher"].as_str().unwrap_or("?")));
+                out.text(&format!("{from} forwards to {}", verdict.to_json(&contents)["claimed"]["name_checked"].as_str().unwrap_or("?")));
             }
+            // Never the manifest's version as the published one: only the release's, when proven.
             let line = match &verdict {
-                Verdict::Verified { name, whole_file: true, .. } => format!("verified: {} {} is published by {name} (the whole .lgx file, manifest included)", manifest.name, manifest.version),
-                Verdict::Verified { name, whole_file: false, .. } => format!(
-                    "verified: {} {} is published by {name} (its files; {} not covered by the root)",
-                    manifest.name, manifest.version, contents.not_covered.join(", ")
+                Verdict::Verified { name, release, .. } => format!(
+                    "verified: {} {} is published by {name} ({})",
+                    manifest.name,
+                    release.version.as_deref().unwrap_or("(no version in the record)"),
+                    if contents.file_sha256().is_some() { "the whole .lgx file" } else { "the installed files and manifest.json" }
+                ),
+                Verdict::FilesVerified { name, .. } => format!(
+                    "FILES ONLY: {name} vouches for these files (root {}), but its record names nothing that covers {}, so the manifest (its version, dependencies, the rest) is not proven; not verified",
+                    hex::encode(contents.root),
+                    if contents.file_sha256().is_some() { "the .lgx file (no sha256)" } else { "the installed manifest.json (no manifest hash)" }
                 ),
                 Verdict::Mismatch { name, .. } => format!("MISMATCH: {name} publishes {} but does not vouch for these files (root {})", manifest.name, hex::encode(contents.root)),
                 Verdict::FileMismatch { name, .. } => format!(
                     "FILE MISMATCH: {name} vouches for these files but not for this .lgx (sha256 differs): its manifest or packing was changed (root {})",
                     hex::encode(contents.root)
                 ),
+                Verdict::ManifestMismatch { name, why, .. } => format!("MANIFEST MISMATCH: {name} vouches for these files, but not this manifest: {why}"),
                 Verdict::RootMismatch => format!(
                     "ROOT MISMATCH: the package's files are not the ones its manifest names (recomputed root {}, the manifest says {}); refused",
                     hex::encode(contents.root),
@@ -220,8 +260,10 @@ pub fn run(
             let mut shown = verdict.to_json(&contents);
             shown["forwarded_from"] = json!(via);
             out.json(shown);
-            if !matches!(verdict, Verdict::Verified { .. }) {
-                crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+            match verdict.exit_code() {
+                0 => {}
+                1 => crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed),
+                code => crate::EXIT_CODE.store(code, std::sync::atomic::Ordering::Relaxed),
             }
         }
         AppCmd::Get { name, module, out: path, storage_api } => {
@@ -238,7 +280,7 @@ pub fn run(
                 Entry::Duplicate => bail!("ambiguous record: {name} sets {key} more than once, so it vouches for nothing; nothing downloaded"),
             };
             let record = AppRecord::parse(value)?;
-            if record.sha256.is_none() {
+            if record.newest().sha256.is_none() {
                 bail!("unverifiable download: {name}'s record for {module} gives no sha256 of the .lgx, and the package root doesn't cover the manifest; nothing downloaded");
             }
             let cid = record.cid.clone().ok_or_else(|| anyhow!("{name} gives no Logos Storage CID for {module}; download it from its catalog ({})", record.catalog.as_deref().unwrap_or("none given")))?;
@@ -248,46 +290,41 @@ pub fn run(
                 .map_err(|e| anyhow!("Logos Storage didn't give {cid}: {e}"))?;
             let contents = apps::check_download(&module, &record, &bytes).map_err(|e| anyhow!("{e}; nothing written"))?;
             std::fs::write(&path, &bytes).with_context(|| format!("cannot write {}", path.display()))?;
-            out.text(&format!("{module} {} from {name}: checked (sha256 matches, files match the root), written to {}", contents.manifest.version, path.display()));
-            out.json(json!({"name": name, "module": module, "version": contents.manifest.version, "cid": cid, "bytes": bytes.len(), "root": hex::encode(contents.root), "out": path}));
+            let version = record.newest().version.clone();
+            out.text(&format!(
+                "{module} {} from {name}: checked (sha256 matches, files match the root), written to {}",
+                version.as_deref().unwrap_or("(no version in the record)"),
+                path.display()
+            ));
+            out.json(json!({"name": name, "module": module, "version": version, "cid": cid, "bytes": bytes.len(), "root": hex::encode(contents.root), "out": path}));
         }
         AppCmd::Record { file, catalog, programs, keep, cid, upload, storage_api } => {
-            let bytes = std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))?;
-            if !bytes.starts_with(&[0x1f, 0x8b]) {
-                bail!("{} is not a .lgx package: a record vouches for a package's files and the .lgx's sha256, so it is made from the .lgx", file.display());
-            }
-            let contents = Contents::from_lgx(&bytes).with_context(|| format!("reading {}", file.display()))?;
+            let (bytes, contents, name) = vouchable(&file)?;
             let manifest = &contents.manifest;
-            if !contents.root_matches() {
-                bail!(
-                    "{}'s files are not the ones its manifest names (recomputed root {}, the manifest says {}); rebuild it, nothing to vouch for",
-                    file.display(),
-                    hex::encode(contents.root),
-                    hex::encode(manifest.root)
-                );
-            }
-            let name = match manifest.claim() {
-                Ok(Some(name)) => name,
-                Ok(None) => bail!("{} names no publisher: set \"author\": \"lns:<name>\" in its metadata.json and rebuild", file.display()),
-                Err(why) => bail!("{}'s author {:?} is {why}", file.display(), manifest.author),
-            };
             if !apps::is_module_name(&manifest.name) {
                 bail!("module name {} is longer than {} bytes or has characters an LNS key can't hold", manifest.name, apps::MAX_MODULE);
             }
-            let mut roots = vec![contents.root];
+            let release_of = |bytes: &[u8], contents: &Contents| Release {
+                root: contents.root,
+                sha256: Some(lezreg_types::pda::sha256(bytes)),
+                manifest: Some(contents.manifest_sha256),
+                version: Some(contents.manifest.version.clone()),
+            };
+            let mut releases = vec![release_of(&bytes, &contents)];
             for k in &keep {
-                let root: [u8; 32] = hex::decode(k.trim()).ok().and_then(|b| b.try_into().ok())
-                    .ok_or_else(|| anyhow!("--keep takes a 64-hex root: {k}"))?;
-                if !roots.contains(&root) {
-                    roots.push(root);
+                let (old_bytes, old, old_name) = vouchable(k)?;
+                if old.manifest.name != manifest.name || old_name != name {
+                    bail!("{} is {} by {old_name}, not {} by {name}", k.display(), old.manifest.name, manifest.name);
+                }
+                let release = release_of(&old_bytes, &old);
+                if !releases.contains(&release) {
+                    releases.push(release);
                 }
             }
             let programs = programs
                 .iter()
                 .map(|p| AccountId::from_base58(p.trim()).ok_or_else(|| anyhow!("--program is not a base58 id: {p}")))
                 .collect::<Result<Vec<_>>>()?;
-            // The file's hash covers what the root doesn't: the manifest.
-            let sha256 = Some(lezreg_types::pda::sha256(&bytes));
             let cid = if upload {
                 let name_on_storage = format!("{}-{}.lgx", manifest.name, manifest.version);
                 let cid = lezreg_sdk::StorageClient::new(&storage_api)
@@ -301,10 +338,10 @@ pub fn run(
             if cid.as_deref().is_some_and(|c| !apps::is_cid(c)) {
                 bail!("--cid is not a Logos Storage CID");
             }
-            if cid.as_deref().and_then(apps::cid_content_sha256).is_some_and(|named| Some(named) != sha256) {
+            if cid.as_deref().and_then(apps::cid_content_sha256).is_some_and(|named| Some(named) != releases[0].sha256) {
                 bail!("--cid names other content than {}", file.display());
             }
-            let record = AppRecord { roots, version: Some(manifest.version.clone()), catalog, sha256, cid, programs };
+            let record = AppRecord { releases, catalog, cid, programs };
             let value = record.to_value()?;
             let key = format!("{}{}", apps::APP_KEY_PREFIX, manifest.name);
             out.text(&format!("names set-text {name} {key} '{value}'"));

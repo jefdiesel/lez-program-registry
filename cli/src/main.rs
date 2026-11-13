@@ -1274,6 +1274,9 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
 
 /// Set by a command that printed its result but must still exit non-zero (`doctor`).
 static FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Another exit code a command asks for (`app verify`: 3 when only a package's files are
+/// proven); `FAILED` and errors take precedence (exit 1).
+static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 /// Says when an entry gets lezreg's default build settings rather than the author's.
 fn note_build_defaults(entry: &args::EntryArgs) {
@@ -1337,6 +1340,10 @@ async fn main() {
     out.finish();
     if result.is_err() || FAILED.load(std::sync::atomic::Ordering::Relaxed) {
         std::process::exit(1);
+    }
+    let code = EXIT_CODE.load(std::sync::atomic::Ordering::Relaxed);
+    if code != 0 {
+        std::process::exit(code);
     }
 }
 

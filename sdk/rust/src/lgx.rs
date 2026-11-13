@@ -142,6 +142,14 @@ pub struct Contents {
     pub form: Form,
     /// Files present but not covered by the root, by path: `manifest.json` always.
     pub not_covered: Vec<String>,
+    /// SHA-256 of the `manifest.json` bytes (the package's, or the installed one), which an app
+    /// record's `manifest` names: what covers the manifest where the root doesn't.
+    pub manifest_sha256: [u8; 32],
+    /// The whole manifest as parsed (keys unique at every depth).
+    pub manifest_json: Value,
+    /// The files the root was computed from, path → hex SHA-256 (archive paths for a `.lgx`,
+    /// paths in the directory for an installed package).
+    pub files: BTreeMap<String, String>,
 }
 
 impl Contents {
@@ -176,8 +184,8 @@ impl Contents {
                 files.insert(path, hex_sha256(&data));
             }
         }
-        let manifest = manifest.ok_or_else(|| bad("the package has no manifest.json"))?;
-        let json: Value = serde_json::from_slice(&manifest).map_err(|_| bad("the package's manifest.json is not JSON"))?;
+        let manifest_bytes = manifest.ok_or_else(|| bad("the package has no manifest.json"))?;
+        let json = crate::apps::strict_json(&manifest_bytes)?;
         let manifest = Manifest::parse(&json)?;
         let tree = merkle_tree(&files);
         let root = tree.get("root").ok_or_else(|| bad("the package has no files under variants/, assets/, docs/ or licenses/"))?;
@@ -186,6 +194,9 @@ impl Contents {
             root: hex32(root)?,
             form: Form::Lgx { sha256: lezreg_types::pda::sha256(bytes) },
             not_covered,
+            manifest_sha256: lezreg_types::pda::sha256(&manifest_bytes),
+            manifest_json: json,
+            files,
         })
     }
 
@@ -193,7 +204,8 @@ impl Contents {
     /// `.../plugins/<module>`) and recomputes its root from the files on disk.
     pub fn from_installed(dir: &Path) -> Result<Self> {
         let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| bad(&format!("cannot read {}: {e}", dir.join(name).display())));
-        let json: Value = serde_json::from_slice(&read("manifest.json")?).map_err(|_| bad("the installed manifest.json is not JSON"))?;
+        let manifest_bytes = read("manifest.json")?;
+        let json = crate::apps::strict_json(&manifest_bytes)?;
         let manifest = Manifest::parse(&json)?;
         let variant = String::from_utf8(read("variant")?).map_err(|_| bad("the installed variant file is not text"))?;
         let variant = variant.trim().to_ascii_lowercase();
@@ -206,7 +218,15 @@ impl Contents {
         walk(dir, dir, &mut on_disk, &mut not_covered)?;
         not_covered.sort();
         let root = installed_root(&declared, &variant, &on_disk)?;
-        Ok(Self { manifest, root, form: Form::Installed { variant }, not_covered })
+        Ok(Self {
+            manifest,
+            root,
+            form: Form::Installed { variant },
+            not_covered,
+            manifest_sha256: lezreg_types::pda::sha256(&manifest_bytes),
+            manifest_json: json,
+            files: on_disk,
+        })
     }
 }
 
@@ -330,47 +350,113 @@ fn installed_root(declared: &BTreeMap<String, String>, variant: &str, on_disk: &
     hex32(found.ok_or_else(|| bad("the installed package has no files"))?)
 }
 
-/// The entries of a `.lgx` (gzip, then ustar), path → contents for regular files, checked
-/// against everything lgx refuses and everything the root would not cover.
-fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+/// One tar entry, as read: its header block, and for a file its data.
+struct RawEntry {
+    path: String,
+    dir: bool,
+    mode: u64,
+    header: [u8; BLOCK],
+    data: Vec<u8>,
+}
+
+/// A `.lgx` as read: its entries in order, and the tar's length (to check the end marker).
+struct RawPackage {
+    entries: Vec<RawEntry>,
+    end_at: usize,
+    tar_len: usize,
+}
+
+/// Exactly one gzip member and nothing after it. (lgx reads through `gzread`, which goes on into
+/// a second member and stops quietly at trailing junk; refusing both leaves one reading.)
+fn gunzip(bytes: &[u8]) -> Result<Vec<u8>> {
     if !bytes.starts_with(&[0x1f, 0x8b]) {
         return Err(bad("not a .lgx package (not gzip)"));
     }
+    let mut decoder = flate2::bufread::GzDecoder::new(bytes);
     let mut tar = Vec::new();
-    flate2::read::MultiGzDecoder::new(bytes)
+    (&mut decoder)
         .take(MAX_UNPACKED as u64 + 1)
         .read_to_end(&mut tar)
         .map_err(|e| bad(&format!("a damaged .lgx package: {e}")))?;
     if tar.len() > MAX_UNPACKED {
         return Err(bad("the package unpacks to more than 1 GiB"));
     }
-    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut seen = BTreeSet::new();
-    let mut problems = Vec::new();
+    if !decoder.into_inner().is_empty() {
+        return Err(bad("bytes after the gzip stream (a second member, or junk): a package is one gzip member"));
+    }
+    Ok(tar)
+}
+
+/// A numeric header field written the one way every reader agrees on: octal digits from its
+/// first byte, then only NULs or spaces. lgx's `readOctal` also skips leading spaces *and NULs*
+/// and stops at the first non-digit, so a field such as `"\0" + "0001234" + "\0"` is 0 to a
+/// reader that stops at the NUL and 0o1234 to lgx: a size like that hid a whole second package
+/// (review B1). Anything but the plain form is refused, never interpreted.
+fn strict_number(field: &[u8], what: &str) -> Result<u64> {
+    let digits = field.iter().take_while(|b| (b'0'..=b'7').contains(b)).count();
+    if digits == 0 || digits > 21 || !field[digits..].iter().all(|&b| b == 0 || b == b' ') {
+        return Err(bad(&format!("a tar header whose {what} field is not plain octal ({field:?}); refused rather than guessed at")));
+    }
+    Ok(field[..digits].iter().fold(0, |v, d| v * 8 + u64::from(d - b'0')))
+}
+
+/// A text field: its bytes up to the first NUL, with only NULs after it.
+fn strict_text<'a>(field: &'a [u8], what: &str) -> Result<&'a [u8]> {
+    let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    if !field[end..].iter().all(|&b| b == 0) {
+        return Err(bad(&format!("a tar header with bytes after the end of its {what}")));
+    }
+    Ok(&field[..end])
+}
+
+/// Reads the ustar archive inside a `.lgx` strictly enough that lgx's `TarReader` can't read it
+/// differently: every numeric field plain octal, the checksum the unsigned sum lgx computes,
+/// `ustar\0` `00` magic (lgx reads name and prefix as ustar whatever the magic says), a regular
+/// file or directory and nothing else, no link name, zero padding, a directory with no data,
+/// and the archive ending with two zero blocks followed only by zeros (lgx skips a lone zero
+/// block and keeps reading; other readers stop there).
+fn read_raw(bytes: &[u8]) -> Result<RawPackage> {
+    let tar = gunzip(bytes)?;
+    let mut entries = Vec::new();
     let mut at = 0;
-    let mut zero_blocks = 0;
-    while at < tar.len() {
-        let header = tar.get(at..at + BLOCK).ok_or_else(|| bad("the package's tar ends inside a header"))?;
+    loop {
+        let header: [u8; BLOCK] = tar
+            .get(at..at + BLOCK)
+            .ok_or_else(|| bad("the package's tar has no end-of-archive marker (it ends inside or before a header)"))?
+            .try_into()
+            .expect("a block");
         at += BLOCK;
         if header.iter().all(|&b| b == 0) {
-            // lgx stops at two zero blocks in a row; a single one is skipped.
-            zero_blocks += 1;
-            if zero_blocks >= 2 {
-                break;
+            if !tar.get(at..at + BLOCK).is_some_and(|b| b.iter().all(|&x| x == 0)) {
+                return Err(bad("a lone zero block inside the tar (lgx skips it and reads on, other readers stop): refused"));
             }
-            continue;
+            let end_at = at + BLOCK;
+            if tar[end_at..].iter().any(|&b| b != 0) {
+                return Err(bad("data after the tar's end-of-archive marker: refused"));
+            }
+            return Ok(RawPackage { entries, end_at, tar_len: tar.len() });
         }
-        zero_blocks = 0;
-        let stored = octal(&header[148..156]).ok_or_else(|| bad("a tar header with a bad checksum field"))?;
+        let stored = strict_number(&header[148..156], "checksum")?;
         let sum: u64 = header.iter().enumerate().map(|(i, &b)| if (148..156).contains(&i) { 32 } else { u64::from(b) }).sum();
         if stored != sum {
             return Err(bad("a tar header with a wrong checksum"));
         }
-        let field = |r: std::ops::Range<usize>| {
-            let f = &header[r];
-            &f[..f.iter().position(|&b| b == 0).unwrap_or(f.len())]
-        };
-        let (name, prefix) = (field(0..100), field(345..500));
+        if &header[257..263] != b"ustar\0" || &header[263..265] != b"00" {
+            return Err(bad("a tar header that is not POSIX ustar (lgx reads every header as ustar, so another format would read differently)"));
+        }
+        let mode = strict_number(&header[100..108], "mode")?;
+        strict_number(&header[108..116], "uid")?;
+        strict_number(&header[116..124], "gid")?;
+        let size = strict_number(&header[124..136], "size")?;
+        strict_number(&header[136..148], "mtime")?;
+        let name = strict_text(&header[0..100], "name")?;
+        let prefix = strict_text(&header[345..500], "prefix")?;
+        if !strict_text(&header[157..257], "link name")?.is_empty() {
+            return Err(bad("a tar entry with a link name"));
+        }
+        if header[500..].iter().any(|&b| b != 0) {
+            return Err(bad("a tar header with bytes in its padding"));
+        }
         let mut path = Vec::new();
         if !prefix.is_empty() {
             path.extend_from_slice(prefix);
@@ -378,48 +464,22 @@ fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
         }
         path.extend_from_slice(name);
         let path = String::from_utf8(path).map_err(|_| bad("a tar entry whose name is not UTF-8"))?;
-        let size = usize::try_from(octal(&header[124..136]).ok_or_else(|| bad(&format!("{path}: a bad size field")))?)
-            .map_err(|_| bad("an entry too large"))?;
-        let kind = header[156];
-        let data_end = at.checked_add(size.div_ceil(BLOCK) * BLOCK).ok_or_else(|| bad("an entry too large"))?;
-        match kind {
+        let size = usize::try_from(size).map_err(|_| bad("an entry too large"))?;
+        match header[156] {
             b'0' | 0 => {
                 let data = tar.get(at..at + size).ok_or_else(|| bad(&format!("{path}: the tar ends inside its data")))?.to_vec();
-                at = data_end;
-                if path.ends_with('/') {
-                    problems.push(format!("{path}: a file whose name ends in /"));
-                    continue;
+                let end = at + size.div_ceil(BLOCK) * BLOCK;
+                if !tar.get(at + size..end).is_some_and(|p| p.iter().all(|&b| b == 0)) {
+                    return Err(bad(&format!("{path}: padding after its data that isn't zeros")));
                 }
-                if let Err(why) = check_path(&path) {
-                    problems.push(format!("{path}: {why}"));
-                    continue;
-                }
-                if !seen.insert(path.clone()) {
-                    problems.push(format!("{path}: in the package twice"));
-                    continue;
-                }
-                let top = path.split('/').next().unwrap_or_default();
-                let depth = path.split('/').count();
-                if depth == 1 && !UNCOVERED_IN_PACKAGE.contains(&path.as_str()) {
-                    problems.push(format!("{path}: a file at the top of the package, not covered by the root"));
-                } else if top == "variants" && depth == 2 {
-                    problems.push(format!("{path}: a file directly under variants/, not covered by the root"));
-                } else if !ALLOWED_ROOT.contains(&top) {
-                    problems.push(format!("{path}: lgx allows only manifest.json, manifest.sig, variants/, assets/, docs/ and licenses/ at the top"));
-                } else {
-                    out.push((path, data));
-                }
+                at = end;
+                entries.push(RawEntry { path, dir: false, mode, header, data });
             }
             b'5' => {
                 if size != 0 {
                     return Err(bad(&format!("{path}: a directory with data")));
                 }
-                let trimmed = path.trim_end_matches('/');
-                if let Err(why) = check_path(trimmed) {
-                    problems.push(format!("{path}: {why}"));
-                } else if !ALLOWED_ROOT.contains(&trimmed.split('/').next().unwrap_or_default()) {
-                    problems.push(format!("{path}: lgx allows only variants/, assets/, docs/ and licenses/ directories at the top"));
-                }
+                entries.push(RawEntry { path, dir: true, mode, header, data: Vec::new() });
             }
             other => {
                 return Err(bad(&format!(
@@ -429,9 +489,59 @@ fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
             }
         }
     }
+}
+
+/// The entries of a `.lgx`, path → contents for regular files, checked against everything lgx
+/// refuses and everything the root would not cover. A path given twice is refused whatever it
+/// is (lgx keeps the later `manifest.json` or `manifest.sig`; another reader may keep the first).
+fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+    let raw = read_raw(bytes)?;
+    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut dirs = BTreeSet::new();
+    let mut problems = Vec::new();
+    for e in raw.entries {
+        let path = e.path;
+        if e.dir {
+            let trimmed = path.strip_suffix('/').unwrap_or(&path).to_owned();
+            if let Err(why) = check_path(&trimmed) {
+                problems.push(format!("{path}: {why}"));
+            } else if !ALLOWED_ROOT.contains(&trimmed.split('/').next().unwrap_or_default()) {
+                problems.push(format!("{path}: lgx allows only variants/, assets/, docs/ and licenses/ directories at the top"));
+            }
+            dirs.insert(trimmed);
+            continue;
+        }
+        if path.ends_with('/') {
+            problems.push(format!("{path}: a file whose name ends in /"));
+            continue;
+        }
+        if let Err(why) = check_path(&path) {
+            problems.push(format!("{path}: {why}"));
+            continue;
+        }
+        if !seen.insert(path.clone()) {
+            problems.push(format!("{path}: in the package twice"));
+            continue;
+        }
+        let top = path.split('/').next().unwrap_or_default();
+        let depth = path.split('/').count();
+        if depth == 1 && !UNCOVERED_IN_PACKAGE.contains(&path.as_str()) {
+            problems.push(format!("{path}: a file at the top of the package, not covered by the root"));
+        } else if top == "variants" && depth == 2 {
+            problems.push(format!("{path}: a file directly under variants/, not covered by the root"));
+        } else if !ALLOWED_ROOT.contains(&top) {
+            problems.push(format!("{path}: lgx allows only manifest.json, manifest.sig, variants/, assets/, docs/ and licenses/ at the top"));
+        } else {
+            out.push((path, e.data));
+        }
+    }
     for (path, _) in &out {
-        if let Some(dir) = seen.iter().find(|other| other.starts_with(&format!("{path}/"))) {
-            problems.push(format!("{path}: both a file and the directory of {dir}"));
+        if dirs.contains(path) {
+            problems.push(format!("{path}: both a file and a directory"));
+        }
+        if let Some(other) = seen.iter().find(|other| other.starts_with(&format!("{path}/"))) {
+            problems.push(format!("{path}: both a file and the directory of {other}"));
         }
     }
     if !problems.is_empty() {
@@ -443,16 +553,135 @@ fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
-/// An octal tar number field (NUL- or space-terminated); `None` for anything else (including
-/// base-256 numbers, which lgx doesn't read).
-fn octal(field: &[u8]) -> Option<u64> {
-    let start = field.iter().position(|&b| b != b' ').unwrap_or(field.len());
-    let rest = &field[start..];
-    let digits = &rest[..rest.iter().position(|&b| b == 0 || b == b' ').unwrap_or(rest.len())];
-    if digits.len() > 21 || !digits.iter().all(|b| (b'0'..=b'7').contains(b)) {
-        return None;
+/// The header lgx's `DeterministicTarWriter::createHeader` writes for an entry.
+fn canonical_header(path: &str, dir: bool, mode: u64, size: usize) -> Option<[u8; BLOCK]> {
+    let full = if dir { format!("{}/", path.trim_end_matches('/')) } else { path.to_owned() };
+    let (name, prefix) = split_ustar(&full)?;
+    let mut h = [0_u8; BLOCK];
+    h[..name.len()].copy_from_slice(name.as_bytes());
+    let octal = |h: &mut [u8; BLOCK], at: usize, len: usize, v: u64| {
+        let text = format!("{v:0width$o}", width = len - 1);
+        h[at..at + len - 1].copy_from_slice(text.as_bytes());
+    };
+    octal(&mut h, 100, 8, if dir { 0o755 } else if mode & 0o777 == 0 { 0o644 } else { mode & 0o777 });
+    octal(&mut h, 108, 8, 0);
+    octal(&mut h, 116, 8, 0);
+    octal(&mut h, 124, 12, if dir { 0 } else { size as u64 });
+    octal(&mut h, 136, 12, 0);
+    h[148..156].copy_from_slice(b"        ");
+    h[156] = if dir { b'5' } else { b'0' };
+    h[257..262].copy_from_slice(b"ustar");
+    h[263..265].copy_from_slice(b"00");
+    octal(&mut h, 329, 8, 0);
+    octal(&mut h, 337, 8, 0);
+    h[345..345 + prefix.len()].copy_from_slice(prefix.as_bytes());
+    let sum: u32 = h.iter().map(|&b| u32::from(b)).sum();
+    h[148..154].copy_from_slice(format!("{sum:06o}").as_bytes());
+    h[154] = 0;
+    h[155] = b' ';
+    Some(h)
+}
+
+/// lgx's `splitPath`: the whole path as the name if it fits, else a prefix and a name.
+fn split_ustar(path: &str) -> Option<(&str, &str)> {
+    const NAME: usize = 100;
+    const PREFIX: usize = 155;
+    if path.len() <= NAME {
+        return Some((path, ""));
     }
-    Some(digits.iter().fold(0, |v, d| v * 8 + u64::from(d - b'0')))
+    let b = path.as_bytes();
+    let mut i = path.len() - NAME;
+    while i < path.len() && i <= PREFIX {
+        if b[i] == b'/' && i <= PREFIX && path.len() - i - 1 <= NAME {
+            return Some((&path[i + 1..], &path[..i]));
+        }
+        i += 1;
+    }
+    let mut i = PREFIX.min(path.len() - 1);
+    while i > 0 {
+        if b[i] == b'/' && path.len() - i - 1 <= NAME {
+            return Some((&path[i + 1..], &path[..i]));
+        }
+        i -= 1;
+    }
+    None
+}
+
+/// Whether a `.lgx` is laid out exactly as lgx's own writer lays one out (`Package::save` through
+/// `DeterministicTarWriter`): one gzip member, entries sorted by path, each header byte for byte
+/// what lgx writes, two zero blocks and nothing after, and `manifest.json` in lgx's canonical
+/// JSON (sorted keys, two-space indent: the bytes `lgx_get_manifest_json` returns, which lgpm
+/// writes as the installed manifest). `lezreg app record` vouches only for such a package, so a
+/// publisher can't be led to vouch for a file that some reader reads differently.
+pub fn check_canonical_layout(bytes: &[u8]) -> Result<()> {
+    let raw = read_raw(bytes)?;
+    // Every check of the entries themselves (paths, duplicates, coverage) first.
+    read_lgx_entries(bytes)?;
+    let mut last: Option<String> = None;
+    let mut used = 0;
+    for e in &raw.entries {
+        let sort_key = if e.dir { format!("{}/", e.path.trim_end_matches('/')) } else { e.path.clone() };
+        if last.as_ref().is_some_and(|l| *l >= sort_key) {
+            return Err(bad(&format!("{}: out of lgx's order (entries are sorted by path)", e.path)));
+        }
+        let want = canonical_header(&e.path, e.dir, e.mode, e.data.len()).ok_or_else(|| bad(&format!("{}: a path lgx can't write", e.path)))?;
+        if want != e.header {
+            return Err(bad(&format!("{}: its tar header is not the one lgx writes", e.path)));
+        }
+        used += BLOCK + e.data.len().div_ceil(BLOCK) * BLOCK;
+        last = Some(sort_key);
+    }
+    if raw.end_at != used + 2 * BLOCK || raw.tar_len != raw.end_at {
+        return Err(bad("the tar doesn't end with exactly two zero blocks, as lgx writes it"));
+    }
+    let manifest = &raw.entries.iter().find(|e| e.path == "manifest.json").expect("checked").data;
+    let json = crate::apps::strict_json(manifest)?;
+    if canonical_json(&json)?.as_bytes() != manifest.as_slice() {
+        return Err(bad("manifest.json is not in lgx's canonical form (sorted keys, two-space indent), so an installed copy's manifest couldn't be matched to it"));
+    }
+    Ok(())
+}
+
+/// JSON as lgx's manifest writer prints it (nlohmann `dump(2)` of a sorted map): sorted keys,
+/// two-space indent, `": "`, no trailing newline. Only integers (no floats in a manifest).
+pub fn canonical_json(v: &Value) -> Result<String> {
+    fn write(v: &Value, depth: usize, out: &mut String) -> Result<()> {
+        let pad = |n: usize| "  ".repeat(n);
+        match v {
+            Value::Object(m) if m.is_empty() => out.push_str("{}"),
+            Value::Array(a) if a.is_empty() => out.push_str("[]"),
+            Value::Object(m) => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                out.push_str("{\n");
+                for (i, k) in keys.iter().enumerate() {
+                    out.push_str(&pad(depth + 1));
+                    out.push_str(&serde_json::to_string(k).expect("a string"));
+                    out.push_str(": ");
+                    write(&m[*k], depth + 1, out)?;
+                    out.push_str(if i + 1 < keys.len() { ",\n" } else { "\n" });
+                }
+                out.push_str(&pad(depth));
+                out.push('}');
+            }
+            Value::Array(a) => {
+                out.push_str("[\n");
+                for (i, x) in a.iter().enumerate() {
+                    out.push_str(&pad(depth + 1));
+                    write(x, depth + 1, out)?;
+                    out.push_str(if i + 1 < a.len() { ",\n" } else { "\n" });
+                }
+                out.push_str(&pad(depth));
+                out.push(']');
+            }
+            Value::Number(n) if n.is_f64() => return Err(bad("a manifest with a fractional number")),
+            other => out.push_str(&other.to_string()),
+        }
+        Ok(())
+    }
+    let mut out = String::new();
+    write(v, 0, &mut out)?;
+    Ok(out)
 }
 
 /// A path lgx accepts and that hashes the same for every reader: relative, `/`-separated,
@@ -487,29 +716,48 @@ pub(crate) mod tests {
     }
 
     pub fn lgx_typed(entries: &[(&str, Option<&[u8]>, u8)]) -> Vec<u8> {
+        gz(&raw_tar(entries))
+    }
+
+    /// A ustar header as common writers write it (Python's tarfile, GNU tar in ustar mode).
+    pub fn header(path: &str, size: usize, kind: u8) -> [u8; 512] {
+        let mut h = [0_u8; 512];
+        h[..path.len()].copy_from_slice(path.as_bytes());
+        h[100..107].copy_from_slice(b"0000644");
+        h[108..115].copy_from_slice(b"0000000");
+        h[116..123].copy_from_slice(b"0000000");
+        h[124..135].copy_from_slice(format!("{size:011o}").as_bytes());
+        h[136..147].copy_from_slice(b"00000000000");
+        h[156] = kind;
+        h[257..263].copy_from_slice(b"ustar\0");
+        h[263..265].copy_from_slice(b"00");
+        reseal(&mut h);
+        h
+    }
+
+    /// Recomputes a header's checksum after an edit.
+    pub fn reseal(h: &mut [u8; 512]) {
+        h[148..156].copy_from_slice(b"        ");
+        let sum: u32 = h.iter().map(|&b| u32::from(b)).sum();
+        h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+    }
+
+    pub fn raw_tar(entries: &[(&str, Option<&[u8]>, u8)]) -> Vec<u8> {
         let mut tar = Vec::new();
         for (path, data, kind) in entries {
-            let mut h = [0_u8; 512];
-            h[..path.len()].copy_from_slice(path.as_bytes());
-            h[100..107].copy_from_slice(b"0000644");
-            let size = data.map_or(0, <[u8]>::len);
-            h[124..135].copy_from_slice(format!("{size:011o}").as_bytes());
-            h[136..147].copy_from_slice(b"00000000000");
-            h[156] = *kind;
-            h[257..263].copy_from_slice(b"ustar\0");
-            h[263..265].copy_from_slice(b"00");
-            h[148..156].copy_from_slice(b"        ");
-            let sum: u32 = h.iter().map(|&b| u32::from(b)).sum();
-            h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
-            tar.extend_from_slice(&h);
+            tar.extend_from_slice(&header(path, data.map_or(0, <[u8]>::len), *kind));
             if let Some(d) = data {
                 tar.extend_from_slice(d);
                 tar.resize(tar.len().div_ceil(512) * 512, 0);
             }
         }
         tar.extend_from_slice(&[0; 1024]);
+        tar
+    }
+
+    pub fn gz(tar: &[u8]) -> Vec<u8> {
         let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut gz, &tar).unwrap();
+        std::io::Write::write_all(&mut gz, tar).unwrap();
         gz.finish().unwrap()
     }
 
@@ -651,5 +899,144 @@ pub(crate) mod tests {
         write("extra.dylib", b"x");
         assert!(!Contents::from_installed(&dir).unwrap().root_matches());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A small genuine package's tar entries, for the archive tests below.
+    fn small() -> Vec<(&'static str, Option<&'static [u8]>, u8)> {
+        let m: &'static [u8] = Box::leak(
+            serde_json::json!({"name":"x","hashes": merkle_tree(&[("variants/v/a".to_owned(), hex_sha256(b"1"))].into_iter().collect())})
+                .to_string()
+                .into_bytes()
+                .into_boxed_slice(),
+        );
+        vec![("manifest.json", Some(m), b'0'), ("variants/v/a", Some(b"1"), b'0')]
+    }
+
+    fn refused(bytes: &[u8], why: &str) {
+        let e = Contents::from_lgx(bytes).unwrap_err().to_string();
+        assert!(e.contains(why), "{why}: {e}");
+    }
+
+    /// Review B1 and its battery: every header field and archive shape where lgx's TarReader
+    /// could read something other than what this reader reads is refused.
+    #[test]
+    fn archives_lgx_could_read_differently_are_refused() {
+        assert!(Contents::from_lgx(&gz(&raw_tar(&small()))).unwrap().root_matches());
+        let edit = |at: std::ops::Range<usize>, value: &[u8]| {
+            let mut tar = raw_tar(&small());
+            let mut h: [u8; 512] = tar[..512].try_into().unwrap();
+            h[at].copy_from_slice(value);
+            reseal(&mut h);
+            tar[..512].copy_from_slice(&h);
+            gz(&tar)
+        };
+        let size = 512 * 3;
+        // B1: a size lgx reads past a leading NUL (or space) that a NUL-stopping reader reads as 0.
+        refused(&edit(124..136, format!("\0{size:010o}\0").as_bytes()), "size field is not plain octal");
+        refused(&edit(124..136, format!(" \0{size:09o}\0").as_bytes()), "size field is not plain octal");
+        refused(&edit(124..136, format!(" {size:010o}\0").as_bytes()), "size field is not plain octal");
+        // Junk after the digits (lgx stops there), base-256, an empty field.
+        refused(&edit(124..136, format!("{:011o}9", 3).as_bytes()), "size field is not plain octal");
+        let mut b256 = [0_u8; 12];
+        b256[0] = 0x80;
+        b256[11] = 3;
+        refused(&edit(124..136, &b256), "size field is not plain octal");
+        refused(&edit(100..108, &[0; 8]), "mode field is not plain octal");
+        // A checksum with a leading NUL (lgx skips it).
+        let mut tar = raw_tar(&small());
+        let sum: u32 = tar[..512].iter().enumerate().map(|(i, &b)| if (148..156).contains(&i) { 32 } else { u32::from(b) }).sum();
+        tar[148..156].copy_from_slice(format!("\0{sum:06o}\0").as_bytes());
+        refused(&gz(&tar), "checksum field is not plain octal");
+        // Not ustar (GNU's old magic puts other data where lgx reads the prefix).
+        refused(&edit(257..265, b"ustar  \0"), "not POSIX ustar");
+        // Bytes after the name's NUL, a link name, junk in the padding.
+        refused(&edit(98..100, b"\0x"), "after the end of its name");
+        refused(&edit(157..160, b"abc"), "link name");
+        refused(&edit(500..502, b"zz"), "padding");
+        // Non-zero padding after a file's data.
+        let mut tar = raw_tar(&small());
+        let pad_at = 512 + small()[0].1.unwrap().len();
+        tar[pad_at] = b'!';
+        refused(&gz(&tar), "padding after its data");
+        // A lone zero block (lgx reads on past it), data after the end marker.
+        let entries = small();
+        let mut tar = Vec::new();
+        tar.extend_from_slice(&raw_tar(&entries[..1])[..]);
+        tar.truncate(tar.len() - 1024);
+        tar.extend_from_slice(&[0; 512]);
+        tar.extend_from_slice(&raw_tar(&entries[1..]));
+        refused(&gz(&tar), "lone zero block");
+        let mut tar = raw_tar(&small());
+        tar.extend_from_slice(&header("variants/v/evil", 0, b'0'));
+        tar.extend_from_slice(&[0; 1024]);
+        refused(&gz(&tar), "after the tar's end-of-archive marker");
+        // No end marker at all.
+        let tar = raw_tar(&small());
+        refused(&gz(&tar[..tar.len() - 1024]), "no end-of-archive marker");
+        // Two gzip members, or junk after the member.
+        let tar = raw_tar(&small());
+        let mut two = gz(&tar[..1024]);
+        two.extend(gz(&tar[1024..]));
+        refused(&two, "bytes after the gzip stream");
+        let mut junk = gz(&tar);
+        junk.extend_from_slice(b"GARBAGE");
+        refused(&junk, "bytes after the gzip stream");
+        // manifest.sig twice (lgx keeps the later one).
+        let mut e = small();
+        e.insert(1, ("manifest.sig", Some(b"{}"), b'0'));
+        e.insert(2, ("manifest.sig", Some(b"{}"), b'0'));
+        refused(&gz(&raw_tar(&e)), "twice");
+        // A file and a directory with the same path.
+        let mut e = small();
+        e.push(("variants/v/a/", None, b'5'));
+        refused(&gz(&raw_tar(&e)), "both a file and a directory");
+        // A directory with a size.
+        let mut tar = raw_tar(&[("variants/", None, b'5')]);
+        let mut h: [u8; 512] = tar[..512].try_into().unwrap();
+        h[124..136].copy_from_slice(b"00000001000\0");
+        reseal(&mut h);
+        tar[..512].copy_from_slice(&h);
+        refused(&gz(&tar), "directory with data");
+    }
+
+    /// What `record` accepts: only a package laid out exactly as lgx writes one.
+    #[test]
+    fn only_lgxs_own_layout_is_canonical() {
+        let files: BTreeMap<String, String> = [("variants/v/a".to_owned(), hex_sha256(b"1"))].into_iter().collect();
+        let manifest = canonical_json(&serde_json::json!({"name": "x", "version": "1.0.0", "hashes": merkle_tree(&files)})).unwrap();
+        let entries: Vec<(&str, bool, &[u8])> =
+            vec![("manifest.json", false, manifest.as_bytes()), ("variants/", true, b""), ("variants/v/", true, b""), ("variants/v/a", false, b"1")];
+        let build = |entries: &[(&str, bool, &[u8])]| {
+            let mut tar = Vec::new();
+            for (p, dir, d) in entries {
+                tar.extend_from_slice(&canonical_header(p, *dir, 0o644, d.len()).unwrap());
+                tar.extend_from_slice(d);
+                tar.resize(tar.len().div_ceil(512) * 512, 0);
+            }
+            tar.extend_from_slice(&[0; 1024]);
+            tar
+        };
+        let tar = build(&entries);
+        check_canonical_layout(&gz(&tar)).unwrap();
+        assert!(Contents::from_lgx(&gz(&tar)).unwrap().root_matches());
+        // Out of order.
+        let mut swapped = entries.clone();
+        swapped.swap(0, 3);
+        assert!(check_canonical_layout(&gz(&build(&swapped))).unwrap_err().to_string().contains("order"));
+        // Readable, but not lgx's header (Python-style mode field) or not its manifest form.
+        let mut other = tar.clone();
+        other[..512].copy_from_slice(&header("manifest.json", manifest.len(), b'0'));
+        assert!(Contents::from_lgx(&gz(&other)).is_ok());
+        assert!(check_canonical_layout(&gz(&other)).unwrap_err().to_string().contains("header"));
+        let compact = serde_json::json!({"name": "x", "version": "1.0.0", "hashes": merkle_tree(&files)}).to_string();
+        let mut e2 = entries.clone();
+        e2[0].2 = compact.as_bytes();
+        assert!(check_canonical_layout(&gz(&build(&e2))).unwrap_err().to_string().contains("canonical form"));
+        // Extra zero blocks after the end marker: readable, not lgx's.
+        let mut padded = tar.clone();
+        padded.extend_from_slice(&[0; 512]);
+        assert!(Contents::from_lgx(&gz(&padded)).is_ok());
+        assert!(check_canonical_layout(&gz(&padded)).is_err());
+        assert_eq!(canonical_json(&serde_json::json!({"b": [1, {}], "a": "\u{e9}\n", "c": []})).unwrap(), "{\n  \"a\": \"\u{e9}\\n\",\n  \"b\": [\n    1,\n    {}\n  ],\n  \"c\": []\n}");
     }
 }

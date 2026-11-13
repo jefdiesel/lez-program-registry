@@ -1,17 +1,22 @@
-//! Regression fixtures for the app check (docs/APPS.md): an outside reviewer's packages that
-//! `lezreg app verify` used to pass (`mkpkgs-reviewer.py`), and packages with a correct root
-//! (`mkfix.py`). Each is checked against a profile that vouches for the genuine root, the way
-//! a name's `app.forumer_ui` entry would.
+//! Regression fixtures for the app check (docs/APPS.md): the first outside review's packages
+//! that `lezreg app verify` used to pass (`mkpkgs-reviewer.py`), packages with a correct root
+//! (`mkfix.py`), and the second review's bypasses rebuilt small (`battery/`, `mkbattery.py`:
+//! the B1 polyglot, the archive battery b1-b9, the B2 edited manifest). Each is checked against
+//! a profile that vouches for the genuine package, the way a name's `app.<module>` entry would.
 
 use lezreg_sdk::{
     apps::{self, Verdict},
-    lgx::Contents,
+    lgx::{self, Contents},
     lns::Profile,
 };
 
 const GENUINE_ROOT: &str = "6e099b91e08bf8aeebf386a5118ee9da534af0682fad4d51379dea53c0737d98";
 /// What the reviewer's packages claim, and the record they were checked against.
 const CLAIMED_ROOT: &str = "0a9d5c4ac2011029aabbccddeeff00112233445566778899aabbccddeeff0011";
+
+fn battery(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{}/tests/fixtures/apps/battery/{name}.lgx", env!("CARGO_MANIFEST_DIR"))).unwrap()
+}
 
 fn read(name: &str) -> Vec<u8> {
     std::fs::read(format!("{}/tests/fixtures/apps/{name}.lgx", env!("CARGO_MANIFEST_DIR"))).unwrap()
@@ -54,13 +59,15 @@ fn the_reviewers_packages_are_refused() {
 
 #[test]
 fn genuine_packages_still_verify() {
-    for (name, via) in [("genuine", None), ("genuine-upper", None)] {
+    // forumer's record has no sha256: the files only (W1: never exit-0 verified).
+    for name in ["genuine", "genuine-upper"] {
         let (v, from) = verdict(name);
-        assert_eq!((v.status(), from.as_deref()), ("verified", via), "{name}");
+        assert_eq!((v.status(), v.exit_code(), from), ("files_verified", apps::EXIT_FILES_ONLY, None), "{name}");
         assert_eq!(hex::encode(contents(name).root), GENUINE_ROOT);
     }
     // With the record's sha256, the whole file (manifest included) is proven.
-    assert!(matches!(verdict("genuine-sealed").0, Verdict::Verified { whole_file: true, .. }));
+    let (v, _) = verdict("genuine-sealed");
+    assert_eq!((v.status(), v.exit_code()), ("verified", 0));
 }
 
 /// The genuine files with another `main` in the manifest: the same root (the root doesn't
@@ -78,3 +85,72 @@ fn a_file_the_root_does_not_cover_is_refused() {
     let e = Contents::from_lgx(&read("uncovered")).unwrap_err().to_string();
     assert!(e.contains("variants/evil.dylib") && e.contains("not covered"), "{e}");
 }
+
+/// The record a name would publish for the battery's genuine package (`pub.lgx`).
+fn pub_record(fields: &[&str]) -> String {
+    let bytes = battery("pub");
+    let c = Contents::from_lgx(&bytes).unwrap();
+    let mut o = serde_json::Map::new();
+    o.insert("v".into(), 1.into());
+    o.insert("root".into(), hex::encode(c.root).into());
+    for f in fields {
+        let v = match *f {
+            "sha256" => hex::encode(lezreg_types::pda::sha256(&bytes)),
+            "manifest" => hex::encode(c.manifest_sha256),
+            "version" => c.manifest.version.clone(),
+            _ => unreachable!(),
+        };
+        o.insert((*f).into(), v.into());
+    }
+    serde_json::Value::Object(o).to_string()
+}
+
+fn against(record: String) -> impl FnMut(&str) -> lezreg_sdk::Result<Option<Profile>> {
+    move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), texts: vec![("app.forumer_core".into(), record.clone())] }))
+}
+
+/// B1 and the archive battery: a package some reader could read differently is refused outright,
+/// whatever the record says (even a record whose sha256 is the polyglot's own).
+#[test]
+fn the_second_reviews_archives_are_refused() {
+    for name in [
+        "poly",
+        "b1-hider-space-nul",
+        "b2-trailing-garbage",
+        "b3-two-gzip-members",
+        "b4-second-archive",
+        "b5-single-zero-block",
+        "b6-type7-file",
+        "b7-base256-size",
+        "b8-checksum-leading-nul",
+        "b9-size-junk",
+    ] {
+        let e = Contents::from_lgx(&battery(name)).err().unwrap_or_else(|| panic!("{name} was read"));
+        assert!(!e.to_string().is_empty(), "{name}");
+    }
+    let pub_bytes = battery("pub");
+    let genuine = Contents::from_lgx(&pub_bytes).unwrap();
+    assert_eq!(apps::check_following(&genuine, against(pub_record(&["sha256", "manifest", "version"]))).unwrap().0.status(), "verified");
+    // The reviewer's tarlib layout is readable but not lgx's own: `record` won't vouch for it.
+    assert!(lgx::check_canonical_layout(&pub_bytes).is_err());
+}
+
+/// B2: pub's files with an edited manifest (version 999.0.0, an extra dependency).
+#[test]
+fn an_edited_manifest_is_refused() {
+    let edited = Contents::from_lgx(&battery("edited")).unwrap();
+    assert_eq!(edited.root, Contents::from_lgx(&battery("pub")).unwrap().root, "same files, same root");
+    for (fields, want) in [
+        (&["sha256", "manifest", "version"][..], "manifest_mismatch"),
+        (&["sha256"][..], "file_mismatch"),
+        (&["manifest"][..], "manifest_mismatch"),
+        (&["version"][..], "manifest_mismatch"),
+        (&[][..], "files_verified"),
+    ] {
+        let (v, _) = apps::check_following(&edited, against(pub_record(fields))).unwrap();
+        assert_eq!(v.status(), want, "{fields:?}");
+        assert_ne!(v.exit_code(), 0);
+        assert_eq!(v.to_json(&edited)["version"], serde_json::Value::Null, "999.0.0 is never shown as published");
+    }
+}
+

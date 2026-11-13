@@ -362,21 +362,24 @@ An app published by the LNS name `forumer` names it in its `metadata.json`
 # Publisher: the entry for a release, with the package put on your Logos Storage node.
 lezreg app record forumer_ui-1.2.0.lgx --upload \
     --catalog https://raw.githubusercontent.com/<you>/<catalog>/main/logos-repo.json \
-    --program <program id the app calls> --keep <previous root>
-#   names set-text forumer app.forumer_ui '{"v":1,"root":"…","sha256":"…","cid":"zDvZ…",…}'
+    --program <program id the app calls> --keep forumer_ui-1.1.0.lgx
+#   names set-text forumer app.forumer_ui '{"v":1,"root":"…","sha256":"…","manifest":"…","version":"1.2.0","cid":"zDvZ…",…}'
 # Run the printed line: the name's holder signs the change, which is what vouches for it.
 
 # Anyone who knows the name:
 lezreg app show forumer                       # its apps, and their programs' registry status
-lezreg app verify forumer_ui-1.2.0.lgx        # verified / mismatch / root_mismatch / file_mismatch / ambiguous / not published / unclaimed
+lezreg app verify forumer_ui-1.2.0.lgx        # verified (exit 0) / files_verified (exit 3) / mismatch, root_mismatch, ... (exit 1)
 lezreg app verify ~/Library/Application\ Support/Logos/LogosBasecamp/plugins/forumer_ui   # an installed copy
 lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, written only if sha256 (required) and root match
 ```
 
 `verify` recomputes the package root from the files (the `lgx` Merkle tree), so the genuine
-`manifest.json` next to other files is refused (`root_mismatch`). The root does not cover
-`manifest.json` itself: a `.lgx` is held to the record's `sha256` for that, and an installed
-copy's manifest is not checked (see [`docs/APPS.md`](docs/APPS.md) §2). Names are normalised as
+`manifest.json` next to other files is refused (`root_mismatch`), and reads a `.lgx` strictly
+enough that lgx can't read it differently (a polyglot is refused). The root does not cover
+`manifest.json`: the record's `sha256` (a `.lgx`) and `manifest` (an installed copy) do, and
+only then is the result `verified`; with neither it is `files_verified`, exit 3. `record`
+vouches only for a package laid out exactly as lgx writes one. See
+[`docs/APPS.md`](docs/APPS.md) §2–4. Names are normalised as
 logos-names SPEC.md §2 says (`lns:Forumer` is `forumer`), and a name with a key set twice is
 refused as ambiguous. A name that forwards (`nameswallet` → `names`, logos-names SPEC.md §7) is
 checked where it points. In Basecamp, the `program_registry` module does the same check

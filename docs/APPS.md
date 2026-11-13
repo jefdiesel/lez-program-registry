@@ -30,7 +30,8 @@ An app `M` (a Basecamp module name, such as `forumer_ui`) published by LNS name 
 (such as `forumer`) counts as verified only when all three agree:
 
 1. **The name points to the package.** `N`'s profile has exactly one text entry `app.M`
-   (below), whose `root` is the package's root hash.
+   (below), naming the release: its root hash, the SHA-256 of its `.lgx` and of its
+   `manifest.json`, and its version.
 2. **The package points to the name.** The package's manifest has `"author": "lns:N"`,
    written in `metadata.json` and carried into `manifest.json`.
 3. **The package's files are that package.** The root is **recomputed from the package's
@@ -48,9 +49,12 @@ Hashing" in its `docs/spec.md`). Each file is hashed with SHA-256; a directory (
 files; `variants` hashes its variants' hashes the same way, and `root` the top-level
 directories'. **`manifest.json` and `manifest.sig` are not covered.** So the root proves a
 package's files, but not its manifest: the same files with another `author`, `main`,
-`version` or `dependencies` have the same root. For a `.lgx` file the record's `sha256` (of the
-whole file) covers the manifest too; an installed package has no file left to hash, so for it
-only the files are proven, and the verdict says so.
+`version` or `dependencies` have the same root. The record covers the rest: its `sha256` (of
+the whole `.lgx`) proves a package file, manifest included, and its `manifest` (the SHA-256 of
+`manifest.json` as lgx writes it, which is byte for byte what the package manager installs:
+`lgx_get_manifest_json`, checked on six real packages and thirteen real installs) proves an
+installed copy's manifest. Without them only the files are proven, and the verdict says so
+(`files_verified`, never `verified`).
 
 ## 3. Records on the name (logos-names SPEC.md §7, text entries)
 
@@ -58,15 +62,27 @@ Key `app.<module>`: 1–32 bytes total, so module names up to 28 bytes. Value: J
 512 bytes:
 
 ```json
-{"v":1,"root":"<64 hex: manifest hashes.root>","version":"0.12.0",
- "sha256":"<64 hex: the .lgx file>","cid":"zDvZ…",
+{"v":1,"root":"<64 hex: the package root>","sha256":"<64 hex: the .lgx file>",
+ "manifest":"<64 hex: its manifest.json>","version":"0.12.0","cid":"zDvZ…",
+ "keep":[{"root":"…","sha256":"…","manifest":"…","version":"0.11.0"}],
  "catalog":"https://raw.githubusercontent.com/<owner>/<repo>/main/logos-repo.json",
  "programs":["<base58 program id>", "..."]}
 ```
 
-- `root` is required. `sha256` is optional in the format but `lezreg app record` always
-  writes it, `lezreg app get` refuses a record without it, and a `.lgx` checked against a
-  record that has it must match it. A key given twice in the JSON is refused.
+- The top-level `root`, `sha256`, `manifest` and `version` are the newest release; `keep`
+  holds older releases with their own hashes, so an older install or file still verifies
+  whole during an upgrade (`lezreg app record new.lgx --keep old.lgx`). At most 4 releases,
+  but the 512 bytes are tight: a full release is about 250 bytes, so a record holds two with
+  nothing else, or one with `catalog`, `cid` and a program (about 440 bytes). The first format's `"roots":[...]` (bare
+  older roots) still reads, but a bare root can only ever give `files_verified`.
+- `root` is required; `lezreg app record` always writes `sha256`, `manifest` and `version`,
+  `lezreg app get` refuses a record without `sha256`, and a package whose version is not the
+  release's fails (`manifest_mismatch`) whatever else matches. A key given twice, at any
+  depth of the JSON, is refused.
+- **`record` vouches only for a package lgx itself wrote**: one gzip member; tar entries in
+  lgx's order with byte-for-byte the headers lgx's `DeterministicTarWriter` writes; two zero
+  blocks and nothing after; one `manifest.json`, in lgx's canonical JSON (sorted keys,
+  two-space indent). A package anyone could read two ways can't be vouched for.
 - **Where to get it:** `cid` is the `.lgx` on Logos Storage, a download that depends on no web
   host; `catalog` is a catalog that lists it (GitHub releases, say). Either will do, because
   `sha256` (of the `.lgx` file) is checked before installing whatever the source, and the root
@@ -75,9 +91,8 @@ Key `app.<module>`: 1–32 bytes total, so module names up to 28 bytes. Value: J
   <module>` downloads it by CID and writes it only if the file's sha256 is the record's and
   its files hash to a root the record names. A Logos Storage CID (`zDvZ…`, codec `0xcd01`)
   hashes Storage's manifest of the file's block tree, not the file, so it can't be checked
-  against the bytes locally: `sha256` is what binds them. A new release changes `root` in the same
-  profile update that publishes it. Several roots (`"roots":[...]`, newest first, at most 4)
-  let an older install stay verified during an upgrade.
+  against the bytes locally: `sha256` is what binds them. A new release changes the record
+  in the same profile update that publishes it.
 - **Forwarding.** A name with a `forward` entry (logos-names SPEC.md §7) is checked where it
   points, one hop: a package naming `lns:nameswallet` is checked against `names` when
   `nameswallet` forwards there, and the verdict carries `forwarded_from`. Brand names can then
@@ -107,10 +122,23 @@ guessable name as public.
 `lezreg app verify <file.lgx | installed dir | its manifest.json>`, and the SDK's
 `lgx::Contents` with `apps::check_following`:
 
-1. **Recompute the root from the files.** For a `.lgx`: read it as `lgx` does (plain ustar,
-   regular files and directories only; a link, a PAX or GNU long-name header, a duplicate
-   path, an unsafe path, a file at the top other than `manifest.json`/`manifest.sig`, or a file
-   directly under `variants/` is refused, since the root wouldn't cover it), and hash the tree.
+1. **Recompute the root from the files.** For a `.lgx`: read it so that lgx's own reader
+   can't read it differently, and refuse anything else rather than interpret it. lgx's
+   `TarReader` is lenient (its `readOctal` skips leading spaces *and NULs* and stops at the
+   first non-digit; it reads every header as ustar; it skips a lone zero block; `gzread` reads
+   on into a second gzip member). A second review built a polyglot on that: a `manifest.sig`
+   entry whose size field starts with a NUL read as size 0 by one reader and as the length of
+   a whole genuine package by lgx, so one file showed the genuine package to the checker and
+   another package to Basecamp. So: exactly one gzip member and nothing after it; every
+   numeric header field plain octal from its first byte, then only NULs or spaces; the
+   checksum lgx computes; `ustar\0` `00` magic; no bytes after a name's NUL, no link name, zero
+   padding; regular files and directories only (no links, PAX or GNU headers); a directory
+   with no data; two zero blocks and only zeros after them; no path twice (lgx keeps a later
+   `manifest.json` or `manifest.sig`); no unsafe path; nothing the root doesn't cover but
+   `manifest.json`/`manifest.sig` (a file at the top or directly under `variants/`). A
+   differential test runs this reader and Basecamp's own `liblgx` over the review's packages
+   (`sdk/rust/tests/fixtures/apps/differential.py`): wherever lezreg reads a package, liblgx
+   extracts exactly the files lezreg hashed.
    For an installed package (`<Basecamp data>/modules/<module>` or `.../plugins/<module>`):
    hash the installed variant's files and the root `assets/` from disk (the installer's own
    `manifest.json`, `manifest.sig`, `variant` and `.lgpm-source` are listed as not covered;
@@ -122,13 +150,25 @@ guessable name as public.
    not as unsafe).
 4. Resolve `N` (one chain read), open its profile, follow its `forward` one hop, read
    `app.<module>` (exactly one).
-5. **Verified** if the recomputed root is `root` or in `roots` and, for a `.lgx` whose record
-   has `sha256`, the file matches it (then the whole file, manifest included, is proven;
-   otherwise the files only). **file_mismatch** if the files are vouched for but the `.lgx`
-   isn't. **Mismatch** if the record exists and the root differs (a copy, or an update not yet
-   published). **ambiguous** for a key set twice. **not_published** if `N` has no record for
-   this module.
+5. Find the releases whose root is the recomputed root (none: **mismatch**, a copy or an
+   update not yet published). A release whose `version` isn't the manifest's:
+   **manifest_mismatch**. Then:
+   - a `.lgx`: **verified** if its SHA-256 is the release's `sha256`; **file_mismatch** if the
+     release has another (the manifest or the packing was changed); without `sha256`,
+     **manifest_mismatch** if the release's `manifest` isn't this `manifest.json`, else
+     **files_verified**.
+   - an installed copy: **verified** if its `manifest.json` is the release's `manifest`;
+     **manifest_mismatch** if not; **files_verified** if the release names none.
+   **ambiguous** for a key set twice; **not_published** if `N` has no record for this module.
 6. For each id in `programs`, `program_label` (this registry) adds its source status.
+
+**Exit codes and JSON.** `lezreg app verify` exits 0 for `verified` only, 3 for
+`files_verified` (the files are the publisher's, the manifest is not proven: not success), and
+1 for everything else. With `--json`, **consumers key on `status` only**. `publisher` is set
+only for `verified` and `files_verified`, and `version` only for `verified`, where it is the
+release's version from the record, never the manifest's. What the package and the name
+merely claim (author, the manifest's version, the record) is under `claimed`, whatever the
+status. The text output never prints the manifest's version as the published one.
 
 The Basecamp module (`verify_app`, `verify_package`) still compares the manifest's claimed
 root at commit 74a0010 and must move to these SDK calls; until then its "verified" means only
@@ -164,7 +204,9 @@ signed by the name, but the holder stays hidden.
 | Copy of an app under the same module name, from another catalog | Its root isn't in the name's record: **mismatch** |
 | Fake package claiming `lns:forumer` | Same: `forumer` doesn't vouch for its root |
 | The genuine `manifest.json` copied next to other files | The root is recomputed from the files: **root_mismatch** |
-| The genuine files with an edited manifest (`main`, `dependencies`, `author`) | Same root. A `.lgx` checked against a record with `sha256`: **file_mismatch**; `get` refuses it. An installed copy: not detected (the manifest is outside the root) |
+| The genuine files with an edited manifest (`main`, `dependencies`, `version`, `provides`) | Same root. A `.lgx`: **file_mismatch** (`sha256`); an installed copy: **manifest_mismatch** (`manifest`), and another version than the release's is refused even against an old record. Against a record with neither hash: **files_verified**, exit 3, never `verified` |
+| A polyglot `.lgx` that one tar reader reads as the genuine package and lgx as another (review B1) | Refused before any lookup: a numeric header field that isn't plain octal, a second gzip member, a lone zero block, data after the end marker; `record` vouches only for lgx's own layout |
+| A name that lapses (fee mode, after its term and 30 days' grace) and is registered again by someone else | **Not detected.** The new holder can set `app.M` and vouch for anything; the check proves "the name's current holder vouches", not "the same holder as when you installed". A deposit-held name never lapses. Pinning the holder (the record's owner tag, which changes when a new holder registers the name) would catch it; not done |
 | A name with two `app.M` or two `forward` entries, read differently by different clients | **ambiguous** |
 | Copycat listing on the board | Fails the check; shown unverified |
 | Squatting a famous name | Names are first come, with a deposit; readers see the name's age and record. Not solved by cryptography |
