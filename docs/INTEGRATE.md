@@ -211,8 +211,8 @@ Basecamp profile:
 - A fresh LEZ v0.4.0-rc3 standalone sequencer (`bafd07be`, built with in-process execution) and
   a Logos Storage v0.5.3 node; the registry deployed from `artifacts/` by `chain/deploy.sh` with
   its IDL pushed (live image `5ffbf8f5…6bdc`, self-entry in block 69).
-- `program_registry` 0.3.0 and `registry_browser` 0.1.0 built with `nix build .#lgx-portable`
-  (builder `de169fd`), installed with `logosctl install --dir`, `program_registry` loaded.
+- `program_registry` 0.3.0 (SDK pinned to main `85a93ed`) and `registry_browser` 0.1.0 built with
+  `nix build .#lgx-portable` (builder `de169fd`), installed with `logosctl install --dir`, `program_registry` loaded.
 - Reads through `logosctl call`: `config_set`, `resolve_program` (fresh), `program_label`,
   `get_idl` (`ok`, `spel-v1 0.1.0`, 6 calls; an IDL no node holds answers `unavailable` in 6 s),
   `list_entries`, `third_party_entries`, `signer_status`.
@@ -227,8 +227,18 @@ Basecamp profile:
 - §3 and §4 above, as shown. The registry browser rendered offscreen (Qt 6.9 `qml`, the real
   `Logos.Theme`) with answers recorded from the module over logosctl
   (`registry_browser/tools/record.py`, `render.py`).
-- Unit tests: `module/rust-lib` 13 (every write vector rebuilt byte for byte, the caller gate,
-  the signing bridge with a stand-in CLI), `lezreg-sdk` 31, `lezreg` 20,
+- The caller gate, from a real second module: [`tools/caller-probe`](../tools/caller-probe/)
+  (`registry_probe`, which depends on `program_registry` and calls it through the builder's
+  generated client) was installed and loaded beside it. Calls it made reached the module as
+  "module registry_probe": `program_label` answered; `config_set`, `pending_requests` and
+  `approve_request` answered `not_allowed`; its `prepare_update` worked and its `submit` (with
+  `what` relabelled "Harmless note") came back `awaiting_approval`, while the host's
+  `pending_requests` showed the module's own copy ("Update (revision 2)", fields `version`,
+  the payer); an unprepared change was `unknown_change`. Approved by the host, it applied
+  (block 776) and the probe's `submit_status` followed it to `applied`. A `logosctl` call reaches
+  the module as the host whatever client token it presents.
+- Unit tests: `module/rust-lib` 14 (every write vector rebuilt byte for byte, the caller gate,
+  a relabelled change, an approved request, the signing bridge with a stand-in CLI), `lezreg-sdk` 31, `lezreg` 20,
   `registry_browser/logic.test.mjs`, `sdk/js/lezreg.test.mjs`.
 
 Not run: `.github/workflows/module.yml` itself (it runs the same steps on Linux with the logosctl

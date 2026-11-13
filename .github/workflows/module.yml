@@ -50,6 +50,12 @@ jobs:
       - name: Build registry_browser (.lgx)
         working-directory: registry_browser
         run: nix build '.#lgx-portable' --override-input program_registry "path:$GITHUB_WORKSPACE/module" -o result-portable -L
+      - name: Build registry_probe (.lgx; a non-trusted caller, for the gate check)
+        working-directory: tools/caller-probe
+        run: |
+          nix build "github:logos-co/logos-module-builder/$BUILDER_REV#rust-sdk-src" -o logos-rust-sdk-src
+          nix build '.#lgx-portable' --override-input program_registry "path:$GITHUB_WORKSPACE/module" -o result-portable -L
+          mkdir -p "$RUNNER_TEMP/lgx-probe" && cp result-portable/*.lgx "$RUNNER_TEMP/lgx-probe/"
       - name: The packages
         run: |
           mkdir -p "$RUNNER_TEMP/lgx-core" "$RUNNER_TEMP/lgx-ui"
@@ -196,6 +202,15 @@ jobs:
           python3 -c 'import json;s=json.dumps(json.load(open("show.json")));assert "\"ci-token\"" in s and "\"1.0.1\"" in s and "\"frozen\": true" in s, s[:1500];print("on chain: ci-token 1.0.1, revision 2, frozen")'
           # A frozen entry refuses further changes before anything is signed.
           c prepare_update "{\"program\":\"$X\",\"version\":\"2\"}" | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["code"]=="frozen",r;print("refused:",r["error"])'
+      - name: The caller gate, from another module
+        run: |
+          "$LOGOSCTL" install --dir "$RUNNER_TEMP/lgx-probe" -y
+          "$LOGOSCTL" module load registry_probe
+          p() { "$LOGOSCTL" --json call registry_probe "$@" | python3 -c 'import sys,json;r=json.load(sys.stdin)["result"];r=json.loads(r) if isinstance(r,str) else r;print(json.dumps(r))'; }
+          p probe_label "$REG" | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["success"],r;print("read OK")'
+          p probe_config_set '{"lns":"6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"}' | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["code"]=="not_allowed",r;print("config_set refused:",r["error"])'
+          p probe_pending | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["code"]=="not_allowed",r'
+          p probe_submit '{"format":"lezreg-change/1","message":"0400"}' | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["code"]=="unknown_change",r;print("unprepared change refused")'
       - name: The daemon's log
         if: always()
         run: |
