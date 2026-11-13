@@ -683,7 +683,7 @@ testnet_demo() {
   local REG=$T_REG P=${T_PROGRAM:-$T_REG} rc
   export LEZREG_RPC=$T_RPC LEZREG_REGISTRY=$T_REG
   criterion "T0  Public sequencer" ""
-  ok T0 "the sequencer answers ($T_RPC)" sh -c 'curl -sf -m 15 -X POST "$1" -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getLastBlockId\",\"params\":[]}"' _ "$T_RPC"
+  ok T0 "the sequencer answers ($T_RPC)" sh -c 'curl -sf -m 15 -X POST "$1" -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getLastBlockId\",\"params\":[]}" && echo' _ "$T_RPC"
   criterion "F1/F3  The registry registered in itself; a deployer entry told apart from chain data" ""
   ok T1 "show REG: (REG, REG) holds a deployer entry" sh -c '"$1" show "$2" && "$1" --json show "$2" | python3 -c "import json,sys; e=json.load(sys.stdin)[\"deployer_entry\"]; sys.exit(not e or e[\"kind\"]!=\"deployer\")"' _ "$LEZREG" "$REG"
   criterion "F6  Discovery" ""
