@@ -1,15 +1,22 @@
 # Run notes (added after the run; everything below this block is the unedited transcript)
-# - Where: a Mac mini (M4, macOS 15, arm64), from a fresh clone of this branch at the commit on the
-#   "repo" line. No Docker and no node there, hence the three SKIPs.
-# - Sequencer: LEZ v0.4.0-rc3 (bafd07be) standalone, built from the tag by an earlier
-#   `scripts/demo.sh --prepare-only` on the same machine (2063 s) and taken from its cache here.
+# - Where: a Mac mini (M4, macOS 15, arm64). The checkout was this branch, hard-reset to the commit
+#   on the "repo" line, with a warm cargo target dir. That commit is the branch before its last
+#   rebase onto main 5e3dac5, which added docs/CYCLES.md and the cycle tooling only: no change to
+#   lezreg, the SDK, the program or this script's steps. It is a local commit, not on GitHub, so
+#   the source pointers recorded in this run's entries name a commit nobody else can fetch.
+# - No Docker and no node on that machine, hence the three SKIPs.
+# - Sequencer: LEZ v0.4.0-rc3 (bafd07be) standalone. An earlier `scripts/demo.sh --prepare-only`
+#   on the same machine built it from the tag (2063 s); this run took it from that cache.
 # - Storage: the logos-storage v0.5.3 darwin-arm64 release, downloaded and sha256-checked by the script.
-# - Environment specific to that machine: builds ran behind a shared build lock (DEMO_BUILD_WRAP)
-#   with CARGO_BUILD_JOBS=4; RISC0_SERVER_PATH pointed at its r0vm (it is not on PATH there);
-#   RISC0_DEV_MODE=1 and RAYON_NUM_THREADS=4 as a guard against proving. Nothing in this run proves:
-#   lezreg only executes (simulates) public transactions.
-LEZ Program Registry: LP-0023 demo (local mode), 2026-11-13 15:49:31Z
-repo 6366124ba0085e9574a837a9e883a4b814f1e5cd
+# - Environment specific to that machine:
+#   - builds ran behind a shared build lock (DEMO_BUILD_WRAP), with CARGO_BUILD_JOBS=4;
+#   - RISC0_SERVER_PATH pointed at an r0vm binary that is deliberately disabled for normal use there
+#     (it once crashed the machine while proving), with RISC0_DEV_MODE=1 and RAYON_NUM_THREADS=4.
+#     Nothing in this run proves: lezreg only executes (simulates) public transactions.
+# - Run with --keep, so that `scripts/demo.sh --testnet` could then be exercised against the same
+#   chain (docs/demo-testnet-mode.log).
+LEZ Program Registry: LP-0023 demo (local mode), 2026-11-13 16:31:52Z
+repo a0cfd6b83c895f2b7386caec4470e1a5da3ed11e
 host Darwin 24.6.0 arm64; RISC0_DEV_MODE=1; output /Volumes/exos162/logos/lp0023-demo/repo/demo-out
 == prerequisites (darwin-arm64; LEZ v0.4.0-rc3 (bafd07be), Logos Storage v0.5.3, from e2e.yml/Cargo.toml)
    ok   git
@@ -23,9 +30,9 @@ host Darwin 24.6.0 arm64; RISC0_DEV_MODE=1; output /Volumes/exos162/logos/lp0023
    --   no node >= 19: the JS SDK step is SKIPPED
 == builds
    building: lezreg (cargo build --release -p lezreg; a cold build takes 15-40 min) (log: build.log)
-   built in 1450s (exit 0)
+   built in 1995s (exit 0)
    building: the SDK worked example (read-only SDK) (log: build.log)
-   built in 6s (exit 0)
+   built in 10s (exit 0)
    sequencer: /Volumes/exos162/logos/lp0023-demo/cache/lez-seq-bafd07be/sequencer_service (built from v0.4.0-rc3 = bafd07be, cached)
    storage: /Volumes/exos162/logos/lp0023-demo/cache/storage-v0.5.3-darwin-arm64/logos-storage (release v0.5.3, sha256-checked zip)
 lezreg lezreg 0.1.0
@@ -36,72 +43,72 @@ lezreg lezreg 0.1.0
    Storage node b up on 127.0.0.1:8091
 == wallet: LEZ's published local-test genesis account pays (wallet setup output in wallet-setup.txt)
    payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
-   accounts in the demo wallet: author A=5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq, community publisher Q=G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH, new author B=2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
-   Mallory M=HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk, in her OWN wallet (/Volumes/exos162/logos/lp0023-demo/repo/demo-out/mallory): she holds none of the keys above
+   accounts in the demo wallet: author A=DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo, community publisher Q=7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr, new author B=HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
+   Mallory M=9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4, in her OWN wallet (/Volumes/exos162/logos/lp0023-demo/repo/demo-out/mallory): she holds none of the keys above
 
 
 ######## F1  On-chain registry
 # spec: entry metadata stored on-chain as a LEZ program built with SPEL, with a published IDL; source and IDL off-chain on Logos Storage; on-chain only metadata and pointers
    -- chain/deploy.sh deploys the committed reproducible build artifacts/lez_program_registry.bin, uploads
    -- its SPEL-generated IDL (idl/) to Storage node A, and registers the registry in itself at (REG, REG).
-$ chain/deploy.sh --elf artifacts/lez_program_registry.bin --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --rpc http://127.0.0.1:3062 --network demo --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --idl-cid push
+$ chain/deploy.sh --elf artifacts/lez_program_registry.bin --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --rpc http://127.0.0.1:3062 --network demo --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --idl-cid push
    | == deploying the registry guest /Volumes/exos162/logos/lp0023-demo/repo/artifacts/lez_program_registry.bin
-   | == deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p: 6 segment writes, then CreateHeader
+   | == deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G: 6 segment writes, then CreateHeader
    |    pre-flight: CreateHeader simulated OK (523044 cycles, gas limit 784566); payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV holds 10000000000000, the whole deploy reserves up to about 18536328
-   |    writing segment 1/6 (31328 bytes) at BgiF4f43eEaS8wqfktbwrwSBU8i57Y97fktbJtGtYsih
-   |    writing segment 2/6 (98304 bytes) at 8MrzuKuJsor2U9V3D1Dnnv2XUvBYBDaJGSTxPh6eYQpG
-   |    writing segment 3/6 (98304 bytes) at HK4ZJvePiE7bqRHQsEZSFNb9yy98hNu5Jx1j4YPcHzEU
-   |    writing segment 4/6 (98304 bytes) at 3JyJmyQ1fg3bNDWeEH6Lhqfxq52iHHBqyxwNDVTAFSJR
-   |    writing segment 5/6 (98304 bytes) at DXTeUPUfK8ukoQQ1JAk92uhS2xvczwg22fk3NugfngHd
-   |    writing segment 6/6 (98304 bytes) at F3gXiJq4RzTWE9jAouCMcYd5pxaybvk956pRLapihNDe
-   |    wrote the segment chain (522848 bytes of user ELF), first segment F3gXiJq4RzTWE9jAouCMcYd5pxaybvk956pRLapihNDe
+   |    writing segment 1/6 (31328 bytes) at J3M4576bCVShE1DjShfips4q2ZsyhBi77hKDJg4wvPVY
+   |    writing segment 2/6 (98304 bytes) at 8wW8Z59WWN53KuS669pk62Gn6Fqbm6jo9cVNrtA3h17n
+   |    writing segment 3/6 (98304 bytes) at 7a2jvojr9YBM5vaCGiJvRcx6gf6bUcRKP1H7szLkH3fw
+   |    writing segment 4/6 (98304 bytes) at 9HMdMHJMn5BzmBVdKdZNoMAkyD1Tk4uJtC6uhdjLTZ3V
+   |    writing segment 5/6 (98304 bytes) at 37YdxR8Mj1QreDfTnTUwykEEqzVW2Z6vQBG4DQRDz36U
+   |    writing segment 6/6 (98304 bytes) at 5t3KNJHEdkFKTDeSzSMrvN2MZqsLrztmNNb59NrEE6L6
+   |    wrote the segment chain (522848 bytes of user ELF), first segment 5t3KNJHEdkFKTDeSzSMrvN2MZqsLrztmNNb59NrEE6L6
    | == CreateHeader
-   |    root (EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
+   |    root (5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G, JAQ5MVHbCkSYRzXunsrNuM2m1LS859PGveHfoYPAmcvZ); 1 actors declared; 34 message bytes; signing: 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
    |    simulated: OK, 523044 cycles -> gas limit 784566
-   |    submitted edf28d4820da3c00200f3ed40b2eee61cc7c8898732ec78031e42daeb344a4ae
+   |    submitted 6ddd9fcfa086a4eed73a34519850a8aa168b7a9bacff6b13585f81509f690685
    |    block 8: APPLIED; 607 bytes, gas limit 784566, fee 4189216
-   |    read back header at EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p: image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc (upgradeable): confirmed
-   | note: EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p's header key is in the wallet at /Volumes/exos162/logos/lp0023-demo/repo/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
-   | deployed the registry at EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p (saved in /Volumes/exos162/logos/lp0023-demo/repo/demo-out/deploy-demo.env)
+   |    read back header at 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G: image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc (upgradeable): confirmed
+   | note: 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G's header key is in the wallet at /Volumes/exos162/logos/lp0023-demo/repo/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+   | deployed the registry at 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G (saved in /Volumes/exos162/logos/lp0023-demo/repo/demo-out/deploy-demo.env)
    | == registering the registry in itself at (REG, REG)
    | uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8090/api/storage/v1
    | == RegisterDeployer
-   |    root (EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p, REG); 6 actors declared; 682 message bytes; signing: EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
+   |    root (5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G, REG); 6 actors declared; 682 message bytes; signing: 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
    | reading the registry's bytecode from the chain (once; it is cached next to the wallet)
    |    simulated: OK, 173982 cycles -> gas limit 260973
-   |    submitted 0034e9196301436894769002f232a1ff97deed08deb189ab2989b74080f5844e
+   |    submitted 659bcde2dba8ab859398e99d0c0f5072722420dfd2f23cbf2710d957fbff8cc3
    |    block 9: APPLIED; 1575 bytes, gas limit 260973, fee 1404464
-   |    read back EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p: lez_program_registry v0.1.0 revision 1, author EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p (deployer entry: confirmed)
-   | RegisterDeployer: applied in block 9 (tx 0034e9196301436894769002f232a1ff97deed08deb189ab2989b74080f5844e); simulated 173982 cycles, gas limit 260973, fee 1404464, 1575 bytes; entry EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
+   |    read back 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G: lez_program_registry v0.1.0 revision 1, author 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G (deployer entry: confirmed)
+   | RegisterDeployer: applied in block 9 (tx 659bcde2dba8ab859398e99d0c0f5072722420dfd2f23cbf2710d957fbff8cc3); simulated 173982 cycles, gas limit 260973, fee 1404464, 1575 bytes; entry 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
    | saved network 'demo' in /Volumes/exos162/logos/lp0023-demo/repo/demo-out/config/networks.json
-   | REG=EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
-   ==> PASS F1.a  registry deployed at REG=EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p and registered in itself
-$ lezreg show EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
-program EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
+   | REG=5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
+   ==> PASS F1.a  registry deployed at REG=5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G and registered in itself
+$ lezreg show 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
+program 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
   deployed     image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc  (upgradeable)
 
 deployer entry  lez_program_registry v0.1.0  (revision 1)
-  address      EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p  (the program's own account: only its header key could write it)
-  program      EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p
+  address      5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G  (the program's own account: only its header key could write it)
+  program      5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p  (proven co-signer; the only account that may update)
+  author       5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G  (proven co-signer; the only account that may update)
   label        "LEZ Program Registry"  (UNPROVEN free text)
   description  The LEZ Program Registry, registered in itself: on-chain registry of LEZ 0.4 programs with proven deployer entries
   tags         registry, infrastructure
   idl          zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz  sha256 ae1fe7b1…ce84b534  18282 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:15:39Z   updated 2026-11-13 16:15:39Z
+  registered   2026-11-13 17:07:05Z   updated 2026-11-13 17:07:05Z
 
 third-party (community) entries: 0
    live 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc 
    artifacts 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
    ==> PASS F1.b  live program image = artifacts/lez_program_registry.imageid (the CI-reproduced build)
-   idl {'cid': 'zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz', 'peer_hint': '0025080212210223fc38e02e7789a4d077c0515938fb678eaa8108c9b1e794e70ebb35cc613acc', 'sha256': 'ae1fe7b13bab37e7a384d2c077f6807c38fd17b0aee2e06555abfccece84b534', 'size': 18282}
+   idl {'cid': 'zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz', 'peer_hint': '002508021221020fdf4a9032181827f1b1b4138e52b615b829e2b486f58f0f51cb440f041ff4ea', 'sha256': 'ae1fe7b13bab37e7a384d2c077f6807c38fd17b0aee2e06555abfccece84b534', 'size': 18282}
    ==> PASS F1.c  (REG, REG) holds a deployer entry named lez_program_registry whose IDL pointer is a Storage CID
-$ lezreg --json idl get EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p --storage-api http://127.0.0.1:8090/api/storage/v1   > reg-idl.json
+$ lezreg --json idl get 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G --storage-api http://127.0.0.1:8090/api/storage/v1   > reg-idl.json
    6 instructions, generator {'name': 'lez_program_registry', 'version': '0.1.0'}
    ==> PASS F1.d  the IDL on Storage, fetched by the pointer and hash-checked, is the committed SPEL IDL (lez_program_registry.idl.json)
    -- the entry stores only pointers (CID + sha256 + size) for the IDL and the source; the IDL itself is 37789 bytes on Storage.
@@ -113,59 +120,59 @@ $ lezreg --json idl get EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p --storage-a
 # spec: any account may register a program it deployed: name, version, author, description, IDL pointer, code pointer, registration timestamp; lookup without a centralised indexer
    -- deploy the sample program X (the registry guest at a new header account) and register it in the SAME
    -- transaction (DeployAndRegister); author A co-signs, the genesis account pays, the IDL goes to Storage.
-$ lezreg deploy artifacts/lez_program_registry.bin --author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 1.0.0 ... --idl-cid push --json
+$ lezreg deploy artifacts/lez_program_registry.bin --author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 1.0.0 ... --idl-cid push --json
    | {
    |     "block": 16,
    |     "confirmed_by_read_back": false,
    |     "dry_run": false,
-   |     "entry": "EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5",
+   |     "entry": "59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C",
    |     "fee": "5694112",
    |     "fee_reserve": "9607770",
    |     "gas_limit": 1064891,
    |     "payer": "6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV",
-   |     "program": "EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5",
+   |     "program": "59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C",
    |     "signers": [
-   |         "EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5",
-   |         "5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq"
+   |         "59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C",
+   |         "DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo"
    |     ],
    |     "simulated_cycles": 709927,
    |     "simulation_refused": null,
-   |     "tx": "0a624e748b5a5def6e57b6dc9edf716fb22bbc231e1c4e7a474996d497d2fd7e",
+   |     "tx": "57851a02ea1f83829657fc78f384c2d947df09f6bef4887df08ee82f6f65460a",
    |     "tx_bytes": 1836,
    |     "what": "DeployAndRegister"
    | }
-   ==> PASS F2.a  X=EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 deployed and registered in one transaction (DeployAndRegister)
-$ lezreg show EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
-program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   ==> PASS F2.a  X=59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C deployed and registered in one transaction (DeployAndRegister)
+$ lezreg show 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
+program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   deployed     image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc  (upgradeable)
 
 deployer entry  demo-sample v1.0.0  (revision 1)
-  address      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5  (the program's own account: only its header key could write it)
-  program      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+  address      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C  (the program's own account: only its header key could write it)
+  program      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq  (proven co-signer; the only account that may update)
+  author       DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo  (proven co-signer; the only account that may update)
   label        "Demo Labs"  (UNPROVEN free text)
   description  sample program for the LP-0023 demo (the registry guest deployed again)
   tags         sample, demo
   idl          zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz  sha256 ae1fe7b1…ce84b534  18282 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:17:24Z   updated 2026-11-13 16:17:24Z
+  registered   2026-11-13 17:08:50Z   updated 2026-11-13 17:08:50Z
   flags        born with deploy (registered in the same transaction that deployed the program)
 
 third-party (community) entries: 0
    name           demo-sample
    version        1.0.0
-   author         5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq
+   author         DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo
    description    sample program for the LP-0023 demo (the registry guest deployed again)
    idl.cid        zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz
    source.repo    https://github.com/jefdiesel/lez-program-registry
-   source.commit  6366124ba0085e9574a837a9e883a4b814f1e5cd
+   source.commit  a0cfd6b83c895f2b7386caec4470e1a5da3ed11e
    build.binary   lez_program_registry
-   registered_at  1794586644319
-   registered    2026-11-13 16:17:24 UTC
+   registered_at  1794589730109
+   registered    2026-11-13 17:08:50 UTC
    ==> PASS F2.b  X's entry carries name, version, author, description, IDL pointer, code pointer (repo+commit+build), registration time
    -- every read above is plain sequencer RPC (getAccount): no indexer, no server; 'show' resolves X with one read.
 
@@ -173,43 +180,43 @@ third-party (community) entries: 0
 ######## F3  Deployer vs third-party entries
 # spec: deployer entry signed by the account that deployed the program; clients tell it apart without an off-chain service; the demo shows an unauthorised attempt to create a deployer entry being rejected
    -- Q publishes a community (third-party) entry for X
-$ lezreg register --third-party --program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --publisher G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 1.0.0 --label a\ community\ packager --description community\ metadata\ for\ X --tag sample --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --manifest-path methods/guest/Cargo.toml --binary lez_program_registry --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
+$ lezreg register --third-party --program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --publisher 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 1.0.0 --label a\ community\ packager --description community\ metadata\ for\ X --tag sample --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --manifest-path methods/guest/Cargo.toml --binary lez_program_registry --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
 uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8090/api/storage/v1
 == RegisterThirdParty
-   root (G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH, REG); 8 actors declared; 562 message bytes; signing: G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH
+   root (7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr, REG); 8 actors declared; 562 message bytes; signing: 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr
    simulated: OK, 240222 cycles -> gas limit 360333
-   submitted b60c6611eba3d499883ef1eed9bc2e84af0386f245c2960e860ffc9fbbc24f2c
+   submitted c24acf8b890c0b541c040a55525fc914ed6cc575c6da653434a572d156d92864
    block 17: APPLIED; 1583 bytes, gas limit 360333, fee 1934448
-   read back Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP: demo-sample v1.0.0 revision 1, author G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH (third-party entry: confirmed)
-RegisterThirdParty: applied in block 17 (tx b60c6611eba3d499883ef1eed9bc2e84af0386f245c2960e860ffc9fbbc24f2c); simulated 240222 cycles, gas limit 360333, fee 1934448, 1583 bytes; entry Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP
+   read back 6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS: demo-sample v1.0.0 revision 1, author 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr (third-party entry: confirmed)
+RegisterThirdParty: applied in block 17 (tx c24acf8b890c0b541c040a55525fc914ed6cc575c6da653434a572d156d92864); simulated 240222 cycles, gas limit 360333, fee 1934448, 1583 bytes; entry 6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS
    ==> PASS F3.a  Q's third-party entry for X registered
-$ lezreg show EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --publisher G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH
+$ lezreg show 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --publisher 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr
 third-party entry  demo-sample v1.0.0  (revision 1)
-  address      Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP  (T(program, G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH): a community entry, NOT the deployer's)
-  program      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+  address      6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS  (T(program, 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr): a community entry, NOT the deployer's)
+  program      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH  (proven co-signer; the only account that may update)
+  author       7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr  (proven co-signer; the only account that may update)
   label        "a community packager"  (UNPROVEN free text)
   description  community metadata for X
   tags         sample
   idl          zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz  sha256 ae1fe7b1…ce84b534  18282 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:17:39Z   updated 2026-11-13 16:17:39Z
-   deployer entry: address EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 kind deployer
-   community entry: address Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP kind {'third_party': {'publisher': 'G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH'}}
+  registered   2026-11-13 17:09:05Z   updated 2026-11-13 17:09:05Z
+   deployer entry: address 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C kind deployer
+   community entry: address 6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS kind {'third_party': {'publisher': '7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr'}}
    ==> PASS F3.b  a client tells them apart from chain data alone: the deployer entry lives AT X (only X's key can write there); Q's lives at T(X, Q)
    -- Mallory gets funds, then tries to create the deployer entry of a program she did not deploy.
-   | Transaction hash is c618eee2db0eb87fce88ace9f274d56d578dc83aa4844eb3e0ca682b722592d0
+   | Transaction hash is 509be8ecd637dfc9e6e1e238e48fba3db381d51fc60796e05eae7f2044040024
    | Transaction is included in block 18
 $ lezreg deploy artifacts/lez_program_registry.bin --no-register --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --json   # X3: deployed, not registered
-   -- X3=umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA (its header key is in the demo wallet, not Mallory's)
-$ lezreg register --program umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA --author HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --payer HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --name demo-sample --version 6.6.6 --label totally\ the\ deployer --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
-   |    warning: this wallet holds no key for umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA, which must sign; the registry will refuse
+   -- X3=5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 (its header key is in the demo wallet, not Mallory's)
+$ lezreg register --program 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 --author 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --payer 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --name demo-sample --version 6.6.6 --label totally\ the\ deployer --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
+   |    warning: this wallet holds no key for 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8, which must sign; the registry will refuse
    | == RegisterDeployer
-   |    root (umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA, REG); 7 actors declared; 484 message bytes; signing: HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
+   |    root (5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8, REG); 7 actors declared; 484 message bytes; signing: 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
    | reading the registry's bytecode from the chain (once; it is cached next to the wallet)
    | 
    | thread 'main' (1) panicked at program/src/lib.rs:386:1:
@@ -217,102 +224,102 @@ $ lezreg register --program umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA --author
    | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    | error: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
    ==> PASS F3.c  UNAUTHORISED: Mallory's RegisterDeployer for X3 is refused before sending (simulation) (refused, exit 1)
-$ lezreg register --program umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA --author HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --payer HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --name demo-sample --version 6.6.6 --label totally\ the\ deployer --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock --force-send --gas-limit 400000   # expected to be refused
-   |    warning: this wallet holds no key for umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA, which must sign; the registry will refuse
+$ lezreg register --program 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 --author 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --payer 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --name demo-sample --version 6.6.6 --label totally\ the\ deployer --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock --force-send --gas-limit 400000   # expected to be refused
+   |    warning: this wallet holds no key for 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8, which must sign; the registry will refuse
    | == RegisterDeployer
-   |    root (umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA, REG); 7 actors declared; 484 message bytes; signing: HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
+   |    root (5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8, REG); 7 actors declared; 484 message bytes; signing: 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
    | 
    | thread 'main' (1) panicked at program/src/lib.rs:386:1:
    | register_deployer: `program` (the root account) must sign
    | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    |    simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` (the root account) must sign
    |    --force-send: sending anyway with gas limit 400000 (the payer is charged for a revert)
-   |    submitted 302b630a035b702d039ded08eb19cc61ab11d120135591275ef1b43ff97a0b3d
-   |    block 26: REVERTED; 1265 bytes, gas limit 400000, fee 3210128 charged to HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
-   | error: 302b630a035b702d039ded08eb19cc61ab11d120135591275ef1b43ff97a0b3d was included in block 26 but REVERTED: fee 3210128 charged, nothing else applied
+   |    submitted 1f35963e47364fd1ecccbc577fb5adf882d9daba9dc68e23ff2854fa3b9cf52c
+   |    block 26: REVERTED; 1265 bytes, gas limit 400000, fee 3210128 charged to 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
+   | error: 1f35963e47364fd1ecccbc577fb5adf882d9daba9dc68e23ff2854fa3b9cf52c was included in block 26 but REVERTED: fee 3210128 charged, nothing else applied
    ==> PASS F3.d  UNAUTHORISED, forced on chain (--force-send): the registry program reverts it; Mallory pays her gas limit (refused, exit 1)
    deployer_entry: None
    ==> PASS F3.e  after both attempts (X3, REG) is still empty
    -- the rightful header key of X3 registers it (RegisterDeployer, signed by X3's key)
-$ lezreg register --program umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample-3 --version 1.0.0 --description X3\,\ registered\ by\ its\ own\ header\ key --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --manifest-path methods/guest/Cargo.toml --binary lez_program_registry --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
+$ lezreg register --program 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample-3 --version 1.0.0 --description X3\,\ registered\ by\ its\ own\ header\ key --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --manifest-path methods/guest/Cargo.toml --binary lez_program_registry --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
 uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8090/api/storage/v1
 == RegisterDeployer
-   root (umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA, REG); 6 actors declared; 547 message bytes; signing: umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA
+   root (5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8, REG); 6 actors declared; 547 message bytes; signing: 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8
    simulated: OK, 174451 cycles -> gas limit 261677
-   submitted 815e61a9f64fe0e0976ab691dc809f33ea1f765ff747c25d938fb54af0368ea9
+   submitted 26643d7af1ec64816dbf28aecb68e95610c196212708f8e04cd6066647ad49eb
    block 27: APPLIED; 1440 bytes, gas limit 261677, fee 1407136
-   read back umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA: demo-sample-3 v1.0.0 revision 1, author umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA (deployer entry: confirmed)
-RegisterDeployer: applied in block 27 (tx 815e61a9f64fe0e0976ab691dc809f33ea1f765ff747c25d938fb54af0368ea9); simulated 174451 cycles, gas limit 261677, fee 1407136, 1440 bytes; entry umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA
+   read back 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8: demo-sample-3 v1.0.0 revision 1, author 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 (deployer entry: confirmed)
+RegisterDeployer: applied in block 27 (tx 26643d7af1ec64816dbf28aecb68e95610c196212708f8e04cd6066647ad49eb); simulated 174451 cycles, gas limit 261677, fee 1407136, 1440 bytes; entry 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8
    ==> PASS F3.f  X3's own key registers its deployer entry
-$ lezreg register --program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 2.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
-   | error: invalid input: EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 already has a deployer entry; use update
+$ lezreg register --program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 2.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
+   | error: invalid input: 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C already has a deployer entry; use update
    ==> PASS F3.g  a SECOND deployer entry for X, even signed by X's own key, is refused by lezreg (refused, exit 1)
-$ lezreg register --program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 2.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock --force-send --gas-limit 400000   # expected to be refused
+$ lezreg register --program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-sample --version 2.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock --force-send --gas-limit 400000   # expected to be refused
    | == RegisterDeployer
-   |    root (EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5, REG); 6 actors declared; 464 message bytes; signing: EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   |    root (59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C, REG); 6 actors declared; 464 message bytes; signing: 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    | 
    | thread 'main' (1) panicked at program/src/lib.rs:386:1:
    | register_deployer: `program` already exists
    | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    |    simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: register_deployer: `program` already exists
    |    --force-send: sending anyway with gas limit 400000 (the payer is charged for a revert)
-   |    submitted 8b04be102e3474ce788881fc9b7f2467879f01e4c90cae67b380536717c10fae
+   |    submitted f55111cd5e6bc600c29d1ef6d07665ed97b9aafeb3a7fe77060f089bd7768815
    |    block 28: REVERTED; 1357 bytes, gas limit 400000, fee 3210864 charged to 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
-   | error: 8b04be102e3474ce788881fc9b7f2467879f01e4c90cae67b380536717c10fae was included in block 28 but REVERTED: fee 3210864 charged, nothing else applied
+   | error: f55111cd5e6bc600c29d1ef6d07665ed97b9aafeb3a7fe77060f089bd7768815 was included in block 28 but REVERTED: fee 3210864 charged, nothing else applied
    ==> PASS F3.h  ... and, forced, by the chain (the registry's init check on (X, REG)) (refused, exit 1)
-   version 1.0.0 author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq
+   version 1.0.0 author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo
    ==> PASS F3.i  X's deployer entry is unchanged (version 1.0.0, author A)
 
 
 ######## F4  Update
 # spec: only the original registering author may update an entry (version, IDL pointer, description); authorship transfer, if implemented, needs both signatures
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --version 1.1.0 --description updated\ by\ its\ author\ A --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --version 1.1.0 --description updated\ by\ its\ author\ A --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 2)
-   root (5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq, REG); 3 actors declared; 122 message bytes; signing: 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq
+   root (DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo, REG); 3 actors declared; 122 message bytes; signing: DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo
    simulated: OK, 92735 cycles -> gas limit 139103
-   submitted 436b64b5498d400ca2ee794d62c647ae2f317edf120cde0f1584cc128f0af302
+   submitted f17c1e87cb7e167412c215ac69712035c564695ed56cecb570a326814efca99d
    block 29: APPLIED; 823 bytes, gas limit 139103, fee 748472
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.1.0 revision 2, author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq (revision 2: confirmed)
-Update (revision 2): applied in block 29 (tx 436b64b5498d400ca2ee794d62c647ae2f317edf120cde0f1584cc128f0af302); simulated 92735 cycles, gas limit 139103, fee 748472, 823 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.1.0 revision 2, author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo (revision 2: confirmed)
+Update (revision 2): applied in block 29 (tx f17c1e87cb7e167412c215ac69712035c564695ed56cecb570a326814efca99d); simulated 92735 cycles, gas limit 139103, fee 748472, 823 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS F4.a  author A updates X to 1.1.0 (revision 2, a write-once release snapshot is kept)
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --author HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --payer HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --version 6.6.6   # expected to be refused
-   | error: only the entry's author may change it: entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 is held by 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq, not HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --author 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --payer 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --version 6.6.6   # expected to be refused
+   | error: only the entry's author may change it: entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C is held by DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo, not 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
    ==> PASS F4.b  a non-author (Mallory) cannot update X: refused in simulation (refused, exit 1)
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --author HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --payer HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk --version 6.6.6 --force-send --gas-limit 200000   # expected to be refused
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --author 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --payer 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4 --version 6.6.6 --force-send --gas-limit 200000   # expected to be refused
    | == Update (revision 3)
-   |    root (HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk, REG); 3 actors declared; 95 message bytes; signing: HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
+   |    root (9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4, REG); 3 actors declared; 95 message bytes; signing: 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
    | 
    | thread 'main' (1) panicked at program/src/lib.rs:258:5:
    | only the entry's author may change it
    | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
    |    simulated: simulation refused the transaction (nothing was sent): Failed to execute program: Guest panicked: only the entry's author may change it
    |    --force-send: sending anyway with gas limit 200000 (the payer is charged for a revert)
-   |    submitted b807c39b95e1ce3916e8047d8d9a1c6d09f458d2bd5aee2d230d7a35ed7e7367
-   |    block 30: REVERTED; 620 bytes, gas limit 200000, fee 1604968 charged to HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
-   | error: b807c39b95e1ce3916e8047d8d9a1c6d09f458d2bd5aee2d230d7a35ed7e7367 was included in block 30 but REVERTED: fee 1604968 charged, nothing else applied
+   |    submitted 937536525a45e4dc834b67ce7f22b199503bd7851229487d74ea8b5259c6d5fd
+   |    block 30: REVERTED; 620 bytes, gas limit 200000, fee 1604968 charged to 9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
+   | error: 937536525a45e4dc834b67ce7f22b199503bd7851229487d74ea8b5259c6d5fd was included in block 30 but REVERTED: fee 1604968 charged, nothing else applied
    ==> PASS F4.c  ... and, forced on chain, reverted (refused, exit 1)
-$ lezreg transfer EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --to 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg transfer 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --to HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == TransferAuthor
-   root (5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq, REG); 5 actors declared; 74 message bytes; signing: 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq, 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo, REG); 5 actors declared; 74 message bytes; signing: DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo, HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 99821 cycles -> gas limit 149732
-   submitted b1ad5bb975cfd1a3015ddf91bde9a132237f5c60bff99a800cbe8fe63f4432f3
+   submitted 453a9c750ba22567e3413398eca4d0750b721f4d40c2a5462a34ab80842aae5a
    block 31: APPLIED; 1079 bytes, gas limit 149732, fee 807208
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.1.0 revision 2, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (new author: confirmed)
-TransferAuthor: applied in block 31 (tx b1ad5bb975cfd1a3015ddf91bde9a132237f5c60bff99a800cbe8fe63f4432f3); simulated 99821 cycles, gas limit 149732, fee 807208, 1079 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.1.0 revision 2, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (new author: confirmed)
+TransferAuthor: applied in block 31 (tx 453a9c750ba22567e3413398eca4d0750b721f4d40c2a5462a34ab80842aae5a); simulated 99821 cycles, gas limit 149732, fee 807208, 1079 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS F4.d  transfer X's entry from A to B: A and B both sign the one transaction
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --version 9.9.9   # expected to be refused
-   | error: only the entry's author may change it: entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 is held by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, not 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --version 9.9.9   # expected to be refused
+   | error: only the entry's author may change it: entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C is held by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, not DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo
    ==> PASS F4.e  the previous author A can no longer update (refused, exit 1)
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --version 1.2.0 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --version 1.2.0 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 3)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 95 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 95 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 90190 cycles -> gas limit 135285
-   submitted fd0ff24fc41b1d36d947e429facdc0b2e1d192a9856b645502f31ba56836879d
+   submitted ef49b9eac584a433db1d868ae17b03f3f5f05cd00d41cca6290779f53772298a
    block 32: APPLIED; 796 bytes, gas limit 135285, fee 727896
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 3, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 3: confirmed)
-Update (revision 3): applied in block 32 (tx fd0ff24fc41b1d36d947e429facdc0b2e1d192a9856b645502f31ba56836879d); simulated 90190 cycles, gas limit 135285, fee 727896, 796 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 3, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 3: confirmed)
+Update (revision 3): applied in block 32 (tx ef49b9eac584a433db1d868ae17b03f3f5f05cd00d41cca6290779f53772298a); simulated 90190 cycles, gas limit 135285, fee 727896, 796 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS F4.f  the new author B updates X (1.2.0)
-   author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S registrant 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq version 1.2.0 revision 3
+   author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX registrant DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo version 1.2.0 revision 3
    ==> PASS F4.g  X's entry: author B, registrant A, version 1.2.0
    -- a transfer missing the new author's signature cannot be built with the CLI (it signs with both keys);
    -- the program's refusal of it is pinned by engine test 5 (tools/engine-test, run by ci.yml).
@@ -320,66 +327,66 @@ Update (revision 3): applied in block 32 (tx fd0ff24fc41b1d36d947e429facdc0b2e1d
 
 ######## F5  IDL publishing
 # spec: the IDL is stored on Logos Storage
-$ lezreg --json idl get EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p --storage-api http://127.0.0.1:8091/api/storage/v1   > idl-b.json
+$ lezreg --json idl get 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G --storage-api http://127.0.0.1:8091/api/storage/v1   > idl-b.json
    cid zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz name lez_program_registry
    ==> PASS F5.a  REG's IDL fetched through node B (uploaded to A), hash-checked against the chain
-$ lezreg pin EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p --storage-api http://127.0.0.1:8091/api/storage/v1
+$ lezreg pin 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G --storage-api http://127.0.0.1:8091/api/storage/v1
 pinned lez_program_registry 0.1.0's IDL zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz on http://127.0.0.1:8091/api/storage/v1
    ==> PASS F5.b  pin REG's IDL on node B (fetch + announce: B becomes a provider)
    -- node A (the uploader) stopped
    Storage node c up on 127.0.0.1:8092
-$ lezreg --json idl get EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p --storage-api http://127.0.0.1:8092/api/storage/v1   > idl-c.json
+$ lezreg --json idl get 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G --storage-api http://127.0.0.1:8092/api/storage/v1   > idl-c.json
    ==> PASS F5.c  a fresh node C, with the uploader gone, still resolves REG's IDL (from B)
 
 
 ######## F6  Discovery
 # spec: look up an entry by program ID, enumerate the full set of entries, search by name and author, using only the submitted software
-$ lezreg show umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA
-program umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA
+$ lezreg show 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8
+program 5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8
   deployed     image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc  (upgradeable)
 
 deployer entry  demo-sample-3 v1.0.0  (revision 1)
-  address      umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA  (the program's own account: only its header key could write it)
-  program      umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA
+  address      5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8  (the program's own account: only its header key could write it)
+  program      5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA  (proven co-signer; the only account that may update)
+  author       5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8  (proven co-signer; the only account that may update)
   description  X3, registered by its own header key
   idl          zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz  sha256 ae1fe7b1…ce84b534  18282 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:20:09Z   updated 2026-11-13 16:20:09Z
+  registered   2026-11-13 17:11:35Z   updated 2026-11-13 17:11:35Z
 
 third-party (community) entries: 0
    ==> PASS F6.a  lookup by program id (one getAccount)
    -- enumerate every entry, two per page, following the --after cursor
 $ lezreg list --limit 2
-   umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA    deployer     demo-sample-3 1.0.0
-   Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP   third-party  demo-sample 1.0.0
-$ lezreg list --limit 2 --after Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP
-   EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5   deployer     demo-sample 1.2.0
-   EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p   deployer     lez_program_registry 0.1.0
+   5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8   deployer     demo-sample-3 1.0.0
+   6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS   third-party  demo-sample 1.0.0
+$ lezreg list --limit 2 --after 6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS
+   59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C   deployer     demo-sample 1.2.0
+   5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G   deployer     lez_program_registry 0.1.0
    total 4, walked 4
    ==> PASS F6.b  enumeration walked all 4 entries (REG, X, Q's entry for X, X3), no duplicates
 $ lezreg search name demo-sample
 search name 'demo-sample': 3 found (4 entries examined)
-  #1    demo-sample              v1.2.0      deployer     program EsvC4x…Vvr5  author 2gcZ5s…qr3S  fresh
-  #2    demo-sample              v1.0.0      community by G8HNgb…yrhH  program EsvC4x…Vvr5  author G8HNgb…yrhH  fresh
-  #3    demo-sample-3            v1.0.0      deployer     program umAmUj…VJuA  author umAmUj…VJuA  fresh
+  #1    demo-sample              v1.2.0      deployer     program 59xxPW…Np1C  author HRRbvG…zurX  fresh
+  #2    demo-sample              v1.0.0      community by 7Q4HNi…nKVr  program 59xxPW…Np1C  author 7Q4HNi…nKVr  fresh
+  #3    demo-sample-3            v1.0.0      deployer     program 5u91f9…u3B8  author 5u91f9…u3B8  fresh
    [('demo-sample', 'deployer'), ('demo-sample', 'third-party'), ('demo-sample-3', 'deployer')]
    ==> PASS F6.c  search by name 'demo-sample': exact matches (X's deployer entry and Q's), then substring matches (demo-sample-3)
-$ lezreg search author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
-search author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (proven co-signer): 1 found (1 entries examined)
-  #1    demo-sample              v1.2.0      deployer     program EsvC4x…Vvr5  author 2gcZ5s…qr3S  fresh
-   B: ['EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5']  Q: ['EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5']  A: []
+$ lezreg search author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
+search author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (proven co-signer): 1 found (1 entries examined)
+  #1    demo-sample              v1.2.0      deployer     program 59xxPW…Np1C  author HRRbvG…zurX  fresh
+   B: ['59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C']  Q: ['59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C']  A: []
    ==> PASS F6.d  search by proven author: B holds X (after the transfer), Q holds its community entry, A holds nothing now
 
 
 ######## F7  Source verification
 # spec: an entry records a source pointer, a commit and a build configuration sufficient to reproduce the bytecode; a user may rebuild locally and, on a match, mark the program locally verified
    source.repo         https://github.com/jefdiesel/lez-program-registry
-   source.commit       6366124ba0085e9574a837a9e883a4b814f1e5cd
+   source.commit       a0cfd6b83c895f2b7386caec4470e1a5da3ed11e
    build.image_tag     r0.1.91.1
    build.image_digest  fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0
    build.risc0_build   3.0.5
@@ -393,8 +400,8 @@ search author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (proven co-signer): 1
    -- What was NOT done here: no rebuild of the source. What CI does on every push to main: repro.yml rebuilds the guest
    -- in Docker on two runners (byte-identical, = artifacts/), verify.yml reproduces it with lezreg's own Dockerfile,
    -- and e2e.yml runs 'lezreg verify REG --mark' against a fresh chain and asserts Match.
-   EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p live 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-   EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 live 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
+   5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G live 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
+   59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C live 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
    ==> PASS F7.c  (not a rebuild) the live images of REG and X equal artifacts/*.imageid, which those CI rebuilds reproduce
 
 
@@ -406,8 +413,8 @@ search author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (proven co-signer): 1
 ######## U1  Module/SDK
 # spec: a module/SDK usable by other Logos modules and third-party apps to register entries, resolve a program ID to its metadata and IDL, and run searches
    -- docs/sdk.md's worked example (sdk/rust/examples/resolve_program.rs), run as written against X:
-$ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 http://127.0.0.1:8091/api/storage/v1
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+$ resolve_program http://127.0.0.1:3062 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C http://127.0.0.1:8091/api/storage/v1
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL: 6 instructions (spel-v1 0.1.0): register_deployer, register_third_party, update, transfer_author, freeze, deploy_and_register
@@ -426,69 +433,69 @@ $ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wg
 ######## R1  Graceful degradation
 # spec: when an IDL identifier is unresolvable or the stored IDL fails to parse, the entry's on-chain metadata still displays, with the IDL surfaced as unavailable
    -- (a) no Storage node reachable (the SDK example pointed at a dead port, empty cache)
-$ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 http://127.0.0.1:9/api/storage/v1
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+$ resolve_program http://127.0.0.1:3062 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C http://127.0.0.1:9/api/storage/v1
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL unavailable (unavailable: no Storage node (Storage node unreachable: fetch: io: Connection refused (os error 61))); the entry's metadata still stands
    ==> PASS R1.a  no Storage node: metadata shown, 'IDL unavailable', exit 0
    -- (b) an IDL identifier nobody can resolve: B points X's IDL at a CID of bytes that were never uploaded
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/never-uploaded.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/never-uploaded.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 4)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 163 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 163 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 91154 cycles -> gas limit 136731
-   submitted 5d3be0fcf1a0166c9c762578891273d69de551b2564b64d85e961f8e9a8ae387
+   submitted 8fac1b3bf858d7d6cdbc26e3575940d387c0813f6006b3955da77904fe1d9ce7
    block 33: APPLIED; 864 bytes, gas limit 136731, fee 736152
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 4, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 4: confirmed)
-Update (revision 4): applied in block 33 (tx 5d3be0fcf1a0166c9c762578891273d69de551b2564b64d85e961f8e9a8ae387); simulated 91154 cycles, gas limit 136731, fee 736152, 864 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 4, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 4: confirmed)
+Update (revision 4): applied in block 33 (tx 8fac1b3bf858d7d6cdbc26e3575940d387c0813f6006b3955da77904fe1d9ce7); simulated 91154 cycles, gas limit 136731, fee 736152, 864 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS R1.b0  B updates X's IDL pointer to the unresolvable CID
-$ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 http://127.0.0.1:8091/api/storage/v1
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+$ resolve_program http://127.0.0.1:3062 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C http://127.0.0.1:8091/api/storage/v1
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL unavailable (unavailable: not found (Storage fetch: HTTP 404 after 4 tries)); the entry's metadata still stands
    ==> PASS R1.b  unresolvable CID: metadata shown, 'IDL unavailable', exit 0
-$ lezreg show EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
-program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+$ lezreg show 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
+program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   deployed     image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc  (upgradeable)
 
 deployer entry  demo-sample v1.2.0  (revision 4)
-  address      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5  (the program's own account: only its header key could write it)
-  program      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+  address      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C  (the program's own account: only its header key could write it)
+  program      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S  (proven co-signer; the only account that may update)
-  registrant   5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq  (original author; transferred since)
+  author       HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX  (proven co-signer; the only account that may update)
+  registrant   DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo  (original author; transferred since)
   label        "Demo Labs"  (UNPROVEN free text)
   description  updated by its author A
   tags         sample, demo
-  idl          zb2rhYtPPz1Lenw7HKLFgFZpokCatuHqPZEJz5KjHZvRXrPmS  sha256 21548515…a8f542f1  38 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  idl          zb2rhZqm3sqN1uHKzYp2C7GQmP4NBZRFEBuaVqziMqBmXLizE  sha256 2f83f2a7…f6eb3093  38 B
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:17:24Z   updated 2026-11-13 16:21:39Z
+  registered   2026-11-13 17:08:50Z   updated 2026-11-13 17:13:05Z
   flags        born with deploy (registered in the same transaction that deployed the program)
 
 third-party (community) entries: 1
-  community entry by G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH: demo-sample v1.0.0 (revision 1), fresh  [Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP]
+  community entry by 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr: demo-sample v1.0.0 (revision 1), fresh  [6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS]
    ==> PASS R1.b2  the CLI's entry view (lezreg show) still displays X's metadata
-$ lezreg idl get EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --storage-api http://127.0.0.1:8091/api/storage/v1 --tries 1   # expected to be refused
+$ lezreg idl get 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --storage-api http://127.0.0.1:8091/api/storage/v1 --tries 1   # expected to be refused
    | error: demo-sample 1.2.0: IDL unavailable: not found (Storage fetch: HTTP 404 after 1 tries). Try --pin-peer <peer> or ask the author to run `lezreg pin demo-sample`
    ==> PASS R1.b3  lezreg idl get X reports the IDL as unavailable (and exits nonzero) instead of hanging or crashing (refused, exit 1)
    -- (c) stored bytes that do not parse at all: not JSON
 $ curl -X POST http://127.0.0.1:8091/api/storage/v1/data --data-binary @not-json.idl
    -- cid zDvZRwzkzKMLzBwE9jp3cD9LCgg8sQk6Grn4JgPUVUS4pyN1V5Pe
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --idl-cid zDvZRwzkzKMLzBwE9jp3cD9LCgg8sQk6Grn4JgPUVUS4pyN1V5Pe --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/not-json.idl --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --idl-cid zDvZRwzkzKMLzBwE9jp3cD9LCgg8sQk6Grn4JgPUVUS4pyN1V5Pe --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/not-json.idl --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 5)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 165 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 165 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 91780 cycles -> gas limit 137670
-   submitted de05c375c7124cf5b393cc18c78719447b2c46bda93a92269d2fca16231a2c32
+   submitted 2a730fe76ccaced2dd3504d5a40d3e4bd18c9eb302a3cdf9fb521d5ad8f28114
    block 45: APPLIED; 866 bytes, gas limit 137670, fee 741176
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 5, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 5: confirmed)
-Update (revision 5): applied in block 45 (tx de05c375c7124cf5b393cc18c78719447b2c46bda93a92269d2fca16231a2c32); simulated 91780 cycles, gas limit 137670, fee 741176, 866 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 5, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 5: confirmed)
+Update (revision 5): applied in block 45 (tx 2a730fe76ccaced2dd3504d5a40d3e4bd18c9eb302a3cdf9fb521d5ad8f28114); simulated 91780 cycles, gas limit 137670, fee 741176, 866 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS R1.c0  B points X's IDL at those bytes, uploaded to node B
-$ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 http://127.0.0.1:8091/api/storage/v1
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+$ resolve_program http://127.0.0.1:3062 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C http://127.0.0.1:8091/api/storage/v1
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL unavailable (not a usable IDL: expected ident at line 1 column 2); the entry's metadata still stands
@@ -496,44 +503,44 @@ $ resolve_program http://127.0.0.1:3062 EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wg
    -- (c2) valid JSON in no IDL format this client knows (not SPEL v1 or v2)
 $ curl -X POST http://127.0.0.1:8091/api/storage/v1/data --data-binary @unknown-format.json
    -- cid zDvZRwzm3a8rZCAsKUvvWhJb6ZqY9S846eiwXL7stAm6d87xpavJ
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --idl-cid zDvZRwzm3a8rZCAsKUvvWhJb6ZqY9S846eiwXL7stAm6d87xpavJ --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/unknown-format.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --idl-cid zDvZRwzm3a8rZCAsKUvvWhJb6ZqY9S846eiwXL7stAm6d87xpavJ --idl-file /Volumes/exos162/logos/lp0023-demo/repo/demo-out/unknown-format.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 6)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 165 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 165 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 91365 cycles -> gas limit 137048
-   submitted b4f0209f48e3a1b0c66fa9aa817eeb18b332708ad6c12b8cf8c7b9f91f7b525e
-   block 47: APPLIED; 866 bytes, gas limit 137048, fee 737856
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 6, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 6: confirmed)
-Update (revision 6): applied in block 47 (tx b4f0209f48e3a1b0c66fa9aa817eeb18b332708ad6c12b8cf8c7b9f91f7b525e); simulated 91365 cycles, gas limit 137048, fee 737856, 866 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   submitted 594d7b61720f3d1c62dead6a7784067b7d0dea296eba9de1593f863c8fe30530
+   block 46: APPLIED; 866 bytes, gas limit 137048, fee 737856
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 6, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 6: confirmed)
+Update (revision 6): applied in block 46 (tx 594d7b61720f3d1c62dead6a7784067b7d0dea296eba9de1593f863c8fe30530); simulated 91365 cycles, gas limit 137048, fee 737856, 866 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS R1.c2a  B points X's IDL at it, uploaded to node B
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL: available, format not recognised (not SPEL v1 or v2); shown as raw JSON only
    ==> PASS R1.c2  unknown IDL format: metadata shown, IDL 'available, format not recognised', exit 0
    -- (d) bytes that are not the content the chain names: the pointer's sha256 does not match what the CID serves
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --idl-cid zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz --idl-sha256 a3ead5eedad5df82318c51685dbc1c147a36d1ff8584fc82de6b08d0bf63a795 --idl-size 37789 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --idl-cid zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz --idl-sha256 a3ead5eedad5df82318c51685dbc1c147a36d1ff8584fc82de6b08d0bf63a795 --idl-size 37789 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Update (revision 7)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 165 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 165 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 91365 cycles -> gas limit 137048
-   submitted a0310bc10d4fbdc975714809fce811f992bb7795f21b4f30a66625aca21933ed
-   block 48: APPLIED; 866 bytes, gas limit 137048, fee 737856
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 7, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 7: confirmed)
-Update (revision 7): applied in block 48 (tx a0310bc10d4fbdc975714809fce811f992bb7795f21b4f30a66625aca21933ed); simulated 91365 cycles, gas limit 137048, fee 737856, 866 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   submitted 82c99495251376d5f1300d1ab8f9fead8fa3361e968f6a887b8cec77cdff0f49
+   block 47: APPLIED; 866 bytes, gas limit 137048, fee 737856
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 7, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 7: confirmed)
+Update (revision 7): applied in block 47 (tx 82c99495251376d5f1300d1ab8f9fead8fa3361e968f6a887b8cec77cdff0f49); simulated 91365 cycles, gas limit 137048, fee 737856, 866 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS R1.d0  B points X's IDL at the real IDL's CID with another sha256
-   | demo-sample 1.2.0 by 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   | demo-sample 1.2.0 by HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    |   updated by its author A
    |   fresh: the program runs the image the entry claims
    |   IDL unavailable (hash mismatch: the chain names a3ead5eedad5df82318c51685dbc1c147a36d1ff8584fc82de6b08d0bf63a795, the bytes hash to ae1fe7b13bab37e7a384d2c077f6807c38fd17b0aee2e06555abfccece84b534); the entry's metadata still stands
    ==> PASS R1.d  hash mismatch: the bytes are discarded unparsed, metadata shown, 'IDL unavailable (hash mismatch ...)'
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --idl-cid push --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8091/api/storage/v1
 == Update (revision 8)
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 3 actors declared; 208 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 3 actors declared; 208 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 94023 cycles -> gas limit 141035
-   submitted 5df546fcf8679c040b262ea7645393d09e2103d5b1489d3b5d0f90e2e842ce33
-   block 49: APPLIED; 909 bytes, gas limit 141035, fee 759464
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.2.0 revision 8, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 8: confirmed)
-Update (revision 8): applied in block 49 (tx 5df546fcf8679c040b262ea7645393d09e2103d5b1489d3b5d0f90e2e842ce33); simulated 94023 cycles, gas limit 141035, fee 759464, 909 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   submitted 3d5412494b94109151cd773d0fb50ee3e18c1dba9f8fe0bb2d98231173f60e29
+   block 48: APPLIED; 909 bytes, gas limit 141035, fee 759464
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.2.0 revision 8, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 8: confirmed)
+Update (revision 8): applied in block 48 (tx 3d5412494b94109151cd773d0fb50ee3e18c1dba9f8fe0bb2d98231173f60e29); simulated 94023 cycles, gas limit 141035, fee 759464, 909 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS R1.e  B restores X's real IDL (uploaded again to node B)
 
 
@@ -553,87 +560,87 @@ Update (revision 8): applied in block 49 (tx 5df546fcf8679c040b262ea7645393d09e2
 
 
 ######## X   Further checks (beyond the spec's list)
-$ lezreg deploy /Volumes/exos162/logos/lp0023-demo/repo/artifacts/lez_program_registry.bin --dry-run --author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-dry --version 1.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
-== deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at 5VxNz2FyKb54kSvJqsx1eBXqJsbj2F7n1D3jdPCrcfHP: 6 segment writes, then DeployAndRegister
+$ lezreg deploy /Volumes/exos162/logos/lp0023-demo/repo/artifacts/lez_program_registry.bin --dry-run --author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --name demo-dry --version 1.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock
+== deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at 8XZw1cyV6SEEAm9mPFzkDqauHnw9kCSKEqqRkc3gCMmm: 6 segment writes, then DeployAndRegister
    pre-flight: DeployAndRegister simulated OK (705486 cycles, gas limit 1058229); payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV holds 9999929141552, the whole deploy reserves up to about 21003426
    dry run: nothing written
-program 5VxNz2FyKb54kSvJqsx1eBXqJsbj2F7n1D3jdPCrcfHP
+program 8XZw1cyV6SEEAm9mPFzkDqauHnw9kCSKEqqRkc3gCMmm
 DeployAndRegister (after 6 segment writes): dry run, nothing sent; simulated 705486 cycles, gas limit would be 1058229; the payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV must hold about 21003426 for the fee reserve
    ==> PASS X.a  a deploy dry run checks keys, simulation and funds, and sends nothing
-$ lezreg deploy /Volumes/exos162/logos/lp0023-demo/repo/artifacts/lez_program_registry.bin --author 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq --name demo-poor --version 1.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
-   | == deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at 5VxNz2FyKb54kSvJqsx1eBXqJsbj2F7n1D3jdPCrcfHP: 6 segment writes, then DeployAndRegister
-   |    pre-flight: DeployAndRegister simulated OK (706801 cycles, gas limit 1060202); payer 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq holds 0, the whole deploy reserves up to about 21021192
-   | error: 5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq holds 0, but deploying this program reserves up to about 21021192 (6 segment writes and DeployAndRegister): send it at least 21021192 more, or pick another --payer. Nothing was written
+$ lezreg deploy /Volumes/exos162/logos/lp0023-demo/repo/artifacts/lez_program_registry.bin --author DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo --name demo-poor --version 1.0.0 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e --binary lez_program_registry --manifest-path methods/guest/Cargo.toml --lock-file /Volumes/exos162/logos/lp0023-demo/repo/Cargo.lock   # expected to be refused
+   | == deploy 555272 bytes (image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc) at 8XZw1cyV6SEEAm9mPFzkDqauHnw9kCSKEqqRkc3gCMmm: 6 segment writes, then DeployAndRegister
+   |    pre-flight: DeployAndRegister simulated OK (706801 cycles, gas limit 1060202); payer DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo holds 0, the whole deploy reserves up to about 21021192
+   | error: DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo holds 0, but deploying this program reserves up to about 21021192 (6 segment writes and DeployAndRegister): send it at least 21021192 more, or pick another --payer. Nothing was written
    ==> PASS X.b  a deploy whose payer cannot cover it is refused before the first paid write (refused, exit 1)
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.3.0-wrong revision 9, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 9: confirmed)
-Update (revision 9): applied in block 50 (tx 5e7ae28ba4f8fe5f243912e77a784da35482e5e6ce48468bc48a7af9ba900b4e); simulated 91888 cycles, gas limit 137832, fee 741784, 834 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.3.0-wrong revision 9, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 9: confirmed)
+Update (revision 9): applied in block 49 (tx 060466a5de48055d9a71a125ccb0c0e4a92607e6d0630f4e8c68d78ec946024b); simulated 91888 cycles, gas limit 137832, fee 741784, 834 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    {'live_image_id': '5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc', 'status': 'stale'}
    ==> PASS X.c  an entry claiming another image than the live program shows STALE
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.3.0 revision 10, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (revision 10: confirmed)
-Update (revision 10): applied in block 51 (tx 618b3e6d3e95d943fb62817627aac72752980ca4a61a059d33c8c13c57281dea); simulated 92692 cycles, gas limit 139038, fee 748168, 828 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.3.0 revision 10, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (revision 10: confirmed)
+Update (revision 10): applied in block 50 (tx 5fc1cd3231e5cb058e050a3542b5f6558df6446ec1f1f0493b27cab1727bdd3e); simulated 92692 cycles, gas limit 139038, fee 748168, 828 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    {'status': 'fresh'}
    ==> PASS X.d  claiming the live image again shows fresh
-   read back Hq7S6fbHJ91QCZSvmKTtY9K1pHK5y19ZJhfC63HEZwZM: demo-sample v9.9.9 revision 1, author G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH (third-party entry: confirmed)
-RegisterThirdParty: applied in block 52 (tx e2f4899adcdbeaf80cb6f4533125ce45494912e3c97bcf165eb97ee05e1f9b94); simulated 239816 cycles, gas limit 359724, fee 1930768, 1529 bytes; entry Hq7S6fbHJ91QCZSvmKTtY9K1pHK5y19ZJhfC63HEZwZM
-5 entries in the registry EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p; showing 1 (newest first)
-  #4    demo-sample              v9.9.9      community by G8HNgb…yrhH  program HiFk6R…hxhk  author G8HNgb…yrhH  NO-PROGRAM (nothing deployed at this program id)
-more: lezreg list --after Hq7S6fbHJ91QCZSvmKTtY9K1pHK5y19ZJhfC63HEZwZM
+   read back GwsAvsUH2bVvdg45CXAkZByAFeVPSAppLv1uwkycvCNV: demo-sample v9.9.9 revision 1, author 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr (third-party entry: confirmed)
+RegisterThirdParty: applied in block 51 (tx 038da7038fe02b9e2abc76ef92bac877d184709bf8582f52d53a63638e5f05bc); simulated 239816 cycles, gas limit 359724, fee 1930768, 1529 bytes; entry GwsAvsUH2bVvdg45CXAkZByAFeVPSAppLv1uwkycvCNV
+5 entries in the registry 5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G; showing 1 (newest first)
+  #4    demo-sample              v9.9.9      community by 7Q4HNi…nKVr  program 9r2KNe…xxj4  author 7Q4HNi…nKVr  NO-PROGRAM (nothing deployed at this program id)
+more: lezreg list --after GwsAvsUH2bVvdg45CXAkZByAFeVPSAppLv1uwkycvCNV
    ==> PASS X.e  a community entry claiming an account with no program is flagged NO-PROGRAM
 name 'demo-sample': 3 entries (deployed programs' deployer entries first; NO-PROGRAM entries last)
-  #1    demo-sample              v1.3.0      deployer     program EsvC4x…Vvr5  author 2gcZ5s…qr3S  fresh
-  #2    demo-sample              v1.0.0      community by G8HNgb…yrhH  program EsvC4x…Vvr5  author G8HNgb…yrhH  fresh
-  #4    demo-sample              v9.9.9      community by G8HNgb…yrhH  program HiFk6R…hxhk  author G8HNgb…yrhH  NO-PROGRAM (nothing deployed at this program id)
+  #1    demo-sample              v1.3.0      deployer     program 59xxPW…Np1C  author HRRbvG…zurX  fresh
+  #2    demo-sample              v1.0.0      community by 7Q4HNi…nKVr  program 59xxPW…Np1C  author 7Q4HNi…nKVr  fresh
+  #4    demo-sample              v9.9.9      community by 7Q4HNi…nKVr  program 9r2KNe…xxj4  author 7Q4HNi…nKVr  NO-PROGRAM (nothing deployed at this program id)
    ==> PASS X.e2  show <name> lists every entry of that name and ranks the NO-PROGRAM one last
-$ lezreg show EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --revision 2
-program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+$ lezreg show 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --revision 2
+program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   deployed     image 5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc  (upgradeable)
 
 deployer entry  demo-sample v1.3.0  (revision 10)
-  address      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5  (the program's own account: only its header key could write it)
-  program      EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+  address      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C  (the program's own account: only its header key could write it)
+  program      59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
   status       FRESH: the claimed image 5ffbf8f5…1baf6bdc is what the program runs now
   code         upgradeable (the header key can repoint it)
-  author       2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S  (proven co-signer; the only account that may update)
-  registrant   5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq  (original author; transferred since)
+  author       HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX  (proven co-signer; the only account that may update)
+  registrant   DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo  (original author; transferred since)
   label        "Demo Labs"  (UNPROVEN free text)
   description  updated by its author A
   tags         sample, demo
   idl          zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz  sha256 ae1fe7b1…ce84b534  18282 B
-  source       https://github.com/jefdiesel/lez-program-registry @ 6366124ba0085e9574a837a9e883a4b814f1e5cd (docker root .)
+  source       https://github.com/jefdiesel/lez-program-registry @ a0cfd6b83c895f2b7386caec4470e1a5da3ed11e (docker root .)
   build        r0.1.91.1 (digest fafb377a…fe6048f0), risc0-build 3.0.5, binary lez_program_registry, build hash 20b72b25…1112888c
   image id     5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc
-  registered   2026-11-13 16:17:24Z   updated 2026-11-13 16:26:09Z
+  registered   2026-11-13 17:08:50Z   updated 2026-11-13 17:17:20Z
   flags        born with deploy (registered in the same transaction that deployed the program)
-  release #2   v1.1.0 image 5ffbf8f5…1baf6bdc idl zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz build hash 20b72b25…1112888c at 2026-11-13 16:20:39Z
+  release #2   v1.1.0 image 5ffbf8f5…1baf6bdc idl zDvZRwzm4HREckjCCQJsKJWRf6bxjpyJrxTd6GCeJPfPGzLADBcz build hash 20b72b25…1112888c at 2026-11-13 17:12:05Z
 
 third-party (community) entries: 1
-  community entry by G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH: demo-sample v1.0.0 (revision 1), fresh  [Dg9kQcANhn9UyZRspkzAVCPa2R8kuTdRGSmxs1PtvzNP]
+  community entry by 7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr: demo-sample v1.0.0 (revision 1), fresh  [6bXCjEP2zMtdRKPDNhJa5mBaZoSQHxdygA3WM2VprHUS]
    ==> PASS X.e3  show --revision 2: the write-once release snapshot of X's revision 2
 search tag 'demo': 1 found (5 entries examined)
-  #1    demo-sample              v1.3.0      deployer     program EsvC4x…Vvr5  author 2gcZ5s…qr3S  fresh
+  #1    demo-sample              v1.3.0      deployer     program 59xxPW…Np1C  author HRRbvG…zurX  fresh
 search author label 'Demo Labs' (UNPROVEN): 2 found (5 entries examined)
-  #4    demo-sample              v9.9.9      community by G8HNgb…yrhH  program HiFk6R…hxhk  author G8HNgb…yrhH  NO-PROGRAM (nothing deployed at this program id)
-  #1    demo-sample              v1.3.0      deployer     program EsvC4x…Vvr5  author 2gcZ5s…qr3S  fresh
+  #4    demo-sample              v9.9.9      community by 7Q4HNi…nKVr  program 9r2KNe…xxj4  author 7Q4HNi…nKVr  NO-PROGRAM (nothing deployed at this program id)
+  #1    demo-sample              v1.3.0      deployer     program 59xxPW…Np1C  author HRRbvG…zurX  fresh
    ==> PASS X.f  search by tag and by (unproven) label
-$ lezreg freeze EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
+$ lezreg freeze 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV
 == Freeze
-   root (2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S, REG); 2 actors declared; 42 message bytes; signing: 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S
+   root (HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX, REG); 2 actors declared; 42 message bytes; signing: HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX
    simulated: OK, 45700 cycles -> gas limit 68550
-   submitted adb99f3b7f4a67f9307dc4b8aa0fc4c0df97fd8fc52c62e4854d2eadd299bd78
-   block 54: APPLIED; 679 bytes, gas limit 68550, fee 371040
-   read back EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5: demo-sample v1.3.0 revision 10, author 2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S (frozen: confirmed)
-Freeze: applied in block 54 (tx adb99f3b7f4a67f9307dc4b8aa0fc4c0df97fd8fc52c62e4854d2eadd299bd78); simulated 45700 cycles, gas limit 68550, fee 371040, 679 bytes; entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5
+   submitted 9f8eb48df1310edd7473214894ac1e799101e4f4cbd776bcfe4f556798e92418
+   block 52: APPLIED; 679 bytes, gas limit 68550, fee 371040
+   read back 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C: demo-sample v1.3.0 revision 10, author HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX (frozen: confirmed)
+Freeze: applied in block 52 (tx 9f8eb48df1310edd7473214894ac1e799101e4f4cbd776bcfe4f556798e92418); simulated 45700 cycles, gas limit 68550, fee 371040, 679 bytes; entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C
    ==> PASS X.g  freeze X (author B signs)
-$ lezreg update EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --version 9.9.9 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV   # expected to be refused
-   | error: entry EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 is frozen
+$ lezreg update 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --version 9.9.9 --payer 6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV   # expected to be refused
+   | error: entry 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C is frozen
    ==> PASS X.h  a frozen entry refuses updates (refused, exit 1)
 $ lezreg --network testnet wallet check-health   # expected to be refused
    | error: LEZ testnet 0.4 has not launched yet, so lezreg has no testnet RPC. Use --network local, or pass --rpc and --registry
    ==> PASS X.i  the wallet refuses a network with no RPC instead of falling back to a default sequencer (refused, exit 1)
-$ lezreg --rpc http://192.0.2.1:3062 wallet auth-transfer send --from Public/6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --to Public/5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq --amount 1   # expected to be refused
+$ lezreg --rpc http://192.0.2.1:3062 wallet auth-transfer send --from Public/6iArKUXxhUJqS7kCaPNhwMWt3ro71PDyBj7jwAyE2VQV --to Public/DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo --amount 1   # expected to be refused
    | error: http://192.0.2.1:3062 is not on this machine: writing there spends real funds. Pass --yes to go ahead
    ==> PASS X.j  writes through a sequencer that is not on this machine need --yes (refused, exit 1)
-$ lezreg --rpc http://127.0.0.1:3062@example.invalid/ register --program EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 --name x --version 1 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit 6366124ba0085e9574a837a9e883a4b814f1e5cd   # expected to be refused
+$ lezreg --rpc http://127.0.0.1:3062@example.invalid/ register --program 59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C --name x --version 1 --idl-cid raw --idl-file /Volumes/exos162/logos/lp0023-demo/repo/idl/lez_program_registry.idl.json --repo https://github.com/jefdiesel/lez-program-registry --commit a0cfd6b83c895f2b7386caec4470e1a5da3ed11e   # expected to be refused
    | note: no build flags given, so the entry records lezreg's default build settings (risc0-guest-builder r0.1.91.1, binary = the name) and no Cargo.lock hash; `show` marks such build info as unverified
    | error: http://127.0.0.1:3062@example.invalid/ is not on this machine: writing there spends real funds. Pass --yes to go ahead
    ==> PASS X.j2  the URL is parsed, not prefix-matched: 127.0.0.1:PORT@elsewhere is elsewhere (refused, exit 1)
@@ -652,22 +659,22 @@ month     entries  programs  authors  new authors
 2026-11        4         3        4            4
 
 author                                          entries  first    names
-EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p          1  2026-11  lez_program_registry
-2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S          1  2026-11  demo-sample
-G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH          1  2026-11  demo-sample
-umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA           1  2026-11  demo-sample-3
+5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G          1  2026-11  lez_program_registry
+HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX          1  2026-11  demo-sample
+7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr          1  2026-11  demo-sample
+5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8          1  2026-11  demo-sample-3
    ==> PASS X.k  stats: the adoption table read from the chain
 
-REG=EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p X=EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 X3=umAmUjJuwFPS1Myy1WXZbdTNAueVSUQXSi2cTs8VJuA A=5ihcu4HS7ErqBxnwog68asBAQFw342D7ke29HDKvLrvq B=2gcZ5sTHgjXnjFidcCT42YyKR9scmYTLN1et9dMuqr3S Q=G8HNgbfrYUTYvfWMEPrznHNMCrrekYHjwkNKzXk5yrhH M=HiFk6RDjGTML9a8oGH8KE3D4jtoQqpoUWXd9Lzgahxhk
+REG=5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G X=59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C X3=5u91f94J5ojFiFSi22bpX4NRG2KE4xiLG5Lk1BqSu3B8 A=DLvwCfnvwADR7axsVT83DtGQdsLrdKS5gnSDmkTUgJQo B=HRRbvGA8YHDQJ3zgUSmEyPgKRYuY5CsWJnu4DeAUzurX Q=7Q4HNiJ4U72Yg3SFjsoAMbTJAbFWNXYLTraABbo6nKVr M=9r2KNexmRnr6oAdHg95a51sf6LjrvVpQemrjvJH8xxj4
 
 
 ######## Summary (local mode)
 step   res   what
-F1.a   PASS  registry deployed at REG=EBC5dkHKvDZWQLUjXXZEf4BiTNbynRuYBrxhB9Wgtb7p and registered in itself
+F1.a   PASS  registry deployed at REG=5bWAwTPVo3DePQbva7znnnUbS6Uv8sGFMCxyrNZsKV4G and registered in itself
 F1.b   PASS  live program image = artifacts/lez_program_registry.imageid (the CI-reproduced build)
 F1.c   PASS  (REG, REG) holds a deployer entry named lez_program_registry whose IDL pointer is a Storage CID
 F1.d   PASS  the IDL on Storage, fetched by the pointer and hash-checked, is the committed SPEL IDL (lez_program_registry.idl.json)
-F2.a   PASS  X=EsvC4xALPW5BKQ6rZUPQh7LNunKrpt3VLmUEcPaVVvr5 deployed and registered in one transaction (DeployAndRegister)
+F2.a   PASS  X=59xxPWA7QK3Qds4K96My8eiAHbvv9QVUx5DUCCvNNp1C deployed and registered in one transaction (DeployAndRegister)
 F2.b   PASS  X's entry carries name, version, author, description, IDL pointer, code pointer (repo+commit+build), registration time
 F3.a   PASS  Q's third-party entry for X registered
 F3.b   PASS  a client tells them apart from chain data alone: the deployer entry lives AT X (only X's key can write there); Q's lives at T(X, Q)
@@ -731,3 +738,4 @@ X.k    PASS  stats: the adoption table read from the chain
 
 65 steps: 60 PASS, 0 FAIL, 3 SKIP, 2 INFO
 DEMO PASS
+left running (--keep): pids  47727 47815 47848 62973
