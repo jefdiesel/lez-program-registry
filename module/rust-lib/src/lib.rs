@@ -667,6 +667,10 @@ impl ProgramRegistryModule for ProgramRegistry {
         })())
     }
 
+    // TODO(appfix): the SDK is about to recompute a package's root from its files instead of
+    // trusting manifest.json (branch `appfix`, not merged; its verdicts and the apps.rs/lgx.rs API
+    // will change). verify_app and verify_package stay on the current API until it lands; then
+    // bump the SDK pin and report its new verdict here.
     fn verify_app(&mut self, module_name: String) -> String {
         reply((|| {
             let data = self.basecamp_data().ok_or("no Basecamp data folder: call config_set with {\"basecamp_data\": \"<path>\"}")?;
