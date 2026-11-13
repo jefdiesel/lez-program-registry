@@ -155,6 +155,8 @@ criterion() { printf '\n\n######## %s\n' "$1"; [ $# -gt 1 ] && printf '# spec: %
 note() { printf '   -- %s\n' "$*"; }
 # Echo a lezreg command, then run it.
 lz() { printf '$ lezreg'; printf ' %q' "$@"; printf '\n'; "$LEZREG" "$@"; }
+# lzj FILE args...: echo the command, run `lezreg --json args` into FILE (stderr into FILE.err).
+lzj() { local f=$1; shift; printf '$ lezreg --json'; printf ' %q' "$@"; printf '   > %s\n' "$(basename "$f")"; "$LEZREG" --json "$@" >"$f" 2>"$f.err" || { sed 's/^/   ! /' "$f.err" | tail -5; return 1; }; }
 # ok ID TEXT cmd...: PASS when the command exits 0.
 ok() { local id=$1 txt=$2 rc=0; shift 2; "$@" || rc=$?; if [ $rc -eq 0 ]; then record "$id" PASS "$txt"; else record "$id" FAIL "$txt (exit $rc)"; fi; }
 # refused ID TEXT PATTERN lezreg-args...: PASS when lezreg FAILS and its output contains PATTERN.
@@ -343,6 +345,8 @@ local_demo() {
   start_storage a "$SP" "$PP" || fatal S0 "start Storage node A"
   start_storage b $((SP + 1)) $((PP + 1)) "$(spr "$SP")" || fatal S0 "start Storage node B"
 
+  "$LEZREG" network set demo --rpc "$RPC" >/dev/null || fatal S0 "lezreg network set demo"
+  export LEZREG_NETWORK=demo LEZREG_STORAGE_API=$API_A
   echo "== wallet: LEZ's published local-test genesis account pays (wallet setup output in wallet-setup.txt)"
   {
     "$LEZREG" wallet config set sequencer_addr "$RPC" || true
@@ -352,8 +356,6 @@ local_demo() {
   PAYER=$(sed -n 's|.*Public/\([1-9A-HJ-NP-Za-km-z]*\).*|\1|p' "$OUT/wallet-setup.txt" | tail -1)
   [ -n "$PAYER" ] || fatal S0 "import the genesis payer account (wallet-setup.txt)"
   echo "   payer $PAYER"
-  lz network set demo --rpc "$RPC" >/dev/null || fatal S0 "lezreg network set demo"
-  export LEZREG_NETWORK=demo LEZREG_STORAGE_API=$API_A
   read -r A _ < <(new_account); read -r Q _ < <(new_account); read -r B _ < <(new_account)
   echo "   accounts in the demo wallet: author A=$A, community publisher Q=$Q, new author B=$B"
   mkdir -p "$OUT/mallory"
@@ -378,7 +380,7 @@ local_demo() {
     pyck 'import json,sys; s=json.load(open(sys.argv[1])); w=open(sys.argv[2]).read().strip(); print("   live", s["header"]["image_id"], "\n   artifacts", w); sys.exit(s["header"]["image_id"]!=w)' "$OUT/reg.json" "$ROOT/artifacts/lez_program_registry.imageid"
   ok F1.c "(REG, REG) holds a deployer entry named lez_program_registry whose IDL pointer is a Storage CID" \
     pyck 'import json,sys; e=json.load(open(sys.argv[1]))["deployer_entry"]; print("   idl", e["idl"]); sys.exit(not(e["kind"]=="deployer" and e["name"]=="lez_program_registry" and e["idl"]["cid"].startswith("z")))' "$OUT/reg.json"
-  lz --json idl get "$REG" --storage-api "$API_A" >"$OUT/reg-idl.json" 2>"$OUT/reg-idl.err"
+  lzj "$OUT/reg-idl.json" idl get "$REG" --storage-api "$API_A"
   ok F1.d "the IDL on Storage, fetched by the pointer and hash-checked, is the committed SPEL IDL ($(basename "$REG_IDL"))" \
     pyck 'import json,sys; d=json.load(open(sys.argv[1])); c=json.load(open(sys.argv[2])); print("   %d instructions, generator %s" % (len(d["idl"]["instructions"]), d["idl"].get("metadata"))); sys.exit(d["idl"]!=c)' "$OUT/reg-idl.json" "$REG_IDL"
   note "the entry stores only pointers (CID + sha256 + size) for the IDL and the source; the IDL itself is $(wc -c <"$REG_IDL" | tr -d ' ') bytes on Storage."
@@ -475,13 +477,13 @@ sys.exit(not(d["program"]==x and d["deployer_entry"]["kind"]=="deployer" and t["
 
   # ------------------------------------------------------------------------------------------
   criterion "F5  IDL publishing" "the IDL is stored on Logos Storage"
-  XDG_CACHE_HOME=$OUT/cache-b lz --json idl get "$REG" --storage-api "$API_B" >"$OUT/idl-b.json" 2>"$OUT/idl-b.err"
+  XDG_CACHE_HOME=$OUT/cache-b lzj "$OUT/idl-b.json" idl get "$REG" --storage-api "$API_B"
   ok F5.a "REG's IDL fetched through node B (uploaded to A), hash-checked against the chain" \
     pyck 'import json,sys; d=json.load(open(sys.argv[1])); print("   cid", d["cid"], "name", d["idl"]["name"]); sys.exit(d["idl"]["name"]!="lez_program_registry")' "$OUT/idl-b.json"
   ok F5.b "pin REG's IDL on node B (fetch + announce: B becomes a provider)" lz pin "$REG" --storage-api "$API_B"
   kill "$(storage_pid a)" 2>/dev/null; note "node A (the uploader) stopped"
   if start_storage c $((SP + 2)) $((PP + 2)) "$(spr $((SP + 1)))"; then
-    XDG_CACHE_HOME=$OUT/cache-c lz --json idl get "$REG" --storage-api "$API_C" >"$OUT/idl-c.json" 2>"$OUT/idl-c.err"
+    XDG_CACHE_HOME=$OUT/cache-c lzj "$OUT/idl-c.json" idl get "$REG" --storage-api "$API_C"
     ok F5.c "a fresh node C, with the uploader gone, still resolves REG's IDL (from B)" \
       pyck 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(d["idl"]["name"]!="lez_program_registry")' "$OUT/idl-c.json"
   else record F5.c FAIL "start Storage node C"; fi
@@ -523,7 +525,7 @@ for k in ("image_tag","image_digest","risc0_build","host_risc0_rust","manifest_p
 sys.exit(not(s["repo"] and len(s["commit"])==40 and b["image_digest"].strip("0") and b["lock_sha256"].strip("0") and b["binary"]))' "$OUT/reg.json"
   if [ "$HAVE_DOCKER" = 1 ] && [ "$VERIFY" != off ]; then
     note "rebuilding REG's recorded source at the recorded commit in Docker (compile with the network off); this takes a while"
-    lz --json verify "$REG" --mark --work "$OUT/verify" >"$OUT/verify.json" 2>"$OUT/verify.err"; tail -5 "$OUT/verify.err" | sed 's/^/   | /'
+    lzj "$OUT/verify.json" verify "$REG" --mark --work "$OUT/verify"; tail -5 "$OUT/verify.json.err" | sed 's/^/   | /'
     ok F7.b "lezreg verify REG: rebuilt image = claimed = live (Match), marked locally verified" \
       pyck 'import json,sys; d=json.load(open(sys.argv[1])); print("   verdict", d.get("verdict"), d.get("rebuilt")); sys.exit(d.get("verdict")!="Match")' "$OUT/verify.json"
     ok F7.c "lezreg verified lists the local mark" lz verified
@@ -632,10 +634,10 @@ EOF
   local LIVE OTHER
   LIVE=$("$LEZREG" --json show "$X" | jget header.image_id)
   OTHER=0000000000000000000000000000000000000000000000000000000000000001
-  lz update "$X" --image-id "$OTHER" --version 1.3.0-wrong --payer "$PAYER" >/dev/null 2>&1
+  lz update "$X" --image-id "$OTHER" --version 1.3.0-wrong --payer "$PAYER" 2>&1 | tail -2
   ok X.c "an entry claiming another image than the live program shows STALE" \
     sh -c '"$1" --json show "$2" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"  \", d[\"freshness\"]); sys.exit(d[\"freshness\"][\"status\"]!=\"stale\")"' _ "$LEZREG" "$X"
-  lz update "$X" --image-id "$LIVE" --version 1.3.0 --payer "$PAYER" >/dev/null 2>&1
+  lz update "$X" --image-id "$LIVE" --version 1.3.0 --payer "$PAYER" 2>&1 | tail -2
   ok X.d "claiming the live image again shows fresh" \
     sh -c '"$1" --json show "$2" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"  \", d[\"freshness\"]); sys.exit(d[\"freshness\"][\"status\"]!=\"fresh\")"' _ "$LEZREG" "$X"
   ok X.e "a community entry claiming an account with no program is flagged NO-PROGRAM" \
