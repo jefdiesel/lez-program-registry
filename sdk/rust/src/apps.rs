@@ -134,7 +134,7 @@ impl<'de> serde::Deserialize<'de> for Strict {
                 let mut m = Map::new();
                 while let Some(k) = a.next_key::<String>()? {
                     if m.contains_key(&k) {
-                        return Err(serde::de::Error::custom(format!("the key {k:?} appears twice")));
+                        return Err(serde::de::Error::custom(format!("the key {:?} appears twice", crate::text::shown(&k))));
                     }
                     let Strict(v) = a.next_value()?;
                     m.insert(k, v);
@@ -320,7 +320,7 @@ pub fn cid_content_sha256(cid: &str) -> Option<[u8; 32]> {
 /// root doesn't cover the manifest), the bytes must match it and the CID where the CID names a
 /// content hash, the package's recomputed root must be its manifest's and the release's, its
 /// version and manifest the release's where the record names them, and it must be `module`.
-pub fn check_download(module: &str, record: &AppRecord, bytes: &[u8]) -> Result<Contents> {
+pub fn check_download(module: &str, publishers: &[&str], record: &AppRecord, bytes: &[u8]) -> Result<Contents> {
     let release = record.newest();
     let want = release.sha256.ok_or_else(|| {
         Error::Invalid(format!(
@@ -353,6 +353,13 @@ pub fn check_download(module: &str, record: &AppRecord, bytes: &[u8]) -> Result<
             hex::encode(contents.root)
         )));
     }
+    if !contents.manifest.publisher().is_some_and(|p| publishers.contains(&p.as_str())) {
+        return Err(Error::Invalid(format!(
+            "the package names {:?} as its publisher, not {}",
+            crate::text::shown(&contents.manifest.author),
+            publishers.join(" or ")
+        )));
+    }
     if release.version.as_ref().is_some_and(|v| *v != contents.manifest.version) {
         return Err(Error::Invalid(format!("the package says version {:?}, not the release's", contents.manifest.version)));
     }
@@ -378,6 +385,13 @@ pub fn apps_of(profile: &Profile) -> Vec<(String, Result<AppRecord>)> {
     out
 }
 
+/// A module name as Basecamp modules are named (`names_ui`, `liblogos_rln_module`): 1–64 of
+/// `a-z 0-9 _ - .`. Anything else (escape sequences included) is refused when a manifest is read.
+#[must_use]
+pub fn is_manifest_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 64 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-.".contains(&b))
+}
+
 /// The parts of a package's `manifest.json` that verification reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
@@ -397,12 +411,22 @@ impl Manifest {
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Invalid("the manifest has no hashes.root".into()))?;
         let name = text("name");
-        if name.is_empty() {
-            return Err(Error::Invalid("the manifest has no name".into()));
+        if !is_manifest_name(&name) {
+            return Err(Error::Invalid(format!(
+                "the manifest's name {:?} is not a module name (1-64 of a-z, 0-9, _, - and .)",
+                crate::text::shown(&name)
+            )));
+        }
+        let version = text("version");
+        if !crate::text::is_semver(&version) {
+            return Err(Error::Invalid(format!(
+                "the manifest's version {:?} is not a SemVer 2.0.0 version, which lgx requires",
+                crate::text::shown(&version)
+            )));
         }
         Ok(Self {
             name,
-            version: text("version"),
+            version,
             author: text("author"),
             root: hex32(root)?,
         })
@@ -516,6 +540,8 @@ impl Verdict {
             "status": self.status(),
             "publisher": matches!(self, Self::Verified { .. }).then(|| name.cloned()).flatten(),
             "version": match self { Self::Verified { release, .. } => release.version.clone(), _ => None },
+            // false: an older release the publisher still vouches for (under `keep`).
+            "newest": match self { Self::Verified { release, record, .. } => Some(record.releases.first() == Some(release)), _ => None },
             "module": manifest.name,
             "root": hex::encode(contents.root),
             "manifest_root": hex::encode(manifest.root),
@@ -543,7 +569,7 @@ impl Verdict {
 fn judge(contents: &Contents, release: &Release) -> std::result::Result<bool, (bool, String)> {
     // Ok(true): whole package proven; Ok(false): files only; Err((file, why)): file or manifest mismatch.
     if let Some(v) = release.version.as_ref().filter(|v| **v != contents.manifest.version) {
-        return Err((false, format!("the manifest says version {:?}, the release is {v:?}", contents.manifest.version)));
+        return Err((false, format!("the manifest says version {:?}, the release is {:?}", contents.manifest.version, crate::text::shown(v))));
     }
     match &contents.form {
         Form::Lgx { sha256 } => match release.sha256 {
@@ -639,7 +665,7 @@ pub fn forward_of(name: &str, profile: &Profile) -> Forward {
         Entry::One(value) => match lns::parse_name(value) {
             Ok(target) if target != name => Forward::To(target),
             Ok(_) | Err(NameError::Invalid | NameError::AccountId) => Forward::None,
-            Err(NameError::Ambiguous) => Forward::Ambiguous(format!("forward {value:?} has whitespace LNS clients trim differently")),
+            Err(NameError::Ambiguous) => Forward::Ambiguous(format!("forward {:?} has whitespace LNS clients trim differently", crate::text::shown(value))),
         },
     }
 }
@@ -693,7 +719,7 @@ impl<R: Rpc> Names<R> {
     /// an account ID, is an error. A name with a record this key can't open counts as
     /// registered with nothing set.
     pub fn profile(&mut self, name: &str, now_ms: u64) -> Result<Option<Profile>> {
-        let name = lns::parse_name(name).map_err(|e| Error::Invalid(format!("{name:?}: {e}")))?;
+        let name = lns::parse_name(name).map_err(|e| Error::Invalid(format!("{:?}: {e}", crate::text::shown(name))))?;
         let derived = self
             .derived
             .entry(name.clone())
@@ -993,19 +1019,21 @@ mod tests {
         let (bytes, root) = genuine("lns:forumer", FILES);
         let sha = lezreg_types::pda::sha256(&bytes);
         let mut r = AppRecord::parse(&whole(&bytes)).unwrap();
-        assert!(check_download("forumer_ui", &r, &bytes).is_ok());
-        assert!(check_download("other_ui", &r, &bytes).is_err());
+        assert!(check_download("forumer_ui", &["forumer"], &r, &bytes).is_ok());
+        assert!(check_download("other_ui", &["forumer"], &r, &bytes).is_err());
+        assert!(check_download("forumer_ui", &["someone"], &r, &bytes).unwrap_err().to_string().contains("publisher"), "W5: the package names another publisher");
+        assert!(check_download("forumer_ui", &["brand", "forumer"], &r, &bytes).is_ok(), "a forward target counts");
         // An edited manifest over the same files: same root, refused by the file hash.
         let (edited, _) = genuine_with("lns:forumer", FILES, |m| m["version"] = json!("9.9.9"));
-        assert!(check_download("forumer_ui", &r, &edited).unwrap_err().to_string().contains("sha256"));
+        assert!(check_download("forumer_ui", &["forumer"], &r, &edited).unwrap_err().to_string().contains("sha256"));
         // A raw sha2-256 CID names the bytes, so it is checked too.
         r.cid = Some(crate::cid::to_string(&crate::cid::raw_cid(b"something else")));
-        assert!(check_download("forumer_ui", &r, &bytes).unwrap_err().to_string().contains("CID"));
+        assert!(check_download("forumer_ui", &["forumer"], &r, &bytes).unwrap_err().to_string().contains("CID"));
         r.cid = Some(crate::cid::to_string(&crate::cid::raw_cid(&bytes)));
-        assert!(check_download("forumer_ui", &r, &bytes).is_ok());
+        assert!(check_download("forumer_ui", &["forumer"], &r, &bytes).is_ok());
         // No sha256: unverifiable, even though the root would match.
         r.releases[0] = Release { root: hex32(&root).unwrap(), ..Release::default() };
-        assert!(check_download("forumer_ui", &r, &bytes).unwrap_err().to_string().contains("unverifiable"));
+        assert!(check_download("forumer_ui", &["forumer"], &r, &bytes).unwrap_err().to_string().contains("unverifiable"));
         assert_eq!(r.matches_download(&bytes), None);
         r.releases[0].sha256 = Some(sha);
         assert_eq!(r.matches_download(&bytes), Some(true));

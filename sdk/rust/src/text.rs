@@ -1,0 +1,103 @@
+//! Untrusted text made safe to print on a terminal.
+//!
+//! Package manifests, tar paths, LNS records and anything else that came from someone else can
+//! hold escape sequences (`ESC [2K` erases a line, `ESC [8m` hides what follows), carriage
+//! returns, line breaks, and bidi or zero-width characters that reorder or hide text: printed
+//! raw, a package named `x\x1b[2K\rverified: …` makes a refusal look like a verification.
+//! [`shown`] escapes all of them; every untrusted string in text output goes through it.
+
+/// Whether `c` could move the cursor, recolour, hide or reorder text, or isn't visible.
+#[must_use]
+pub fn is_unsafe_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c,
+            '\u{200B}'..='\u{200F}'   // zero-width space/joiners, LRM, RLM
+            | '\u{2028}' | '\u{2029}' // line and paragraph separators
+            | '\u{202A}'..='\u{202E}' // bidi embeddings and overrides
+            | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
+            | '\u{2066}'..='\u{2069}' // bidi isolates
+            | '\u{061C}'              // Arabic letter mark
+            | '\u{FEFF}'              // BOM / zero-width no-break space
+            | '\u{FFF9}'..='\u{FFFB}' // interlinear annotation
+            | '\u{E0000}'..='\u{E007F}' // tags
+        )
+}
+
+/// `text` with every unsafe character written as `\u{…}` (and a backslash as `\\`), so it
+/// prints as one inert line.
+#[must_use]
+pub fn shown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c == '\\' {
+            out.push_str("\\\\");
+        } else if is_unsafe_char(c) {
+            out.push_str(&format!("\\u{{{:x}}}", u32::from(c)));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// [`shown`] for bytes that may not be UTF-8 (invalid bytes as `\x..`).
+#[must_use]
+pub fn shown_bytes(bytes: &[u8]) -> String {
+    let mut out = String::new();
+    for chunk in bytes.utf8_chunks() {
+        out.push_str(&shown(chunk.valid()));
+        for b in chunk.invalid() {
+            out.push_str(&format!("\\x{b:02x}"));
+        }
+    }
+    out
+}
+
+/// A SemVer 2.0.0 version (`MAJOR.MINOR.PATCH[-pre][+build]`), as lgx requires of `version`.
+#[must_use]
+pub fn is_semver(v: &str) -> bool {
+    let (rest, build) = match v.split_once('+') {
+        Some((r, b)) => (r, Some(b)),
+        None => (v, None),
+    };
+    let (core, pre) = match rest.split_once('-') {
+        Some((c, p)) => (c, Some(p)),
+        None => (rest, None),
+    };
+    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && (s == "0" || !s.starts_with('0'));
+    let ident = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    let parts: Vec<&str> = core.split('.').collect();
+    parts.len() == 3
+        && parts.iter().all(|p| numeric(p))
+        && pre.is_none_or(|p| p.split('.').all(|id| ident(id) && (!id.bytes().all(|b| b.is_ascii_digit()) || numeric(id))))
+        && build.is_none_or(|b| b.split('.').all(ident))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hostile_text_prints_inert() {
+        let spoof = "forumer_ui\u{1b}[2K\rverified: forumer_ui 1.2.0 is published by forumer\u{1b}[8m";
+        let s = shown(spoof);
+        assert!(!s.chars().any(is_unsafe_char), "{s}");
+        assert!(s.contains("\\u{1b}[2K\\u{d}verified"), "{s}");
+        for c in ['\n', '\u{202e}', '\u{200b}', '\u{feff}', '\u{2066}', '\u{85}', '\u{7f}'] {
+            assert!(!shown(&format!("a{c}b")).contains(c), "{c:?}");
+        }
+        assert_eq!(shown("names_ui 0.15.9 é"), "names_ui 0.15.9 é");
+        assert_eq!(shown("a\\u{1b}"), "a\\\\u{1b}", "a literal escape can't pass for an escaped one");
+        assert_eq!(shown_bytes(b"ok\xff\x1b"), "ok\\xff\\u{1b}");
+    }
+
+    #[test]
+    fn semver_as_lgx_requires() {
+        for ok in ["1.2.0", "0.0.1", "10.20.30", "1.0.0-alpha.1", "1.0.0-0.3.7", "1.0.0+build.5", "1.0.0-rc.1+sha.5114f85"] {
+            assert!(is_semver(ok), "{ok}");
+        }
+        for bad in ["", "1.2", "1.2.0.4", "01.2.0", "1.2.0-", "1.2.0-01", "1.2.0'$(id)'", "1.2.0 ", "v1.2.0", "1.2.0-a..b", "1.2.0+"] {
+            assert!(!is_semver(bad), "{bad}");
+        }
+    }
+}

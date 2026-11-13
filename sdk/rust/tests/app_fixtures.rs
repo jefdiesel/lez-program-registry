@@ -154,3 +154,54 @@ fn an_edited_manifest_is_refused() {
     }
 }
 
+
+fn review3(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{}/tests/fixtures/apps/review3/{name}.lgx", env!("CARGO_MANIFEST_DIR"))).unwrap()
+}
+
+/// Review 3, B-1: one file on a case-insensitive volume, or a root asset a variant file overwrites.
+#[test]
+fn the_third_reviews_install_collisions_are_refused() {
+    let e = Contents::from_lgx(&review3("case-collision")).unwrap_err().to_string();
+    assert!(e.contains("case-insensitive"), "{e}");
+    let e = Contents::from_lgx(&review3("overlap")).unwrap_err().to_string();
+    assert!(e.contains("different bytes"), "{e}");
+}
+
+/// Review 3, B-2 and B-3: escape sequences in a module name, a tar path or a version never
+/// reach the output raw, and such packages are refused.
+#[test]
+fn hostile_strings_are_refused_and_never_printed_raw() {
+    for name in ["spoof-unclaimed", "spoof-error", "record-inject"] {
+        let e = Contents::from_lgx(&review3(name)).unwrap_err().to_string();
+        assert!(!e.chars().any(lezreg_sdk::text::is_unsafe_char), "{name}: {e:?}");
+        if name == "record-inject" {
+            assert!(e.contains("SemVer"), "{e}");
+        }
+    }
+}
+
+/// Review 3, W3: a manifest lgx would rewrite on install can't be recorded.
+#[test]
+fn record_needs_a_manifest_lgx_writes_back() {
+    lgx::check_canonical_layout(&review3("canon-ok")).unwrap();
+    let e = lgx::check_canonical_layout(&review3("extra-field")).unwrap_err().to_string();
+    assert!(e.contains("writes back"), "{e}");
+}
+
+/// Review 3, W1: a kept older release verifies, marked as not the newest.
+#[test]
+fn an_older_release_is_marked() {
+    let release = |b: &[u8]| {
+        let c = Contents::from_lgx(b).unwrap();
+        apps::Release { root: c.root, sha256: Some(lezreg_types::pda::sha256(b)), manifest: Some(c.manifest_sha256), version: Some(c.manifest.version) }
+    };
+    let (new, old) = (review3("new"), review3("old"));
+    let record = apps::AppRecord { releases: vec![release(&new), release(&old)], ..apps::AppRecord::default() }.to_value().unwrap();
+    let profile = move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), texts: vec![("app.forumer_ui".into(), record.clone())] }));
+    for (bytes, newest) in [(&new, true), (&old, false)] {
+        let c = Contents::from_lgx(bytes).unwrap();
+        let (v, _) = apps::check_following(&c, profile.clone()).unwrap();
+        assert_eq!((v.status(), v.to_json(&c)["newest"].as_bool()), ("verified", Some(newest)));
+    }
+}

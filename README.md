@@ -378,7 +378,14 @@ lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, writt
 enough that lgx can't read it differently (a polyglot is refused). The root does not cover
 `manifest.json`: the record's `sha256` (a `.lgx`) and `manifest` (an installed copy) do, and
 only then is the result `verified`; with neither it is `files_verified`, exit 3. `record`
-vouches only for a package laid out exactly as lgx writes one. See
+vouches only for a package in lgx's own layout (as checked: tar headers, order, end marker,
+canonical manifest lgx writes back unchanged). A differential test
+(`sdk/rust/tests/fixtures/apps/differential.py`, run on a Mac with Basecamp's own `liblgx`)
+installs each fixture and real package the way lgpm does (its validity gate, the host variant,
+`lgx_extract`, the manifest from `lgx_get_manifest_json`) onto a case-insensitive volume, and
+fails if lezreg reads a package whose installed bytes or manifest differ from what lezreg
+hashed. It covers one liblgx build and the host's variant; it doesn't cover other variants,
+other liblgx versions, or what Basecamp does after install. See
 [`docs/APPS.md`](docs/APPS.md) §2–4. Names are normalised as
 logos-names SPEC.md §2 says (`lns:Forumer` is `forumer`), and a name with a key set twice is
 refused as ambiguous. A name that forwards (`nameswallet` → `names`, logos-names SPEC.md §7) is

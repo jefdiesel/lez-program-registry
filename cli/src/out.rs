@@ -63,10 +63,14 @@ impl Out {
         }
     }
 
-    /// A line of text (text mode only).
+    /// A line of text (text mode only). Each line is passed through
+    /// [`lezreg_sdk::text::shown`] as a safety net, so no escape sequence, carriage return or
+    /// bidi control reaches the terminal; untrusted pieces are also escaped where they are put in,
+    /// so they can't add lines either.
     pub fn text(&self, s: &str) {
         if !self.json {
-            println!("{s}");
+            let lines: Vec<String> = s.split('\n').map(lezreg_sdk::text::shown).collect();
+            println!("{}", lines.join("\n"));
         }
     }
 
@@ -88,7 +92,7 @@ impl Out {
     }
 
     pub fn error(&mut self, kind: &str, message: &str) {
-        eprintln!("error: {message}");
+        eprintln!("error: {}", lezreg_sdk::text::shown(message));
         let mut v = json!({"error": message, "kind": kind});
         if let Value::Object(o) = &mut v {
             o.extend(self.context.clone());

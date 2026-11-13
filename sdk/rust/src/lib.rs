@@ -39,6 +39,7 @@ pub mod lns;
 pub mod read;
 pub mod rpc;
 pub mod storage;
+pub mod text;
 #[cfg(feature = "tx")]
 pub mod tx;
 #[cfg(feature = "tx")]

@@ -81,10 +81,15 @@ Key `app.<module>`: 1–32 bytes total, so module names up to 28 bytes. Value: J
   `lezreg app get` refuses a record without `sha256`, and a package whose version is not the
   release's fails (`manifest_mismatch`) whatever else matches. A key given twice, at any
   depth of the JSON, is refused.
-- **`record` vouches only for a package lgx itself wrote**: one gzip member; tar entries in
-  lgx's order with byte-for-byte the headers lgx's `DeterministicTarWriter` writes; two zero
-  blocks and nothing after; one `manifest.json`, in lgx's canonical JSON (sorted keys,
-  two-space indent). A package anyone could read two ways can't be vouched for.
+- **`record` vouches only for a package in lgx's layout**, as far as these checks go: one gzip
+  member; tar entries in lgx's order with byte-for-byte the headers lgx's
+  `DeterministicTarWriter` writes; two zero blocks and nothing after; one `manifest.json` in
+  lgx's canonical JSON (sorted keys, two-space indent) holding only what lgx's
+  `Manifest::toJson` writes back (no unknown field such as `license`, `dependencies` and `main`
+  always present, a name-only dependency as a bare string, and so on), so the manifest lgpm
+  installs is byte for byte the one the record names; a SemVer `version`; and none of the
+  reader's refusals (no case-insensitive name collision, no root asset overlapping a variant's
+  file). It does not compare the gzip stream itself with what lgx's compressor would write.
 - **Where to get it:** `cid` is the `.lgx` on Logos Storage, a download that depends on no web
   host; `catalog` is a catalog that lists it (GitHub releases, say). Either will do, because
   `sha256` (of the `.lgx` file) is checked before installing whatever the source, and the root
@@ -210,6 +215,10 @@ signed by the name, but the holder stays hidden.
 | A polyglot `.lgx` that one tar reader reads as the genuine package and lgx as another (review B1) | Refused before any lookup: a numeric header field that isn't plain octal, a second gzip member, a lone zero block, data after the end marker; `record` vouches only for lgx's own layout |
 | A name that lapses (fee mode, after its term and 30 days' grace) and is registered again by someone else | **Not detected.** The new holder can set `app.M` and vouch for anything; the check proves "the name's current holder vouches", not "the same holder as when you installed". A deposit-held name never lapses. Pinning the holder (the record's owner tag, which changes when a new holder registers the name) would catch it; not done |
 | A name with two `app.M` or two `forward` entries, read differently by different clients | **ambiguous** |
+| Two files whose names differ only in case (`Plugin.dylib`, `plugin.dylib`), or a root asset and a variant's own file of the same name with other bytes: one file once installed on a case-insensitive volume, holding the bytes written last (review 3) | Refused when the package is read |
+| A module name, path or record field holding escape sequences, carriage returns or bidi controls, to print a fake "verified" line (review 3) | Text output escapes every untrusted string; a manifest `name` must be a module name and `version` SemVer, or the package is refused |
+| A record value that breaks out of the quotes of the printed `names set-text` command (review 3) | The value is single-quoted with every `'` escaped; a non-SemVer version is refused anyway |
+| A verified app depending on an unverified module | **Not covered**: dependencies are outside the proof (section 8) |
 | Copycat listing on the board | Fails the check; shown unverified |
 | Squatting a famous name | Names are first come, with a deposit; readers see the name's age and record. Not solved by cryptography |
 | Votes from many throwaway names | Each name costs a deposit; readers weight by name age, deposit or follows. Not solved by cryptography |
@@ -236,9 +245,13 @@ program, a redeploy and fresh verification evidence; it is left for a v2.
   build of the names module with `"author": "lns:example"` (builder de169fd, `.#lgx-portable`)
   carries it in `manifest.json`. (That note also said "under the package's root hash"; it
   isn't: the root doesn't cover `manifest.json`. Corrected 2026-11-13.)
-- An installed package's manifest is not covered by anything the record holds. Pinning it
-  would take a new record field (the SHA-256 of the manifest as installed, which the package
-  manager writes from `lgx_get_manifest_json`), or a signed package (`manifest.sig` covers the
-  manifest) with the signer's key named in the record (`app.signer`).
+- ~~An installed package's manifest is not covered by anything the record holds~~ **done
+  2026-11-13**: the record's `manifest` field (section 3) covers it.
+- **Dependencies are outside the proof.** A verified app's `dependencies` name other modules
+  by name (and version range); the check says nothing about them. A verified app can load a
+  module that is unverified, or a copy installed under that name, so each module it depends on
+  needs its own check (`lezreg app verify` on each, or the module's `verify_app`).
+- A name that lapses and is registered again by someone else can vouch for anything
+  (section 6); pinning the holder's owner tag is not done.
 - The approval sheet trusts the module name the host reports for the caller; a host-provided
   package root for the caller would remove the step of reading the installed manifest.

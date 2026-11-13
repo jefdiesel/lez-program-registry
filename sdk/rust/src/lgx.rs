@@ -203,7 +203,7 @@ impl Contents {
     /// Reads an installed package's directory (`<Basecamp data>/modules/<module>` or
     /// `.../plugins/<module>`) and recomputes its root from the files on disk.
     pub fn from_installed(dir: &Path) -> Result<Self> {
-        let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| bad(&format!("cannot read {}: {e}", dir.join(name).display())));
+        let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| bad(&format!("cannot read {}: {e}", crate::text::shown(&dir.join(name).display().to_string()))));
         let manifest_bytes = read("manifest.json")?;
         let json = crate::apps::strict_json(&manifest_bytes)?;
         let manifest = Manifest::parse(&json)?;
@@ -269,29 +269,29 @@ fn declared_hashes(manifest: &Value) -> Result<BTreeMap<String, String>> {
 /// Every regular file under `dir` (relative path → hex hash), refusing anything else; the
 /// installer's sidecars at the top go to `not_covered`.
 fn walk(base: &Path, dir: &Path, files: &mut BTreeMap<String, String>, not_covered: &mut Vec<String>) -> Result<()> {
-    let entries = std::fs::read_dir(dir).map_err(|e| bad(&format!("cannot read {}: {e}", dir.display())))?;
+    let entries = std::fs::read_dir(dir).map_err(|e| bad(&format!("cannot read {}: {e}", crate::text::shown(&dir.display().to_string()))))?;
     for entry in entries {
-        let entry = entry.map_err(|e| bad(&format!("cannot read {}: {e}", dir.display())))?;
+        let entry = entry.map_err(|e| bad(&format!("cannot read {}: {e}", crate::text::shown(&dir.display().to_string()))))?;
         let path = entry.path();
-        let kind = entry.file_type().map_err(|e| bad(&format!("cannot read {}: {e}", path.display())))?;
+        let kind = entry.file_type().map_err(|e| bad(&format!("cannot read {}: {e}", crate::text::shown(&path.display().to_string()))))?;
         let rel = path
             .strip_prefix(base)
             .ok()
             .and_then(Path::to_str)
             .map(|s| s.replace('\\', "/"))
-            .ok_or_else(|| bad(&format!("not a UTF-8 path: {}", path.display())))?;
+            .ok_or_else(|| bad(&format!("not a UTF-8 path: {}", crate::text::shown(&path.display().to_string()))))?;
         if kind.is_dir() {
             walk(base, &path, files, not_covered)?;
         } else if kind.is_file() {
             if INSTALL_SIDECARS.contains(&rel.as_str()) {
                 not_covered.push(rel);
             } else {
-                let bytes = std::fs::read(&path).map_err(|e| bad(&format!("cannot read {}: {e}", path.display())))?;
+                let bytes = std::fs::read(&path).map_err(|e| bad(&format!("cannot read {}: {e}", crate::text::shown(&path.display().to_string()))))?;
                 files.insert(rel, hex_sha256(&bytes));
             }
         } else {
             // Nothing a package installs is a link or a special file (lgx `collectListing`).
-            return Err(bad(&format!("not a regular file: {rel} (a package installs none)")));
+            return Err(bad(&format!("not a regular file: {} (a package installs none)", crate::text::shown(&rel))));
         }
     }
     Ok(())
@@ -313,10 +313,8 @@ fn installed_root(declared: &BTreeMap<String, String>, variant: &str, on_disk: &
             .iter()
             .filter_map(|(k, v)| k.strip_prefix("variants/").map(|n| (n.to_owned(), v.clone())))
             .collect();
-        match listing_hash(variant_files) {
-            Some(h) => variants.insert(variant.to_owned(), h),
-            None => variants.remove(variant),
-        };
+        // An installed variant with no files is no install of this package (review 3, W2).
+        variants.insert(variant.to_owned(), listing_hash(variant_files)?);
         let mut top: BTreeMap<String, String> = declared
             .iter()
             .filter(|(k, _)| !k.contains('/') && *k != "root" && *k != "variants" && *k != "assets")
@@ -347,7 +345,7 @@ fn installed_root(declared: &BTreeMap<String, String>, variant: &str, on_disk: &
     }
     let want = declared.get("root");
     let found = readings.iter().flatten().find(|r| Some(*r) == want).or(plain.as_ref());
-    hex32(found.ok_or_else(|| bad("the installed package has no files"))?)
+    hex32(found.ok_or_else(|| bad("the installed variant has no files: not an install of this package"))?)
 }
 
 /// One tar entry, as read: its header block, and for a file its data.
@@ -464,26 +462,27 @@ fn read_raw(bytes: &[u8]) -> Result<RawPackage> {
         }
         path.extend_from_slice(name);
         let path = String::from_utf8(path).map_err(|_| bad("a tar entry whose name is not UTF-8"))?;
+        let sp = crate::text::shown(&path);
         let size = usize::try_from(size).map_err(|_| bad("an entry too large"))?;
         match header[156] {
             b'0' | 0 => {
-                let data = tar.get(at..at + size).ok_or_else(|| bad(&format!("{path}: the tar ends inside its data")))?.to_vec();
+                let data = tar.get(at..at + size).ok_or_else(|| bad(&format!("{sp}: the tar ends inside its data")))?.to_vec();
                 let end = at + size.div_ceil(BLOCK) * BLOCK;
                 if !tar.get(at + size..end).is_some_and(|p| p.iter().all(|&b| b == 0)) {
-                    return Err(bad(&format!("{path}: padding after its data that isn't zeros")));
+                    return Err(bad(&format!("{sp}: padding after its data that isn't zeros")));
                 }
                 at = end;
                 entries.push(RawEntry { path, dir: false, mode, header, data });
             }
             b'5' => {
                 if size != 0 {
-                    return Err(bad(&format!("{path}: a directory with data")));
+                    return Err(bad(&format!("{sp}: a directory with data")));
                 }
                 entries.push(RawEntry { path, dir: true, mode, header, data: Vec::new() });
             }
             other => {
                 return Err(bad(&format!(
-                    "{path}: a tar entry of type {:?}; a package holds plain files and directories only (lgx reads no links, PAX or GNU long-name headers)",
+                    "{sp}: a tar entry of type {:?}; a package holds plain files and directories only (lgx reads no links, PAX or GNU long-name headers)",
                     char::from(other)
                 )));
             }
@@ -502,48 +501,51 @@ fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut problems = Vec::new();
     for e in raw.entries {
         let path = e.path;
+        let sp = crate::text::shown(&path);
         if e.dir {
             let trimmed = path.strip_suffix('/').unwrap_or(&path).to_owned();
             if let Err(why) = check_path(&trimmed) {
-                problems.push(format!("{path}: {why}"));
+                problems.push(format!("{sp}: {why}"));
             } else if !ALLOWED_ROOT.contains(&trimmed.split('/').next().unwrap_or_default()) {
-                problems.push(format!("{path}: lgx allows only variants/, assets/, docs/ and licenses/ directories at the top"));
+                problems.push(format!("{sp}: lgx allows only variants/, assets/, docs/ and licenses/ directories at the top"));
             }
             dirs.insert(trimmed);
             continue;
         }
         if path.ends_with('/') {
-            problems.push(format!("{path}: a file whose name ends in /"));
+            problems.push(format!("{sp}: a file whose name ends in /"));
             continue;
         }
         if let Err(why) = check_path(&path) {
-            problems.push(format!("{path}: {why}"));
+            problems.push(format!("{sp}: {why}"));
             continue;
         }
         if !seen.insert(path.clone()) {
-            problems.push(format!("{path}: in the package twice"));
+            problems.push(format!("{sp}: in the package twice"));
             continue;
         }
         let top = path.split('/').next().unwrap_or_default();
         let depth = path.split('/').count();
         if depth == 1 && !UNCOVERED_IN_PACKAGE.contains(&path.as_str()) {
-            problems.push(format!("{path}: a file at the top of the package, not covered by the root"));
+            problems.push(format!("{sp}: a file at the top of the package, not covered by the root"));
         } else if top == "variants" && depth == 2 {
-            problems.push(format!("{path}: a file directly under variants/, not covered by the root"));
+            problems.push(format!("{sp}: a file directly under variants/, not covered by the root"));
         } else if !ALLOWED_ROOT.contains(&top) {
-            problems.push(format!("{path}: lgx allows only manifest.json, manifest.sig, variants/, assets/, docs/ and licenses/ at the top"));
+            problems.push(format!("{sp}: lgx allows only manifest.json, manifest.sig, variants/, assets/, docs/ and licenses/ at the top"));
         } else {
             out.push((path, e.data));
         }
     }
     for (path, _) in &out {
+        let sp = crate::text::shown(path);
         if dirs.contains(path) {
-            problems.push(format!("{path}: both a file and a directory"));
+            problems.push(format!("{sp}: both a file and a directory"));
         }
         if let Some(other) = seen.iter().find(|other| other.starts_with(&format!("{path}/"))) {
-            problems.push(format!("{path}: both a file and the directory of {other}"));
+            problems.push(format!("{sp}: both a file and the directory of {}", crate::text::shown(other)));
         }
     }
+    problems.extend(install_collisions(&out, &dirs));
     if !problems.is_empty() {
         return Err(bad(&format!("the package is not one lgx accepts, or holds files its root does not cover: {}", problems.join("; "))));
     }
@@ -551,6 +553,66 @@ fn read_lgx_entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
         return Err(bad("the package has no manifest.json at its top"));
     }
     Ok(out)
+}
+
+/// Where an install could end up with other bytes than the root covers. Basecamp's volumes are
+/// case-insensitive by default (APFS, NTFS), so `Plugin.dylib` and `plugin.dylib` land on one
+/// file holding whichever was written last, while `main` names the first; and lgx extracts a
+/// variant with the root `assets/` merged into it, so `assets/x` and `variants/<v>/assets/x`
+/// land on one file too. Paths that fold to the same name, and a root asset overlapping a
+/// variant's own file with other bytes, are refused (review 3, B-1).
+fn install_collisions(files: &[(String, Vec<u8>)], dirs: &BTreeSet<String>) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut folded: BTreeMap<String, String> = BTreeMap::new();
+    let mut note = |path: &str, problems: &mut Vec<String>| {
+        match folded.get(&path.to_ascii_lowercase()) {
+            Some(other) if other != path => problems.push(format!(
+                "{} and {}: the same file on a case-insensitive filesystem",
+                crate::text::shown(other),
+                crate::text::shown(path)
+            )),
+            Some(_) => {}
+            None => {
+                folded.insert(path.to_ascii_lowercase(), path.to_owned());
+            }
+        }
+    };
+    let every = files.iter().map(|(p, _)| p.as_str()).chain(dirs.iter().map(String::as_str));
+    for path in every {
+        let mut at = 0;
+        while let Some(i) = path[at..].find('/') {
+            note(&path[..at + i], &mut problems);
+            at += i + 1;
+        }
+        note(path, &mut problems);
+    }
+    let hashes: BTreeMap<&str, String> = files.iter().map(|(p, d)| (p.as_str(), hex_sha256(d))).collect();
+    let variants: BTreeSet<&str> = hashes.keys().filter_map(|p| p.strip_prefix("variants/")?.split_once('/').map(|(v, _)| v)).collect();
+    for v in variants {
+        let prefix = format!("variants/{v}/");
+        let mut merged: BTreeMap<String, (&str, &str)> = BTreeMap::new();
+        let own = hashes.iter().filter_map(|(p, h)| p.strip_prefix(&prefix).map(|rel| (rel, *p, h)));
+        let root_assets = hashes.iter().filter(|(p, _)| p.starts_with("assets/")).map(|(p, h)| (*p, *p, h));
+        for (rel, full, hash) in root_assets.chain(own) {
+            match merged.get(&rel.to_ascii_lowercase()) {
+                // Names that differ only in case within one tree are caught above; here a root
+                // asset and the variant's own file land on one file, which is fine only if the
+                // bytes are the same.
+                Some((other, other_hash)) if *other_hash != hash.as_str() => {
+                    problems.push(format!(
+                        "{} and {}: one file once installed, with different bytes",
+                        crate::text::shown(other),
+                        crate::text::shown(full)
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    merged.insert(rel.to_ascii_lowercase(), (full, hash.as_str()));
+                }
+            }
+        }
+    }
+    problems
 }
 
 /// The header lgx's `DeterministicTarWriter::createHeader` writes for an entry.
@@ -622,11 +684,11 @@ pub fn check_canonical_layout(bytes: &[u8]) -> Result<()> {
     for e in &raw.entries {
         let sort_key = if e.dir { format!("{}/", e.path.trim_end_matches('/')) } else { e.path.clone() };
         if last.as_ref().is_some_and(|l| *l >= sort_key) {
-            return Err(bad(&format!("{}: out of lgx's order (entries are sorted by path)", e.path)));
+            return Err(bad(&format!("{}: out of lgx's order (entries are sorted by path)", crate::text::shown(&e.path))));
         }
-        let want = canonical_header(&e.path, e.dir, e.mode, e.data.len()).ok_or_else(|| bad(&format!("{}: a path lgx can't write", e.path)))?;
+        let want = canonical_header(&e.path, e.dir, e.mode, e.data.len()).ok_or_else(|| bad(&format!("{}: a path lgx can't write", crate::text::shown(&e.path))))?;
         if want != e.header {
-            return Err(bad(&format!("{}: its tar header is not the one lgx writes", e.path)));
+            return Err(bad(&format!("{}: its tar header is not the one lgx writes", crate::text::shown(&e.path))));
         }
         used += BLOCK + e.data.len().div_ceil(BLOCK) * BLOCK;
         last = Some(sort_key);
@@ -636,8 +698,79 @@ pub fn check_canonical_layout(bytes: &[u8]) -> Result<()> {
     }
     let manifest = &raw.entries.iter().find(|e| e.path == "manifest.json").expect("checked").data;
     let json = crate::apps::strict_json(manifest)?;
+    lgx_writes_back(&json)?;
     if canonical_json(&json)?.as_bytes() != manifest.as_slice() {
         return Err(bad("manifest.json is not in lgx's canonical form (sorted keys, two-space indent), so an installed copy's manifest couldn't be matched to it"));
+    }
+    Ok(())
+}
+
+/// Whether lgx would write `manifest` back unchanged: `lgx_get_manifest_json` (what lgpm installs)
+/// is `Manifest::toJson()` of the parsed manifest, which writes only the fields lgx knows,
+/// always writes `dependencies` and `main`, writes `optional_dependencies`,
+/// `interface_dependencies`, `view`, `backend`, `display_name` and `provides` only when set,
+/// a name-only dependency as a bare string, and `web` in `provides` only when true. A manifest
+/// lgx would rewrite can never match its installed copy, so `record` refuses it (review 3, W3).
+pub fn lgx_writes_back(manifest: &Value) -> Result<()> {
+    let refuse = |why: String| bad(&format!("manifest.json is not what lgx writes back (lgpm installs lgx's own rewrite, so an installed copy could never match the record): {why}"));
+    let o = manifest.as_object().ok_or_else(|| refuse("not an object".into()))?;
+    const ALWAYS: [&str; 10] = ["manifestVersion", "name", "version", "description", "author", "type", "category", "icon", "dependencies", "main"];
+    const IF_SET: [&str; 7] = ["hashes", "optional_dependencies", "interface_dependencies", "view", "backend", "display_name", "provides"];
+    if let Some(k) = o.keys().find(|k| !ALWAYS.contains(&k.as_str()) && !IF_SET.contains(&k.as_str())) {
+        return Err(refuse(format!("lgx drops the field {:?}", crate::text::shown(k))));
+    }
+    if let Some(k) = ALWAYS.iter().find(|k| !o.contains_key(**k)) {
+        return Err(refuse(format!("lgx always writes {k:?}")));
+    }
+    for k in &ALWAYS[..8] {
+        if !o[*k].is_string() {
+            return Err(refuse(format!("{k:?} is not a string")));
+        }
+    }
+    for k in ["view", "backend", "display_name"] {
+        if o.get(k).is_some_and(|v| !v.as_str().is_some_and(|s| !s.is_empty())) {
+            return Err(refuse(format!("{k:?} is written only as a non-empty string")));
+        }
+    }
+    let dep_ok = |d: &Value| match d {
+        Value::String(n) => !n.is_empty(),
+        Value::Object(m) => {
+            m.get("name").is_some_and(Value::is_string)
+                && m.len() > 1
+                && m.iter().all(|(k, v)| ["name", "version", "signer"].contains(&k.as_str()) && v.is_string())
+        }
+        _ => false,
+    };
+    for (k, required) in [("dependencies", true), ("optional_dependencies", false)] {
+        let Some(v) = o.get(k) else { continue };
+        let a = v.as_array().ok_or_else(|| refuse(format!("{k:?} is not a list")))?;
+        if !required && a.is_empty() {
+            return Err(refuse(format!("an empty {k:?} is left out")));
+        }
+        if !a.iter().all(dep_ok) {
+            return Err(refuse(format!("a {k:?} entry lgx would rewrite (a name alone is a bare string; objects hold name, version, signer)")));
+        }
+    }
+    if o.get("interface_dependencies").is_some_and(|v| !v.as_array().is_some_and(|a| !a.is_empty() && a.iter().all(Value::is_string))) {
+        return Err(refuse("\"interface_dependencies\" is written only as a non-empty list of names".into()));
+    }
+    let provide_ok = |p: &Value| {
+        p.as_object().is_some_and(|m| {
+            m.get("intent").is_some_and(Value::is_string)
+                && m.keys().all(|k| k == "intent" || k == "web")
+                && m.get("web").is_none_or(|w| *w == Value::Bool(true))
+        })
+    };
+    if o.get("provides").is_some_and(|v| !v.as_array().is_some_and(|a| !a.is_empty() && a.iter().all(provide_ok))) {
+        return Err(refuse("\"provides\" is written only as a non-empty list of {\"intent\"} objects, with \"web\": true or nothing".into()));
+    }
+    for k in ["main", "hashes"] {
+        if o.get(k).is_some_and(|m| !m.as_object().is_some_and(|m| m.values().all(Value::is_string))) {
+            return Err(refuse(format!("{k:?} is an object of strings")));
+        }
+    }
+    if o.get("hashes").is_some_and(|h| h.as_object().is_some_and(serde_json::Map::is_empty)) {
+        return Err(refuse("empty \"hashes\" are left out".into()));
     }
     Ok(())
 }
@@ -904,7 +1037,7 @@ pub(crate) mod tests {
     /// A small genuine package's tar entries, for the archive tests below.
     fn small() -> Vec<(&'static str, Option<&'static [u8]>, u8)> {
         let m: &'static [u8] = Box::leak(
-            serde_json::json!({"name":"x","hashes": merkle_tree(&[("variants/v/a".to_owned(), hex_sha256(b"1"))].into_iter().collect())})
+            serde_json::json!({"name":"x","version":"1.0.0","hashes": merkle_tree(&[("variants/v/a".to_owned(), hex_sha256(b"1"))].into_iter().collect())})
                 .to_string()
                 .into_bytes()
                 .into_boxed_slice(),
@@ -1003,7 +1136,18 @@ pub(crate) mod tests {
     #[test]
     fn only_lgxs_own_layout_is_canonical() {
         let files: BTreeMap<String, String> = [("variants/v/a".to_owned(), hex_sha256(b"1"))].into_iter().collect();
-        let manifest = canonical_json(&serde_json::json!({"name": "x", "version": "1.0.0", "hashes": merkle_tree(&files)})).unwrap();
+        let full = |extra: Option<(&str, Value)>| {
+            let mut m = serde_json::json!({
+                "manifestVersion": "0.6.0", "name": "x", "version": "1.0.0", "description": "", "author": "lns:x",
+                "type": "core", "category": "", "icon": "", "dependencies": ["names", {"name": "chat", "version": ">=1.0.0"}],
+                "main": {"v": "a"}, "hashes": merkle_tree(&files)
+            });
+            if let Some((k, v)) = extra {
+                m[k] = v;
+            }
+            m
+        };
+        let manifest = canonical_json(&full(None)).unwrap();
         let entries: Vec<(&str, bool, &[u8])> =
             vec![("manifest.json", false, manifest.as_bytes()), ("variants/", true, b""), ("variants/v/", true, b""), ("variants/v/a", false, b"1")];
         let build = |entries: &[(&str, bool, &[u8])]| {
@@ -1028,15 +1172,70 @@ pub(crate) mod tests {
         other[..512].copy_from_slice(&header("manifest.json", manifest.len(), b'0'));
         assert!(Contents::from_lgx(&gz(&other)).is_ok());
         assert!(check_canonical_layout(&gz(&other)).unwrap_err().to_string().contains("header"));
-        let compact = serde_json::json!({"name": "x", "version": "1.0.0", "hashes": merkle_tree(&files)}).to_string();
+        let compact = full(None).to_string();
         let mut e2 = entries.clone();
         e2[0].2 = compact.as_bytes();
         assert!(check_canonical_layout(&gz(&build(&e2))).unwrap_err().to_string().contains("canonical form"));
+        // W3: fields lgx drops or rewrites (so the installed manifest could never match).
+        for (k, v) in [
+            ("license", serde_json::json!("MIT")),
+            ("dependencies", serde_json::json!([{"name": "names"}])),
+            ("provides", serde_json::json!([])),
+            ("provides", serde_json::json!([{"intent": "x.open", "web": false}])),
+            ("view", serde_json::json!("")),
+        ] {
+            let m = canonical_json(&full(Some((k, v.clone())))).unwrap();
+            let mut e3 = entries.clone();
+            e3[0].2 = m.as_bytes();
+            let e = check_canonical_layout(&gz(&build(&e3))).unwrap_err().to_string();
+            assert!(e.contains("not what lgx writes back"), "{k} {v}: {e}");
+        }
         // Extra zero blocks after the end marker: readable, not lgx's.
         let mut padded = tar.clone();
         padded.extend_from_slice(&[0; 512]);
         assert!(Contents::from_lgx(&gz(&padded)).is_ok());
         assert!(check_canonical_layout(&gz(&padded)).is_err());
         assert_eq!(canonical_json(&serde_json::json!({"b": [1, {}], "a": "\u{e9}\n", "c": []})).unwrap(), "{\n  \"a\": \"\u{e9}\\n\",\n  \"b\": [\n    1,\n    {}\n  ],\n  \"c\": []\n}");
+    }
+
+    /// Review 3, B-1: names that are one file on a case-insensitive volume, and a root asset
+    /// that a variant's own file of the same name would overwrite with other bytes.
+    #[test]
+    fn install_collisions_are_refused() {
+        let with = |files: &[(&'static str, &'static [u8])]| {
+            let hashed: BTreeMap<String, String> = files.iter().map(|(p, d)| ((*p).to_owned(), hex_sha256(d))).collect();
+            let m: &'static [u8] = Box::leak(serde_json::json!({"name": "x", "version": "1.0.0", "hashes": merkle_tree(&hashed)}).to_string().into_bytes().into_boxed_slice());
+            let mut e: Vec<(&str, Option<&[u8]>, u8)> = vec![("manifest.json", Some(m), b'0')];
+            e.extend(files.iter().map(|(p, d)| (*p, Some(*d), b'0')));
+            gz(&raw_tar(&e))
+        };
+        refused(&with(&[("variants/v/Plugin.dylib", b"publisher"), ("variants/v/plugin.dylib", b"other")]), "case-insensitive");
+        refused(&with(&[("variants/v/Lib/a", b"1"), ("variants/v/lib/b", b"2")]), "case-insensitive");
+        refused(&with(&[("variants/v/a", b"1"), ("assets/x", b"root"), ("variants/v/assets/x", b"variant")]), "different bytes");
+        refused(&with(&[("variants/v/a", b"1"), ("assets/X", b"root"), ("variants/v/assets/x", b"variant")]), "different bytes");
+        // The same bytes in both places is one file either way.
+        assert!(Contents::from_lgx(&with(&[("variants/v/a", b"1"), ("assets/x", b"same"), ("variants/v/assets/x", b"same")])).is_ok());
+        assert!(Contents::from_lgx(&with(&[("variants/v/a", b"1"), ("variants/w/A", b"2")])).is_ok(), "other variants never share a directory");
+    }
+
+    /// Review 3, W2: an installed copy whose variant has no files is not an install of the package.
+    #[test]
+    fn an_installed_variant_with_no_files_is_refused() {
+        let dir = std::env::temp_dir().join(format!("lezreg-empty-variant-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        let (bytes, _) = genuine("lns:forumer", FILES);
+        let manifest = read_lgx_entries(&bytes).unwrap().into_iter().find(|(p, _)| p == "manifest.json").unwrap().1;
+        let mut m: Value = serde_json::from_slice(&manifest).unwrap();
+        m["hashes"]["variants/zz"] = Value::String("0".repeat(64));
+        std::fs::write(dir.join("manifest.json"), m.to_string()).unwrap();
+        std::fs::write(dir.join("variant"), "zz").unwrap();
+        std::fs::write(dir.join("assets/icon.png"), b"\x89PNG icon").unwrap();
+        std::fs::write(dir.join("assets/forumer.lidl"), b"lidl").unwrap();
+        std::fs::create_dir_all(dir.join("assets/lidl")).unwrap();
+        std::fs::rename(dir.join("assets/forumer.lidl"), dir.join("assets/lidl/forumer.lidl")).unwrap();
+        let c = Contents::from_installed(&dir).unwrap();
+        assert!(!c.root_matches(), "only the root assets, under a variant that has no files");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

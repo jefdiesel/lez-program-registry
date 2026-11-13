@@ -177,7 +177,7 @@ files, `apps::check_following` (or `Names::verify`) checks them against the publ
 and `apps::check_download` checks a download. Key on `Verdict::status()` (or `exit_code()`):
 only `verified` proves the whole package; `files_verified` proves the files and not the
 manifest. `lgx::check_canonical_layout` is the stricter rule `lezreg app record` applies before
-vouching for a package (laid out exactly as lgx writes one). A check from a manifest alone is no longer
+vouching for a package (lgx's tar layout and a manifest lgx writes back unchanged). A check from a manifest alone is no longer
 possible: the manifest's `hashes.root` is a claim, and only files prove it. (The module's
 `verify_app` / `verify_package` at commit 74a0010 still compare that claim; see APPS.md §4.)
 

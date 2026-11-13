@@ -13,6 +13,8 @@ use lezreg_sdk::{
 use lezreg_types::AccountId;
 use serde_json::{Value, json};
 
+use lezreg_sdk::text::shown;
+
 use crate::out::Out;
 
 #[derive(Subcommand)]
@@ -127,9 +129,14 @@ fn vouchable(file: &Path) -> Result<(Vec<u8>, Contents, String)> {
     let name = match contents.manifest.claim() {
         Ok(Some(name)) => name,
         Ok(None) => bail!("{} names no publisher: set \"author\": \"lns:<name>\" in its metadata.json and rebuild", file.display()),
-        Err(why) => bail!("{}'s author {:?} is {why}", file.display(), contents.manifest.author),
+        Err(why) => bail!("{}'s author {:?} is {why}", file.display(), shown(&contents.manifest.author)),
     };
     Ok((bytes, contents, name))
+}
+
+/// `s` as one POSIX shell word: single-quoted, each `'` written `'\''`.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// A program's registry status in a few words.
@@ -172,7 +179,7 @@ pub fn run(
                 apps::Forward::Ambiguous(why) => out.text(&format!("{name}'s forward is ambiguous ({why}): packages naming {name} fail the check")),
                 apps::Forward::None => {}
             }
-            let mut shown = Vec::new();
+            let mut listed = Vec::new();
             for (module, record) in apps::apps_of(&profile) {
                 match record {
                     Ok(record) => {
@@ -182,15 +189,16 @@ pub fn run(
                             .map(|p| program_status(registry.as_ref(), p))
                             .collect();
                         out.text(&format!(
-                            "{module}  {}  root {}{}",
-                            record.newest().version.as_deref().unwrap_or("-"),
+                            "{}  {}  root {}{}",
+                            shown(&module),
+                            shown(record.newest().version.as_deref().unwrap_or("-")),
                             hex::encode(record.newest().root),
-                            record.catalog.as_deref().map(|c| format!("\n  catalog {c}")).unwrap_or_default()
+                            record.catalog.as_deref().map(|c| format!("\n  catalog {}", shown(c))).unwrap_or_default()
                         ));
                         for p in &programs {
-                            out.text(&format!("  program {}  {}", p["program"].as_str().unwrap_or_default(), p["status"].as_str().unwrap_or_default()));
+                            out.text(&format!("  program {}  {}", shown(p["program"].as_str().unwrap_or_default()), shown(p["status"].as_str().unwrap_or_default())));
                         }
-                        shown.push(json!({
+                        listed.push(json!({
                             "module": module,
                             "version": record.newest().version,
                             "roots": record.roots().iter().map(hex::encode).collect::<Vec<_>>(),
@@ -199,15 +207,15 @@ pub fn run(
                         }));
                     }
                     Err(error) => {
-                        out.text(&format!("{module}  (vouches for nothing: {error})"));
-                        shown.push(json!({ "module": module, "error": error.to_string() }));
+                        out.text(&format!("{}  (vouches for nothing: {})", shown(&module), shown(&error.to_string())));
+                        listed.push(json!({ "module": module, "error": error.to_string() }));
                     }
                 }
             }
-            if shown.is_empty() {
+            if listed.is_empty() {
                 out.text(&format!("{name} publishes no apps"));
             }
-            out.json(json!({ "name": name, "apps": shown }));
+            out.json(json!({ "name": name, "apps": listed }));
         }
         AppCmd::Verify { file } => {
             let contents = read_contents(&file)?;
@@ -226,11 +234,12 @@ pub fn run(
             }
             // Never the manifest's version as the published one: only the release's, when proven.
             let line = match &verdict {
-                Verdict::Verified { name, release, .. } => format!(
-                    "verified: {} {} is published by {name} ({})",
+                Verdict::Verified { name, release, record } => format!(
+                    "verified: {} {} is published by {name} ({}){}",
                     manifest.name,
-                    release.version.as_deref().unwrap_or("(no version in the record)"),
-                    if contents.file_sha256().is_some() { "the whole .lgx file" } else { "the installed files and manifest.json" }
+                    shown(release.version.as_deref().unwrap_or("(no version in the record)")),
+                    if contents.file_sha256().is_some() { "the whole .lgx file" } else { "the installed files and manifest.json" },
+                    if record.releases.first() == Some(release) { "" } else { "; an older release the publisher still vouches for, not the newest" }
                 ),
                 Verdict::FilesVerified { name, .. } => format!(
                     "FILES ONLY: {name} vouches for these files (root {}), but its record names nothing that covers {}, so the manifest (its version, dependencies, the rest) is not proven; not verified",
@@ -252,14 +261,14 @@ pub fn run(
                 Verdict::NotPublished { name } => format!("not published: {name} says nothing about {}", manifest.name),
                 Verdict::NoSuchName { name } => format!("no such name: the package claims {name}, which is not registered"),
                 Verdict::Unclaimed => match manifest.claim() {
-                    Err(why) => format!("unclaimed: {} names {:?}, which is {why}", manifest.name, manifest.author),
+                    Err(why) => format!("unclaimed: {} names {:?}, which is {why}", manifest.name, shown(&manifest.author)),
                     Ok(_) => format!("unclaimed: {} does not name an LNS publisher", manifest.name),
                 },
             };
             out.text(&line);
-            let mut shown = verdict.to_json(&contents);
-            shown["forwarded_from"] = json!(via);
-            out.json(shown);
+            let mut result = verdict.to_json(&contents);
+            result["forwarded_from"] = json!(via);
+            out.json(result);
             match verdict.exit_code() {
                 0 => {}
                 1 => crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed),
@@ -269,10 +278,24 @@ pub fn run(
         AppCmd::Get { name, module, out: path, storage_api } => {
             let lns = lns_program(lns)?;
             let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
-            let profile = Names::new(HttpRpc::new(&rpc), lns)
+            if !apps::is_module_name(&module) {
+                bail!("{:?} is not a module name", shown(&module));
+            }
+            let mut names = Names::new(HttpRpc::new(&rpc), lns);
+            let profile = names
                 .profile(&name, now_ms())?
-                .ok_or_else(|| anyhow!("{name} is not a registered LNS name"))?;
-            let name = profile.name.clone();
+                .ok_or_else(|| anyhow!("{} is not a registered LNS name", shown(&name)))?;
+            let asked = profile.name.clone();
+            // The same forwarding as `verify` (SPEC.md §7): a brand name leads to the publisher.
+            let (name, profile) = match apps::forward_of(&asked, &profile) {
+                apps::Forward::None => (asked.clone(), profile),
+                apps::Forward::Ambiguous(why) => bail!("{asked}'s forward is ambiguous ({why}); nothing downloaded"),
+                apps::Forward::To(target) => {
+                    let p = names.profile(&target, now_ms())?.ok_or_else(|| anyhow!("{asked} forwards to {target}, which isn't registered; nothing downloaded"))?;
+                    eprintln!("{asked} forwards to {target}");
+                    (target, p)
+                }
+            };
             let key = format!("{}{module}", apps::APP_KEY_PREFIX);
             let value = match profile.entry(&key) {
                 Entry::One(v) => v,
@@ -283,17 +306,17 @@ pub fn run(
             if record.newest().sha256.is_none() {
                 bail!("unverifiable download: {name}'s record for {module} gives no sha256 of the .lgx, and the package root doesn't cover the manifest; nothing downloaded");
             }
-            let cid = record.cid.clone().ok_or_else(|| anyhow!("{name} gives no Logos Storage CID for {module}; download it from its catalog ({})", record.catalog.as_deref().unwrap_or("none given")))?;
+            let cid = record.cid.clone().ok_or_else(|| anyhow!("{name} gives no Logos Storage CID for {module}; download it from its catalog ({})", shown(record.catalog.as_deref().unwrap_or("none given"))))?;
             eprintln!("fetching {module} ({cid}) from Logos Storage through {storage_api}");
             let bytes = lezreg_sdk::StorageClient::new(&storage_api)
                 .fetch(&cid, MAX_PACKAGE, false)
-                .map_err(|e| anyhow!("Logos Storage didn't give {cid}: {e}"))?;
-            let contents = apps::check_download(&module, &record, &bytes).map_err(|e| anyhow!("{e}; nothing written"))?;
+                .map_err(|e| anyhow!("Logos Storage didn't give {cid}: {}", shown(&e.to_string())))?;
+            let contents = apps::check_download(&module, &[&asked, &name], &record, &bytes).map_err(|e| anyhow!("{e}; nothing written"))?;
             std::fs::write(&path, &bytes).with_context(|| format!("cannot write {}", path.display()))?;
             let version = record.newest().version.clone();
             out.text(&format!(
                 "{module} {} from {name}: checked (sha256 matches, files match the root), written to {}",
-                version.as_deref().unwrap_or("(no version in the record)"),
+                shown(version.as_deref().unwrap_or("(no version in the record)")),
                 path.display()
             ));
             out.json(json!({"name": name, "module": module, "version": version, "cid": cid, "bytes": bytes.len(), "root": hex::encode(contents.root), "out": path}));
@@ -336,7 +359,7 @@ pub fn run(
                 let name_on_storage = format!("{}-{}.lgx", manifest.name, manifest.version);
                 let cid = lezreg_sdk::StorageClient::new(&storage_api)
                     .upload_as(&name_on_storage, "application/octet-stream", &bytes)
-                    .map_err(|e| anyhow!("uploading to {storage_api}: {e}"))?;
+                    .map_err(|e| anyhow!("uploading to {storage_api}: {}", shown(&e.to_string())))?;
                 eprintln!("uploaded {name_on_storage} to Logos Storage: {cid} (keep your node online, or pin it elsewhere, so others can fetch it)");
                 Some(cid)
             } else {
@@ -351,9 +374,35 @@ pub fn run(
             let record = AppRecord { releases, catalog, cid, programs };
             let value = record.to_value()?;
             let key = format!("{}{}", apps::APP_KEY_PREFIX, manifest.name);
-            out.text(&format!("names set-text {name} {key} '{value}'"));
+            // Printed to be pasted into a shell: the value is single-quoted with every quote in it
+            // escaped, so no record content can end the quoting (review 3, B-3).
+            out.text(&format!("names set-text {name} {key} {}", shell_quote(&value)));
             out.json(json!({ "name": name, "key": key, "value": value, "root": hex::encode(contents.root) }));
         }
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review 3, B-3: whatever a record holds, the printed `set-text` line pastes as one word.
+    #[test]
+    fn hostile_values_stay_one_shell_word() {
+        for hostile in [
+            r#"{"v":1,"version":"1.2.0'$(id>/tmp/lezreg-pwned)'"}"#,
+            "it's",
+            "'",
+            "''",
+            "a'\\''b",
+            "$(touch /tmp/lezreg-pwned) `id` ; | & > < * ? ~ \" \\ \n !",
+            "",
+        ] {
+            let out = std::process::Command::new("sh").arg("-c").arg(format!("printf %s {}", shell_quote(hostile))).output().unwrap();
+            assert_eq!(String::from_utf8(out.stdout).unwrap(), hostile, "{hostile:?}");
+        }
+        assert!(!std::path::Path::new("/tmp/lezreg-pwned").exists());
+    }
+}
+
