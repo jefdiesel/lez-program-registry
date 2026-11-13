@@ -66,6 +66,8 @@ unauthorised deployer-entry attempt being rejected (step `F3.c` onwards). Each c
 heading, each step prints PASS, FAIL or SKIP, and a summary table comes at the end. The exit code
 is nonzero if any step fails.
 - The source-verification rebuild needs Docker. Without Docker it is reported as SKIP, not PASS.
+- On arm64 hosts the rebuild is also skipped unless you pass `--verify`, because the amd64
+  builder image runs emulated there (slowly, and with about 8 GB of Docker memory).
 - The JS SDK step needs node 19 or later.
 
 The transcript of a real run is [`docs/demo.log`](docs/demo.log), and the criterion-by-criterion

@@ -41,6 +41,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 E2E=$ROOT/.github/workflows/e2e.yml
 MODE=local
 VERIFY=auto
+VERIFY_WHY=""
 PREPARE_ONLY=0
 KEEP=0
 T_RPC=${LEZREG_TESTNET_RPC:-}
@@ -228,7 +229,9 @@ prereqs() {
       fi
     done
   fi
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then HAVE_DOCKER=1; echo "   ok   docker (the source-verification rebuild)"
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    HAVE_DOCKER=1; echo "   ok   docker (the source-verification rebuild)"
+    case "$(uname -m)" in arm64|aarch64) if [ "$VERIFY" = auto ]; then VERIFY=off; VERIFY_WHY="Docker on $(uname -m) runs the amd64 builder emulated (slow, about 8 GB of Docker memory); pass --verify to run it"; echo "   --   $VERIFY_WHY"; fi ;; esac
   else HAVE_DOCKER=0; echo "   --   no usable docker: the source-verification rebuild is SKIPPED$([ "$VERIFY" = on ] && echo ' and --verify makes that a FAIL')"; fi
   HAVE_NODE=0
   if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 19 ]; then HAVE_NODE=1; echo "   ok   node $(node --version) (the JS SDK step)"
@@ -396,10 +399,11 @@ local_demo() {
     --label "Demo Labs" --description "sample program for the LP-0023 demo (the registry guest deployed again)" \
     --tag sample --tag demo --idl-cid push --idl-file "$REG_IDL" \
     --repo "$REPO_URL" --commit "$COMMIT" --manifest-path methods/guest/Cargo.toml --binary lez_program_registry \
-    --lock-file "$ROOT/Cargo.lock" 2>"$OUT/deploy-x.err")
+    --lock-file "$ROOT/Cargo.lock" 2>"$OUT/deploy-x.err"); rc=$?
   printf '%s\n' "$OUTX" | python3 -m json.tool 2>/dev/null | sed 's/^/   | /' | head -30
   X=$(printf '%s' "$OUTX" | jget program)
-  [ -n "$X" ] || { cat "$OUT/deploy-x.err"; fatal F2.a "deploy and register the sample program X"; }
+  # `program` is printed even by a deploy that failed after its key was saved: gate on the exit code.
+  [ $rc -eq 0 ] && [ -n "$X" ] || { cat "$OUT/deploy-x.err"; fatal F2.a "deploy and register the sample program X (exit $rc)"; }
   record F2.a PASS "X=$X deployed and registered in one transaction (DeployAndRegister)"
   lz show "$X"
   "$LEZREG" --json show "$X" >"$OUT/x.json"
@@ -431,8 +435,9 @@ sys.exit(not(d["program"]==x and d["deployer_entry"]["kind"]=="deployer" and t["
   note "Mallory gets funds, then tries to create the deployer entry of a program she did not deploy."
   lz wallet auth-transfer send --from "Public/$PAYER" --to-pk "$M_PK" --amount 20000000 2>&1 | grep -E "^Transaction (hash|is included)" | sed 's/^/   | /'
   printf '$ lezreg deploy artifacts/lez_program_registry.bin --no-register --payer %s --json   # X3: deployed, not registered\n' "$PAYER"
-  X3=$("$LEZREG" --json deploy "$SAMPLE_BIN" --no-register --payer "$PAYER" 2>"$OUT/deploy-x3.err" | jget program)
-  [ -n "$X3" ] || { cat "$OUT/deploy-x3.err"; fatal F3.c "deploy target program X3"; }
+  OUTX=$("$LEZREG" --json deploy "$SAMPLE_BIN" --no-register --payer "$PAYER" 2>"$OUT/deploy-x3.err"); rc=$?
+  X3=$(printf '%s' "$OUTX" | jget program)
+  [ $rc -eq 0 ] && [ -n "$X3" ] || { cat "$OUT/deploy-x3.err"; fatal F3.c "deploy target program X3 (exit $rc)"; }
   note "X3=$X3 (its header key is in the demo wallet, not Mallory's)"
   LEE_WALLET_HOME_DIR=$OUT/mallory refused F3.c "UNAUTHORISED: Mallory's RegisterDeployer for X3 is refused before sending (simulation)" "must sign" \
     register --program "$X3" --author "$M" --payer "$M" --name demo-sample --version 6.6.6 --label "totally the deployer" \
@@ -530,7 +535,7 @@ sys.exit(not(s["repo"] and len(s["commit"])==40 and b["image_digest"].strip("0")
       pyck 'import json,sys; d=json.load(open(sys.argv[1])); print("   verdict", d.get("verdict"), d.get("rebuilt")); sys.exit(d.get("verdict")!="Match")' "$OUT/verify.json"
     ok F7.c "lezreg verified lists the local mark" lz verified
   else
-    local why="no usable Docker on this machine"; [ "$VERIFY" = off ] && why="--no-verify"
+    local why="no usable Docker on this machine"; [ "$VERIFY" = off ] && why=${VERIFY_WHY:---no-verify}
     if [ "$VERIFY" = on ]; then record F7.b FAIL "lezreg verify REG (Docker rebuild): $why, and --verify requires it"
     else record F7.b SKIP "lezreg verify REG (Docker rebuild): $why. NOT rebuilt here"; fi
     note "What was NOT done here: no rebuild of the source. What CI does on every push to main: repro.yml rebuilds the guest"
@@ -694,7 +699,9 @@ print("   walked", n, "of", d["total"]); sys.exit(n!=d["total"])' "$LEZREG"
   ok T5 "search by proven author (the registry's own header key)" lz search author "$REG"
   criterion "F5/U1  IDL on Storage, through the SDK worked example" ""
   if [ -n "$T_STORAGE" ]; then
-    ok T6 "lezreg idl get REG (hash-checked)" sh -c '"$1" idl get "$2" --storage-api "$3" | head -5' _ "$LEZREG" "$REG" "$T_STORAGE"
+    lzj "$OUT/t6.json" idl get "$REG" --storage-api "$T_STORAGE"
+    ok T6 "lezreg idl get REG: fetched from Storage and hash-checked against the chain" \
+      pyck 'import json,sys; d=json.load(open(sys.argv[1])); print("   status", d.get("status"), "format", d.get("format"), "cid", d.get("cid")); sys.exit(d.get("status")!="ok")' "$OUT/t6.json"
     "$EXAMPLE" "$T_RPC" "$REG" "$P" "$T_STORAGE" >"$OUT/t7.txt" 2>&1; rc=$?; sed 's/^/   | /' "$OUT/t7.txt"
     ok T7 "SDK example: metadata, freshness and IDL" sh -c '[ "$1" -eq 0 ] && grep -qE "IDL: [0-9]+ instructions" "$2"' _ $rc "$OUT/t7.txt"
   else record T6 SKIP "no --storage-api given"; record T7 SKIP "no --storage-api given"; fi
@@ -705,7 +712,7 @@ print("   walked", n, "of", d["total"]); sys.exit(n!=d["total"])' "$LEZREG"
   if [ "$HAVE_DOCKER" = 1 ] && [ "$VERIFY" != off ]; then
     ok T9 "lezreg verify $P says Match" sh -c '"$1" --json verify "$2" --mark --work "$3" | tee /dev/stderr | python3 -c "import json,sys; sys.exit(json.load(sys.stdin).get(\"verdict\")!=\"Match\")"' _ "$LEZREG" "$P" "$OUT/verify"
   elif [ "$VERIFY" = on ]; then record T9 FAIL "verify needs Docker"
-  else record T9 SKIP "verify: no usable Docker here"; fi
+  else record T9 SKIP "verify: ${VERIFY_WHY:-no usable Docker here}"; fi
 }
 
 main() {
