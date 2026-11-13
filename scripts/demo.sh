@@ -211,7 +211,13 @@ prereqs() {
     else echo "   MISSING the RISC Zero toolchain: $hint"; miss=1; fi
   fi
   if [ "$MODE" = local ]; then
-    if command -v r0vm >/dev/null 2>&1 || [ -x "${RISC0_SERVER_PATH:-}" ]; then echo "   ok   r0vm executor (every lezreg write is simulated with it first)"
+    # risc0 finds r0vm on PATH, at RISC0_SERVER_PATH, or in rzup's own extension directory (where
+    # rzup leaves it on Linux, without a ~/.cargo/bin link).
+    local r0
+    r0=$(command -v r0vm 2>/dev/null || true)
+    [ -n "$r0" ] || { [ -x "${RISC0_SERVER_PATH:-}" ] && r0=$RISC0_SERVER_PATH; }
+    [ -n "$r0" ] || r0=$(ls -d "$HOME"/.risc0/extensions/v*-cargo-risczero-*/r0vm 2>/dev/null | tail -1)
+    if [ -n "$r0" ] && [ -x "$r0" ]; then echo "   ok   r0vm executor at $r0 (every lezreg write is simulated with it first)"
     else echo "   MISSING r0vm (lezreg simulates every write with it): $hint ; then keep ~/.cargo/bin on PATH, or set RISC0_SERVER_PATH"; miss=1; fi
     if [ "$PLATFORM" != darwin-arm64 ] && [ "$(uname -s)" = Linux ]; then
       if pkg-config --exists libpcsclite 2>/dev/null; then echo "   ok   libpcsclite (the LEZ wallet's Keycard support)"
