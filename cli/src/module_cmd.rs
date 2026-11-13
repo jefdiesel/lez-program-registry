@@ -36,6 +36,8 @@ pub struct Change {
     pub accounts: Vec<Actor>,
     pub signers: Vec<AccountId>,
     pub entry: Option<AccountId>,
+    /// The most gas the change may declare (what its confirm card promised).
+    pub max_gas: Option<u64>,
 }
 
 fn account(v: &Value, what: &str) -> Result<AccountId> {
@@ -79,7 +81,26 @@ pub fn parse_change(text: &str, rpc: &str, registry: &AccountId) -> Result<Chang
         Value::Null => None,
         e => Some(account(e, "entry")?),
     };
-    Ok(Change { root, message, accounts: actors, signers, entry })
+    let max_gas = v["max_gas"].as_u64();
+    Ok(Change { root, message, accounts: actors, signers, entry, max_gas })
+}
+
+/// `module send` has no terminal to ask for a password on: an encrypted wallet without
+/// LEE_WALLET_PASSWORD in the environment is refused before anything else, by name.
+pub fn refuse_locked_wallet() -> Result<()> {
+    let storage = wallet::utils::fetch_persistent_storage_path()?;
+    if !storage.exists() || !wallet::storage::Storage::is_encrypted(&storage).unwrap_or(false) {
+        return Ok(());
+    }
+    if std::env::var(wallet::PASSWORD_ENV_VAR).is_ok_and(|p| !p.is_empty()) {
+        return Ok(());
+    }
+    bail!(
+        "the lezreg wallet at {} is encrypted, and `lezreg module send` has no terminal to ask for its password: nothing was signed (wallet_locked). \
+         Sign from a terminal with the lezreg commands instead, or give lezreg its password in {} (every module the same process starts can read that variable)",
+        storage.display(),
+        wallet::PASSWORD_ENV_VAR
+    )
 }
 
 /// Reads the change from stdin.

@@ -62,8 +62,9 @@ fn tx_timeout() -> std::time::Duration {
 }
 
 /// A simulation error that means the risc0 executor (`r0vm`) could not be started.
-fn simulation_error(e: impl std::fmt::Display) -> Error {
-    let m = e.to_string();
+/// `LEZREG_DEBUG=1` adds the engine's full error (which rule a program broke).
+fn simulation_error(e: impl std::fmt::Display + std::fmt::Debug) -> Error {
+    let m = if std::env::var_os("LEZREG_DEBUG").is_some() { format!("{e}: {e:?}") } else { e.to_string() };
     if m.contains("No such file or directory") || m.contains("r0vm") {
         Error::Config(format!(
             "simulation needs the risc0 executor `r0vm`, which was not found ({m}). Install it with `rzup install cargo-risczero 3.0.5` \
@@ -183,6 +184,9 @@ pub struct SendOpts {
     /// Send even if simulation refuses (or skip the client-side pre-checks), with this gas
     /// limit. For demonstrating on-chain refusals; the payer is charged the whole limit.
     pub force_gas: Option<u64>,
+    /// Refuse (send nothing) if the gas limit would be above this: a change prepared elsewhere
+    /// carries the cap its confirm card promised.
+    pub max_gas: Option<u64>,
 }
 
 /// What a transaction did.
@@ -234,6 +238,9 @@ impl Receipt {
 pub struct Writer {
     w: WalletCore<SequencerClient>,
     reg: AccountId,
+    /// Registry images this writer will sign for (DESIGN §10): a transaction is signed only when
+    /// the program at `reg` runs one of these.
+    images: Vec<[u8; 32]>,
     program: Option<Program>,
     checked: bool,
     wrote: bool,
@@ -246,11 +253,21 @@ impl Writer {
         Self {
             w,
             reg,
+            images: vec![crate::REGISTRY_IMAGE],
             program: None,
             checked: false,
             wrote: false,
             log: Box::new(|m| eprintln!("{m}")),
         }
+    }
+
+    /// Also signs for a registry running `image` (a newer release the user deployed or trusts).
+    /// By default only [`crate::REGISTRY_IMAGE`], the committed reproducible build, is trusted.
+    pub fn trust_registry_image(&mut self, image: [u8; 32]) {
+        if !self.images.contains(&image) {
+            self.images.push(image);
+        }
+        self.checked = false;
     }
 
     /// Sends progress lines somewhere else.
@@ -398,8 +415,23 @@ impl Writer {
                 self.reg
             ))
         };
-        if self.header(self.reg).await?.is_none() {
+        let Some(header) = self.header(self.reg).await? else {
             return Err(not("no program is deployed there"));
+        };
+        // The id alone proves nothing: any program can answer with a self-entry named
+        // lez_program_registry, and a program the user's signed accounts are declared for can
+        // move their native balance (M6 review E). Sign only for registry code we know.
+        let live = image_bytes(&header.image_id);
+        if !self.images.contains(&live) {
+            return Err(Error::Config(format!(
+                "{} runs image {}, which is not a LEZ Program Registry image lezreg trusts ({}): nothing was signed. \
+                 If you deployed or verified a newer registry yourself, pin its image with \
+                 `lezreg network set <network> --registry-image {}` (or LEZREG_REGISTRY_IMAGE)",
+                self.reg,
+                hex::encode(live),
+                self.images.iter().map(hex::encode).collect::<Vec<_>>().join(", "),
+                hex::encode(live)
+            )));
         }
         match self.entry(self.reg).await {
             Ok(Some(e)) if e.name == "lez_program_registry" && e.program == tid(&self.reg) => {}
@@ -692,6 +724,13 @@ impl Writer {
             }
             (Err(e), None) => return Err(e.clone()),
         };
+        if let Some(cap) = opts.max_gas
+            && limit > cap
+        {
+            return Err(Error::Refused(format!(
+                "this change needs a gas limit of {limit}, above the {cap} it was prepared with: nothing was sent"
+            )));
+        }
         if let Some(m) = missing.first()
             && opts.force_gas.is_none()
         {

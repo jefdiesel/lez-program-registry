@@ -485,6 +485,10 @@ enum NetworkCmd {
         rpc: Option<String>,
         #[arg(long)]
         registry: Option<String>,
+        /// Also trust a registry running this image (64 hex characters): lezreg signs registry
+        /// calls only for the committed reproducible build unless you pin another image here.
+        #[arg(long)]
+        registry_image: Option<String>,
         /// Save the registry id even if it cannot be checked or does not look like a registry.
         #[arg(long)]
         force: bool,
@@ -567,6 +571,7 @@ fn send_opts(opts: &WriteOpts) -> Result<SendOpts> {
         payer: opts.payer.as_deref().map(parse_account).transpose()?,
         dry_run: opts.dry_run,
         force_gas: opts.force_send.then_some(opts.gas_limit),
+        max_gas: None,
     })
 }
 
@@ -650,7 +655,11 @@ async fn writer_for(net: &Net, opts: &WriteOpts, need_registry: bool) -> Result<
         net.registry().unwrap_or_default()
     };
     let w = out::quietly(|| async { open_wallet(&rpc).await }).await?;
-    Ok(Writer::new(w, lid(&reg)))
+    let mut writer = Writer::new(w, lid(&reg));
+    for image in &net.registry_images {
+        writer.trust_registry_image(*image);
+    }
+    Ok(writer)
 }
 
 /// Runs the bundled LEZ wallet CLI (LNS pattern), always against the network's sequencer:
@@ -862,12 +871,14 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                     config::path()
                         .map_or_else(|| "(no config dir)".into(), |p| p.display().to_string())
                 ));
-                out.json(json!({"network": net.name, "rpc": net.rpc, "registry": net.registry.map(|r| r.to_base58())}));
+                out.json(json!({"network": net.name, "rpc": net.rpc, "registry": net.registry.map(|r| r.to_base58()),
+                                "trusted_registry_images": std::iter::once(lezreg_sdk::REGISTRY_IMAGE).chain(net.registry_images.iter().copied()).map(hex::encode).collect::<Vec<_>>()}));
             }
             NetworkCmd::Set {
                 name,
                 rpc,
                 registry,
+                registry_image,
                 force,
             } => {
                 if let Some(reg) = &registry
@@ -881,7 +892,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                     let target = target.ok_or_else(|| anyhow!("network '{name}' has no RPC to check the registry on: pass --rpc (or --force)"))?;
                     check_registry(&target, &reg)?;
                 }
-                let p = config::set(&name, rpc.as_deref(), registry.as_deref())?;
+                let p = config::set(&name, rpc.as_deref(), registry.as_deref(), registry_image.as_deref())?;
                 out.text(&format!("saved network '{name}' in {}", p.display()));
                 out.json(json!({"saved": name, "file": p.display().to_string()}));
             }
@@ -1282,7 +1293,12 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             cmd: module_cmd::ModuleCmd::Send { opts },
         } => {
             let change = module_cmd::read_change(&net)?;
+            module_cmd::refuse_locked_wallet()?;
             let mut w = writer(&net, &opts).await?;
+            let so = SendOpts {
+                max_gas: change.max_gas,
+                ..send_opts(&opts)?
+            };
             let receipt = w
                 .send_prepared(
                     change.root,
@@ -1290,7 +1306,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                     &change.accounts,
                     &change.signers,
                     change.entry,
-                    &send_opts(&opts)?,
+                    &so,
                 )
                 .await?;
             render::receipt(out, &receipt);
@@ -1424,6 +1440,7 @@ mod tests {
             name: "testnet".into(),
             rpc: None,
             registry: None,
+            registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["check-health".into()], Ok(net))
             .await
@@ -1443,6 +1460,7 @@ mod tests {
             name: "local".into(),
             rpc: Some("http://127.0.0.1:3062".into()),
             registry: None,
+            registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["change-network".into(), "testnet".into()], Ok(net))
             .await
@@ -1452,6 +1470,7 @@ mod tests {
             name: "x".into(),
             rpc: Some("http://192.168.1.50:3062".into()),
             registry: None,
+            registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["auth-transfer".into(), "send".into()], Ok(net))
             .await

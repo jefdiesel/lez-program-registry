@@ -271,6 +271,7 @@ mod tests {
             name: "x".into(),
             rpc: Some("http://127.0.0.1:9".into()),
             registry: None,
+            registry_images: Vec::new(),
         };
         let checks = run_checks(&net, "http://127.0.0.1:9/api/storage/v1");
         let get = |n: &str| checks.iter().find(|c| c.name == n).map(|c| c.level);
@@ -285,6 +286,7 @@ mod tests {
                 name: "testnet".into(),
                 rpc: None,
                 registry: None,
+                registry_images: Vec::new(),
             },
             "http://127.0.0.1:9/api/storage/v1",
         );

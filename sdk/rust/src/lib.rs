@@ -55,6 +55,32 @@ pub use read::{
 pub use rpc::{AccountStates, HttpRpc, MockRpc, Rpc};
 pub use storage::StorageClient;
 
+/// The image id of the registry program this repository builds reproducibly
+/// (`artifacts/lez_program_registry.imageid`; `tests/registry_image.rs` keeps them equal): the
+/// code a writer signs registry calls for by default. A literal, not `include_str!`: crates that
+/// take this SDK by git rev get only its own directory.
+pub const REGISTRY_IMAGE_HEX: &str = "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc";
+pub const REGISTRY_IMAGE: [u8; 32] = parse_image(REGISTRY_IMAGE_HEX);
+
+const fn parse_image(text: &str) -> [u8; 32] {
+    const fn nibble(c: u8) -> u8 {
+        match c {
+            b'0'..=b'9' => c - b'0',
+            b'a'..=b'f' => c - b'a' + 10,
+            _ => panic!("artifacts/lez_program_registry.imageid is not lowercase hex"),
+        }
+    }
+    let b = text.as_bytes();
+    assert!(b.len() >= 64, "artifacts/lez_program_registry.imageid is not 64 hex characters");
+    let mut out = [0u8; 32];
+    let mut i = 0;
+    while i < 32 {
+        out[i] = nibble(b[2 * i]) << 4 | nibble(b[2 * i + 1]);
+        i += 1;
+    }
+    out
+}
+
 /// A network: a sequencer and the registry's program id on it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Network {
