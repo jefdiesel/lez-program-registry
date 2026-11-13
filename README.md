@@ -134,7 +134,7 @@ machine.
 ```sh
 lezreg wallet account new public          # prints Public/<id> and its pk
 lezreg wallet account ls
-lezreg wallet auth-transfer send --from Public/<funded> --to-pk <pk of a new account> --amount 5000000
+lezreg wallet auth-transfer send --from Public/<funded> --to-pk <pk of a new account> --amount 40000000
 lezreg wallet set-password                # encrypt the wallet
 ```
 
@@ -143,12 +143,20 @@ so when it creates one. Encrypt it with `lezreg wallet set-password` before it h
 program's header key. `account ls` on a new wallet also lists a public and a private account
 the wallet derives for itself, with paths like `/0/0/0`; you can ignore them.
 
-**How much to fund.** On the local rc1 sequencer a register reserves about 3–3.5M while it
-runs (it costs about 1.4M), and deploying a 330 KB program plus registering it reserves up to
-about 5.3M (it costs about 3.9M). Run the command with `--dry-run` first: it prints the reserve
-for the payer you chose. A refusal for funds says how much more to send. Since rc3 the loader
-charges 1 gas per byte it reads, so on rc3 a deploy costs more than these rc1 figures: about
-another 100k gas per segment write and the program's size in gas for the `CreateHeader`.
+**How much to fund.** These figures were measured on a local rc3 sequencer at base fees 8/8
+(docs/CYCLES.md). The payer must hold the reserve while the command runs, and spends less:
+
+| | Must hold | Spends |
+|---|---:|---:|
+| (a) register a program that is already deployed | ~2.6M | ~1.5M |
+| (b) deploy and register a ~430 KB program | ~17.4M | ~10.5M |
+| (b) deploy and register a ~1 MB program | ~37.4M | ~24.7M |
+| (c) update an entry | ~1.3M | ~0.75M |
+
+Since rc3 the loader charges 1 gas per byte it reads. A deploy therefore costs about 24 per
+byte of program: the segment bytes, plus the loader reading them. Registering and updating cost
+the same whatever the program's size. Run the command with `--dry-run` first: it prints the
+reserve for the payer you chose. A refusal for funds says how much more to send.
 
 ### Writes
 

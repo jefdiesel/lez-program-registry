@@ -18,7 +18,13 @@ risc0-binfmt.workspace = true
 risc0-zkos-v1compat = "2.2.2"
 sha2.workspace = true
 borsh.workspace = true
+risc0-zkvm.workspace = true
+serde_json.workspace = true
 
 [[bin]]
 name = "lezreg-imageid"
 path = "src/bin/imageid.rs"
+
+[[bin]]
+name = "lezreg-cycles"
+path = "src/bin/cycles.rs"

@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use borsh::BorshSerialize;
 use lee::{
-    PrivateKey, PublicKey, PublicTransaction, V03State, ValidatedStateDiff,
+    FeeDeclaration, PrivateKey, PublicKey, PublicTransaction, V03State, ValidatedStateDiff,
     program::{DEFAULT_PUBLIC_CYCLE_BUDGET, Program},
     public_transaction::{Message as TxMessage, WitnessSet},
 };
@@ -18,6 +18,9 @@ use lee_core::{
 use lezreg_program::{Instruction, actors_to_declare};
 use lezreg_types::{self as t, BuildConfig, ContentRef, SourceRef};
 use program_loader_core::Message as LoaderMessage;
+
+pub mod bench;
+pub mod cycles;
 
 /// Block timestamp used by default (ms).
 pub const T0: u64 = 1_800_000_000_000;
@@ -74,11 +77,33 @@ pub struct Engine {
     pub block: u64,
     /// `(what, cycles, tx bytes)` of every applied transaction, for the report.
     pub meter: Vec<(String, u64, usize)>,
+    /// Declare a fee (payer = the first signer) as a real client does, so `tx_bytes` is the
+    /// size a charged transaction has. Execution ignores it; the engine charges nothing.
+    pub declare_fee: bool,
+    /// The guest ELF run at each program id seeded in `new` (for `bench`).
+    pub elfs: BTreeMap<AccountId, &'static [u8]>,
 }
 
+/// The registry guest built from this checkout by the local risc0 toolchain.
 #[must_use]
 pub fn registry_elf() -> &'static [u8] {
     lezreg_methods::LEZ_PROGRAM_REGISTRY_ELF
+}
+
+/// The committed reproducible registry binary (`artifacts/lez_program_registry.bin`), the bytes
+/// deployed on chain. Its cycle counts do not depend on the machine that runs the test.
+#[must_use]
+pub fn artifact_elf() -> &'static [u8] {
+    include_bytes!("../../../artifacts/lez_program_registry.bin")
+}
+
+/// The ~430 KB and ~1 MB deploy-size fixtures (`helper-methods/guest/src/bin/lezreg_ballast_*`).
+#[must_use]
+pub fn ballast_elfs() -> [(&'static str, &'static [u8]); 2] {
+    [
+        ("ballast_430k", lezreg_helper_methods::LEZREG_BALLAST_430K_ELF),
+        ("ballast_1m", lezreg_helper_methods::LEZREG_BALLAST_1M_ELF),
+    ]
 }
 
 #[must_use]
@@ -105,18 +130,26 @@ impl Engine {
     /// forwarder test program at each of `forwarders`, and `funded` existing public accounts.
     #[must_use]
     pub fn new(reg: AccountId, forwarders: &[AccountId], funded: &[AccountId]) -> Self {
-        let mut programs = vec![(reg, Program::new(registry_elf().to_vec().into()).expect("the registry guest loads"))];
+        Self::with_registry(registry_elf(), reg, forwarders, funded)
+    }
+
+    /// [`Self::new`] with the given registry binary (e.g. [`artifact_elf`]).
+    #[must_use]
+    pub fn with_registry(registry: &'static [u8], reg: AccountId, forwarders: &[AccountId], funded: &[AccountId]) -> Self {
+        let mut programs = vec![(reg, Program::new(registry.to_vec().into()).expect("the registry guest loads"))];
+        let mut elfs = BTreeMap::from([(reg, registry)]);
         for f in forwarders {
             programs.push((*f, Program::new(forwarder_elf().to_vec().into()).expect("the forwarder loads")));
+            elfs.insert(*f, forwarder_elf());
         }
         let state = V03State::new().with_named_programs(programs).with_public_account_balances(funded.iter().map(|a| (*a, 1_000_000)));
-        Self { state, reg, block: 0, meter: Vec::new() }
+        Self { state, reg, block: 0, meter: Vec::new(), declare_fee: false, elfs }
     }
 
     /// An empty state with nothing deployed; the registry is deployed later through the loader.
     #[must_use]
     pub fn empty(reg: AccountId) -> Self {
-        Self { state: V03State::new(), reg, block: 0, meter: Vec::new() }
+        Self { state: V03State::new(), reg, block: 0, meter: Vec::new(), declare_fee: false, elfs: BTreeMap::new() }
     }
 
     /// Makes accounts exist (with a balance), as if funded earlier.
@@ -130,8 +163,30 @@ impl Engine {
         Actor::new(account, self.reg)
     }
 
-    fn nonce(&self, id: AccountId) -> Nonce {
+    #[must_use]
+    pub fn nonce(&self, id: AccountId) -> Nonce {
         self.state.get_account_by_id_ref(id).map_or(Nonce(0), |a| a.nonce)
+    }
+
+    /// Builds and signs one public transaction (no admission evidence, ever).
+    #[must_use]
+    pub fn build_tx(&self, root: Actor, message: Vec<u8>, actors: Vec<Actor>, signers: &[&Key]) -> PublicTransaction {
+        let mut declared: Vec<Actor> = Vec::new();
+        for a in std::iter::once(root).chain(actors) {
+            if !declared.contains(&a) {
+                declared.push(a);
+            }
+        }
+        let nonces: BTreeMap<AccountId, Nonce> = signers.iter().map(|k| (k.id, self.nonce(k.id))).collect();
+        let fee = self
+            .declare_fee
+            .then(|| FeeDeclaration::new(signers[0].id, DEFAULT_PUBLIC_CYCLE_BUDGET, 0, u128::from(u64::MAX)));
+        let tx = TxMessage::new(root, message, declared, nonces, fee, Vec::new());
+        let keys: Vec<&PrivateKey> = signers.iter().map(|k| &k.key).collect();
+        let witness = WitnessSet::for_message(&tx, &keys);
+        let tx = PublicTransaction::new(tx, witness);
+        assert!(tx.message.admission_evidence.is_empty());
+        tx
     }
 
     /// Builds, signs and applies one public transaction in a new block (or `same_block`).
@@ -144,25 +199,18 @@ impl Engine {
         same_block: bool,
         now: u64,
     ) -> Result<Applied, String> {
-        let mut declared: Vec<Actor> = Vec::new();
-        for a in std::iter::once(root).chain(actors) {
-            if !declared.contains(&a) {
-                declared.push(a);
-            }
-        }
-        let nonces: BTreeMap<AccountId, Nonce> = signers.iter().map(|k| (k.id, self.nonce(k.id))).collect();
-        // No admission evidence, ever.
-        let tx = TxMessage::new(root, message, declared, nonces, None, Vec::new());
-        let keys: Vec<&PrivateKey> = signers.iter().map(|k| &k.key).collect();
-        let witness = WitnessSet::for_message(&tx, &keys);
-        let tx = PublicTransaction::new(tx, witness);
-        assert!(tx.message.admission_evidence.is_empty());
-        let tx_bytes = borsh::to_vec(&tx).expect("borsh").len();
+        let tx = self.build_tx(root, message, actors, signers);
+        self.apply_tx(&tx, same_block, now)
+    }
+
+    /// Applies a built transaction in a new block (or `same_block`).
+    pub fn apply_tx(&mut self, tx: &PublicTransaction, same_block: bool, now: u64) -> Result<Applied, String> {
+        let tx_bytes = borsh::to_vec(tx).expect("borsh").len();
         if !same_block || self.block == 0 {
             self.block += 1;
         }
         let (diff, charge) = ValidatedStateDiff::from_public_transaction_with_cycle_budget(
-            &tx,
+            tx,
             &self.state,
             self.block,
             now,

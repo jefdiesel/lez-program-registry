@@ -1,0 +1,350 @@
+diff -ru a/tools/cycle_bench/Cargo.toml b/tools/cycle_bench/Cargo.toml
+--- a/tools/cycle_bench/Cargo.toml	2026-11-13 09:52:39
++++ b/tools/cycle_bench/Cargo.toml	2026-11-13 09:53:32
+@@ -21,6 +21,8 @@
+ rand.workspace = true
+ test_guest_core.workspace = true
+ test_programs.workspace = true
++program_loader_core.workspace = true
++hex.workspace = true
+ programs.workspace = true
+ 
+ risc0-zkvm.workspace = true
+diff -ru a/tools/cycle_bench/src/main.rs b/tools/cycle_bench/src/main.rs
+--- a/tools/cycle_bench/src/main.rs	2026-11-13 09:52:39
++++ b/tools/cycle_bench/src/main.rs	2026-11-13 09:53:32
+@@ -10,6 +10,13 @@
+ //!
+ //! Run with `cargo run --release -p cycle_bench`. `RISC0_DEV_MODE` has no effect on
+ //! executor cycle counts.
++//!
++//! External programs: `--elf <program account id hex>=<program.bin>` registers a guest, and
++//! `--case <case.json>` adds an operation on it (root, declared actors with their pre-states and
++//! authorization, the message, and any loader states the program loader may read). A loader
++//! transition is run as settlement runs it (`run_program_loader`): as Rust, charged
++//! `LOADER_CYCLES_PER_BYTE` (1) per loader actor state byte read; it is reported in its own
++//! table, outside the calibration fit.
+ 
+ #![expect(
+     clippy::arithmetic_side_effects,
+@@ -25,8 +32,10 @@
+ )]
+ 
+ use std::{
++    cell::Cell,
+     collections::{HashMap, HashSet},
+     path::PathBuf,
++    rc::Rc,
+     time::Instant,
+ };
+ 
+@@ -45,10 +54,10 @@
+     },
+     from_frame,
+     native_token::{self, NATIVE_TOKEN_PROGRAM_ID, encode_balance},
+-    program::{MessageData, ReceiveInput, Transition},
++    program::{MessageData, PROGRAM_LOADER_ACCOUNT_ID, ReceiveInput, Transition},
+ };
+ use risc0_zkvm::{ExecutorEnv, default_executor, default_prover};
+-use serde::Serialize;
++use serde::{Deserialize, Serialize};
+ use test_guest_core::Script;
+ 
+ /// Two points fit a line exactly, making R² 1.0 by construction and the slope pure noise.
+@@ -74,8 +83,33 @@
+     /// discarded as warmup, remaining N feed the stats.
+     #[arg(long, default_value_t = 5)]
+     exec_iters: usize,
++
++    /// An external program's guest: `<program account id, 64 hex>=<path to the program
++    /// binary>`. Repeatable.
++    #[arg(long = "elf", value_name = "ID=PATH")]
++    elfs: Vec<String>,
++
++    /// An external case (JSON: `label`, `root`, `message`, `actors`, optional `loader_states`
++    /// and `expected_rows`). Repeatable; runs after the built-in cases.
++    #[arg(long = "case", value_name = "FILE")]
++    cases: Vec<PathBuf>,
+ }
+ 
++/// Charged per loader actor state byte read; `LOADER_CYCLES_PER_BYTE` in
++/// `lee/state_machine/src/validated_state_diff/mod.rs`, which is private there.
++const LOADER_CYCLES_PER_BYTE: u64 = 1;
++
++/// External guests by program account id.
++type External = Rc<HashMap<AccountId, (&'static str, Program)>>;
++
++/// One loader transition: the bytes it read and the gas settlement charges for them.
++#[derive(Debug, Serialize)]
++struct LoaderResult {
++    instruction: String,
++    bytes_read: u64,
++    gas: u64,
++}
++
+ #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+ #[serde(rename_all = "snake_case")]
+ enum Phase {
+@@ -241,6 +275,10 @@
+     root: Actor,
+     fixtures: Vec<Fixture>,
+     message: MessageData,
++    /// Loader actor states the program loader may read (segments, headers), by account.
++    loader_states: HashMap<AccountId, ActorState>,
++    /// User cycles each guest transition is expected to take, in order, if known.
++    expected_rows: Option<Vec<u64>>,
+ }
+ 
+ impl Case {
+@@ -255,15 +293,24 @@
+             root,
+             fixtures,
+             message: borsh::to_vec(message)?,
++            loader_states: HashMap::new(),
++            expected_rows: None,
+         })
+     }
+ 
+-    fn run(self, prove: bool, exec_iters: usize) -> Result<Vec<BenchResult>> {
++    fn run(
++        self,
++        prove: bool,
++        exec_iters: usize,
++        external: &External,
++    ) -> Result<(Vec<BenchResult>, Vec<LoaderResult>)> {
+         let Self {
+             label,
+             root,
+             fixtures,
+             message,
++            loader_states,
++            expected_rows,
+         } = self;
+         let public_context = PublicExecutionContext {
+             actors: fixtures.iter().map(|f| f.actor).collect(),
+@@ -280,6 +327,9 @@
+             prove,
+             exec_iters,
+             rows: Vec::new(),
++            loader_states,
++            loader_rows: Vec::new(),
++            external: Rc::clone(external),
+         };
+         WholeExecution::new(
+             public_context,
+@@ -289,16 +339,127 @@
+             &[],
+         )?
+         .execute(&mut meter)?;
+-        Ok(meter.rows)
++        if let Some(expected) = expected_rows {
++            let measured: Vec<u64> = meter.rows.iter().map(|r| r.user_cycles).collect();
++            if measured == expected {
++                eprintln!("cycle_bench: {label}: user cycles match the case's expected_rows");
++            } else {
++                eprintln!(
++                    "cycle_bench: {label}: user cycles {measured:?} DIFFER from expected_rows {expected:?}"
++                );
++            }
++        }
++        Ok((meter.rows, meter.loader_rows))
+     }
+ }
+ 
++#[derive(Deserialize)]
++struct ExternalActor {
++    account: String,
++    program: String,
++}
++
++#[derive(Deserialize)]
++struct ExternalFixture {
++    account: String,
++    program: String,
++    authorized: bool,
++    state: String,
++}
++
++#[derive(Deserialize)]
++struct ExternalLoaderState {
++    account: String,
++    state: String,
++}
++
++#[derive(Deserialize)]
++struct ExternalRow {
++    program: String,
++    cycles: u64,
++}
++
++#[derive(Deserialize)]
++struct ExternalCase {
++    label: String,
++    root: ExternalActor,
++    message: String,
++    actors: Vec<ExternalFixture>,
++    #[serde(default)]
++    loader_states: Vec<ExternalLoaderState>,
++    /// Guest transitions only; loader rows (`program` = "loader") are skipped.
++    #[serde(default)]
++    expected_rows: Option<Vec<ExternalRow>>,
++}
++
++fn account_id(hex_id: &str) -> Result<AccountId> {
++    let bytes: [u8; 32] = hex::decode(hex_id)?
++        .try_into()
++        .map_err(|_| anyhow!("an account id is 32 bytes: {hex_id}"))?;
++    Ok(AccountId::new(bytes))
++}
++
++fn external_guests(specs: &[String]) -> Result<External> {
++    let mut guests = HashMap::new();
++    for spec in specs {
++        let (id, path) = spec
++            .split_once('=')
++            .ok_or_else(|| anyhow!("--elf takes <id hex>=<path>: {spec}"))?;
++        let program = Program::new(std::fs::read(path)?.into())?;
++        let name: &'static str = Box::leak(
++            PathBuf::from(path)
++                .file_stem()
++                .map_or_else(|| path.to_owned(), |s| s.to_string_lossy().into_owned())
++                .into_boxed_str(),
++        );
++        guests.insert(account_id(id)?, (name, program));
++    }
++    Ok(Rc::new(guests))
++}
++
++fn external_case(path: &PathBuf) -> Result<Case> {
++    let case: ExternalCase = serde_json::from_slice(&std::fs::read(path)?)?;
++    let fixtures = case
++        .actors
++        .iter()
++        .map(|a| {
++            Ok(Fixture::new(
++                account_id(&a.account)?,
++                a.authorized,
++                account_id(&a.program)?,
++                hex::decode(&a.state)?.into(),
++            ))
++        })
++        .collect::<Result<Vec<_>>>()?;
++    let loader_states = case
++        .loader_states
++        .iter()
++        .map(|s| Ok((account_id(&s.account)?, hex::decode(&s.state)?.into())))
++        .collect::<Result<HashMap<_, _>>>()?;
++    Ok(Case {
++        label: Box::leak(case.label.into_boxed_str()),
++        root: Actor::new(account_id(&case.root.account)?, account_id(&case.root.program)?),
++        fixtures,
++        message: hex::decode(&case.message)?,
++        loader_states,
++        expected_rows: case.expected_rows.map(|rows| {
++            rows.into_iter()
++                .filter(|r| r.program != "loader" && r.program != "native")
++                .map(|r| r.cycles)
++                .collect()
++        }),
++    })
++}
++
+ struct Meter {
+     label: &'static str,
+     actor_states: HashMap<Actor, ActorState>,
+     prove: bool,
+     exec_iters: usize,
+     rows: Vec<BenchResult>,
++    loader_states: HashMap<AccountId, ActorState>,
++    loader_rows: Vec<LoaderResult>,
++    external: External,
+ }
+ 
+ impl ExecutionEnvironment for Meter {
+@@ -307,13 +468,37 @@
+     fn handle_message(
+         &mut self,
+         input: &ReceiveInput,
+-        _: &TransitionView<'_>,
++        view: &TransitionView<'_>,
+     ) -> Result<Transition> {
+         let program_account_id = input.receiver.program_account_id;
+         if program_account_id == NATIVE_TOKEN_PROGRAM_ID {
+             return Ok(native_token::handle_message(input)?);
+         }
+-        let (program_name, program) = guest(program_account_id)
++        if program_account_id == PROGRAM_LOADER_ACCOUNT_ID {
++            // As `run_program_loader`: Rust, charged per loader actor state byte read.
++            const ABSENT: &ActorState = &ActorState::empty();
++            let bytes_read = Cell::new(input.pre_state.len() as u64);
++            let loader_states = &self.loader_states;
++            let (transition, _) = program_loader_core::handle_message(input, |account_id| {
++                let read = view
++                    .staged_state(Actor::new(account_id, PROGRAM_LOADER_ACCOUNT_ID))
++                    .or_else(|| loader_states.get(&account_id))
++                    .unwrap_or(ABSENT);
++                bytes_read.set(bytes_read.get() + read.len() as u64);
++                read
++            });
++            self.loader_rows.push(LoaderResult {
++                instruction: self.label.to_owned(),
++                bytes_read: bytes_read.get(),
++                gas: bytes_read.get() * LOADER_CYCLES_PER_BYTE,
++            });
++            return Ok(transition);
++        }
++        let (program_name, program) = self
++            .external
++            .get(&program_account_id)
++            .cloned()
++            .or_else(|| guest(program_account_id))
+             .ok_or_else(|| anyhow!("no guest is registered at {program_account_id}"))?;
+         let (journal, row) = sample(
+             program_name,
+@@ -561,13 +746,18 @@
+         eprintln!("cycle_bench: prove mode ON, this will be slow (~minutes per program)");
+     }
+ 
+-    let mut results: Vec<BenchResult> = cases()?
+-        .into_iter()
+-        .map(|c| c.run(prove, exec_iters))
+-        .collect::<Result<Vec<_>>>()?
+-        .into_iter()
+-        .flatten()
+-        .collect();
++    let external = external_guests(&cli.elfs)?;
++    let mut all_cases: Vec<Case> = cases()?.into_iter().collect();
++    for path in &cli.cases {
++        all_cases.push(external_case(path)?);
++    }
++    let mut results: Vec<BenchResult> = Vec::new();
++    let mut loader_results: Vec<LoaderResult> = Vec::new();
++    for case in all_cases {
++        let (rows, loader_rows) = case.run(prove, exec_iters, &external)?;
++        results.extend(rows);
++        loader_results.extend(loader_rows);
++    }
+ 
+     let calibration = Calibration::fit(&results);
+     if let Some(cal) = calibration {
+@@ -587,6 +777,12 @@
+     if let Some(cal) = calibration {
+         print_calibration(&cal);
+     }
++    if !loader_results.is_empty() {
++        println!("\nprogram loader (Rust at settlement, {LOADER_CYCLES_PER_BYTE} gas per byte read):");
++        for l in &loader_results {
++            println!("  {:<60}  {:>9} bytes read  {:>9} gas", l.instruction, l.bytes_read, l.gas);
++        }
++    }
+ 
+     #[cfg(feature = "ppe")]
+     let ppe_results = if cli.ppe { ppe::run_all() } else { Vec::new() };
+@@ -611,6 +807,7 @@
+     }
+     let combined = serde_json::json!({
+         "standalone": results,
++        "loader": loader_results,
+         "calibration": calibration,
+         "ppe": ppe_results,
+     });

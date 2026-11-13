@@ -3765,6 +3765,8 @@ dependencies = [
  "program_loader_core",
  "risc0-binfmt",
  "risc0-zkos-v1compat",
+ "risc0-zkvm",
+ "serde_json",
  "sha2 0.10.9",
 ]
 

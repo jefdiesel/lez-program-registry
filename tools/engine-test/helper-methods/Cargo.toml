@@ -1,6 +1,6 @@
 [package]
 name = "lezreg-helper-methods"
-description = "Test-only helper guest for the engine tests: a program that forwards whatever sync messages it is told to send."
+description = "Test-only helper guests for the engine tests: a program that forwards whatever sync messages it is told to send, and two ballast programs of fixed size for the deploy-cost measurements."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
