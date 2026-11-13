@@ -301,10 +301,8 @@ pub fn run(
             if cid.as_deref().is_some_and(|c| !apps::is_cid(c)) {
                 bail!("--cid is not a Logos Storage CID");
             }
-            if let Some(named) = cid.as_deref().and_then(apps::cid_content_sha256) {
-                if Some(named) != sha256 {
-                    bail!("--cid names other content than {}", file.display());
-                }
+            if cid.as_deref().and_then(apps::cid_content_sha256).is_some_and(|named| Some(named) != sha256) {
+                bail!("--cid names other content than {}", file.display());
             }
             let record = AppRecord { roots, version: Some(manifest.version.clone()), catalog, sha256, cid, programs };
             let value = record.to_value()?;

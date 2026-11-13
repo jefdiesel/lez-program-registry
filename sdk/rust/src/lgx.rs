@@ -130,7 +130,10 @@ pub enum Form {
 /// A package's manifest, with the root recomputed from its files. Only [`Contents::from_lgx`]
 /// and [`Contents::from_installed`] make one, so a verdict built from it always rests on files
 /// that were hashed, never on the root a manifest claims.
+/// `#[non_exhaustive]`: no other crate can write one by hand (say, with `root` copied from a
+/// manifest).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Contents {
     /// What the manifest says, `root` included (the claim).
     pub manifest: Manifest,
