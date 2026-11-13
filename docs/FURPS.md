@@ -190,8 +190,11 @@ commit, and a build configuration sufficient to reproduce the deployed bytecode.
 to rebuild the recorded source locally [...]; if the resulting byte code matches, the user can mark
 that program as 'locally verified' for themselves."
 
-- **Status: met in CI (Linux, Docker). In the recorded demo run the rebuild was skipped,
-  because there is no Docker on that machine.**
+- **Status: met in CI (Linux, Docker).**
+  - The evaluator demo runs the rebuild in `.github/workflows/demo.yml` (`scripts/demo.sh
+    --verify`; steps F7.b and F7.c, verdict Match).
+  - In the macOS run recorded in `docs/demo.log` the rebuild was skipped, because there is no
+    Docker on that machine.
 - **Evidence:**
   - What the entry records: `SourceRef {repo, commit, docker_root, archive?}` and `BuildConfig`
     (builder image tag and digest, risc0-build version, host rust, manifest path, binary,
@@ -243,7 +246,8 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
       `U1.a`.
   - JS SDK (`sdk/js/lezreg.js`, no dependencies): `resolve`, `programLabel`, `list`, `byName`,
     `fetchIdl`. It is checked against the Rust SDK with vectors (`node sdk/js/lezreg.test.mjs` in
-    `ci.yml`). In the recorded demo run `U1.b` was skipped because that machine has no node.
+    `ci.yml`). The demo runs it as `U1.b` in `demo.yml`. It was skipped in the macOS run in
+    `docs/demo.log`, because that machine has no node.
   - Module `program_registry` (`module/`): `resolve_program`, `program_label`, `get_idl`,
     `list_entries`, `search_name`, `third_party_entries`, `verify_app`, `verify_package`,
     `publisher_apps`, `config_get`/`config_set`.
@@ -377,7 +381,14 @@ included in CI; CI is green on the default branch."
     Match), and the GitHub Action.
   - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green on `main` at `74a0010` (LEZ
     rc3 plus the IDL-format work), 2026-11-13: runs 43450763487, 43450763482, 43450763645 and
-    43450763571. These are the only four workflows in `.github/workflows/`.
+    43450763571.
+  - `.github/workflows/demo.yml` runs the evaluator demo the way an evaluator would: a clean
+    ubuntu runner, a fresh checkout, only the README's prerequisites installed, then
+    `scripts/demo.sh --verify`.
+    - It runs on dispatch, and on pushes to `main` that touch the demo, the CLI, the SDKs, the
+      program or `artifacts/`.
+    - It fails on any FAIL, and on any SKIP other than F8 (testnet).
+    - It restores e2e's sequencer build from cache instead of rebuilding it.
   - On `5e3dac5` (docs/CYCLES.md, now `main`), `ci` is green (43473019998). `e2e`, `verify` and
     `repro` were still running when this file was written (43473020169, 43473020152,
     43473020395).
@@ -516,7 +527,11 @@ The facts, without a conclusion:
 ## Demo run
 
 `scripts/demo.sh` is the evaluator demo. It needs one command from a clean clone (README, "Run the
-demo"). The run recorded in `docs/demo.log` is described in that file's header and summary table:
+demo").
+- **On Linux, in CI** (`demo.yml`): every step passes except F8 (testnet). That includes the Docker
+  rebuild and the JS SDK step. The transcript is the run's `demo-transcript` artifact.
+- **On macOS**: the run recorded in `docs/demo.log` is described in that file's header and
+  summary table:
 - where it ran;
 - which sequencer binary it used;
 - which steps were skipped, and why.

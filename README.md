@@ -70,7 +70,9 @@ is nonzero if any step fails.
   builder image runs emulated there (slowly, and with about 8 GB of Docker memory).
 - The JS SDK step needs node 19 or later.
 
-The transcript of a real run is [`docs/demo.log`](docs/demo.log), and the criterion-by-criterion
+CI runs the same command on a clean Linux runner, with Docker, via `--verify`
+(`.github/workflows/demo.yml`; its transcript is the run's `demo-transcript` artifact). The
+transcript of a macOS run is [`docs/demo.log`](docs/demo.log), and the criterion-by-criterion
 self-assessment is [`docs/FURPS.md`](docs/FURPS.md).
 
 Options:
