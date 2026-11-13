@@ -95,8 +95,9 @@ curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/dow
 ```
 
 - Builds exist for Linux x86_64 and aarch64 (glibc 2.35 or newer: Ubuntu 22.04, Debian 12,
-  Fedora 36 and later) and macOS arm64 and x86_64. Windows: use WSL. Anything else: build from
-  source (below).
+  Fedora 36 and later) and macOS arm64. Windows: use WSL. Intel Macs are not supported, even
+  from source: the LEZ crates link logos-blockchain-circuits, which ships no macOS x86_64
+  library. Anything else: build from source (below).
 - The installer does not edit your shell files. It prints the `export PATH=...` line to add.
 - `--with-r0vm` also fetches RISC Zero's `r0vm` 3.0.5 from RISC Zero's own GitHub release,
   checked against a pinned SHA-256. **Every write needs it** (see below). Prebuilt `r0vm`
@@ -141,7 +142,8 @@ when they run, so install your distro's PC/SC package only if you use a Keycard.
 You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ v0.4.0-rc3). On Linux also
 the PC/SC headers, pkg-config and clang (`sudo apt install libpcsclite-dev pkg-config clang`).
 Building `lezreg` needs no RISC Zero toolchain: the LEZ crates embed their programs from LEZ's
-committed artifacts. You need RISC Zero's toolchain only to build the registry guest itself
+committed artifacts. The build does download logos-blockchain-circuits' prebuilt static
+libraries from its GitHub release (or uses `LBC_ROOT_DIR` if set). You need RISC Zero's toolchain only to build the registry guest itself
 (`.github/workflows/ci.yml` installs it), and `r0vm` at run time as above. The read-only SDK
 (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
 

@@ -1,9 +1,8 @@
 # Release binaries of the `lezreg` CLI (DESIGN §7.4) and the one-line installer.
 #
 # On a tag `vX.Y.Z`, or by hand (Actions → release → Run workflow, version X.Y.Z):
-#   1. build `lezreg` in release mode for Linux x86_64 and aarch64 and macOS arm64 and x86_64,
-#      each on the oldest runner image that still exists, so the Linux builds need only glibc
-#      2.35 (Ubuntu 22.04, Debian 12 and newer);
+#   1. build `lezreg` in release mode for Linux x86_64 and aarch64 (on Ubuntu 22.04 runners, the
+#      oldest that still exist) and macOS arm64;
 #   2. pack each as lezreg-X.Y.Z-<os>-<arch>.tar.gz with the licence files, and attest its
 #      build provenance (`gh attestation verify <file> -R jefdiesel/lez-program-registry`);
 #   3. install each Linux build with scripts/install.sh in bare containers (Debian stable,
@@ -81,7 +80,8 @@ jobs:
           - { target: linux-x86_64, runner: ubuntu-22.04 }
           - { target: linux-aarch64, runner: ubuntu-22.04-arm }
           - { target: macos-arm64, runner: macos-15 }
-          - { target: macos-x86_64, runner: macos-15-intel }
+          # No macOS x86_64: logos-blockchain-circuits (linked through the LEZ crates) publishes
+          # no prebuilt library for it, and building those circuits is not cheap.
     env:
       VERSION: ${{ needs.version.outputs.version }}
       MACOSX_DEPLOYMENT_TARGET: "12.0"
@@ -101,6 +101,26 @@ jobs:
           ar rcs "$d/libpcsclite.a" "$d/pcsc-dlopen.o"
           echo "PCSC_LIB_DIR=$d" >> "$GITHUB_ENV"
           echo "PCSC_LIB_NAME=static=pcsclite" >> "$GITHUB_ENV"
+
+      # The LEZ crates link logos-blockchain-circuits' prebuilt static libraries. Their build
+      # script would download them unchecked; fetch the same release asset here, check it
+      # against a pinned SHA-256, and point the build at it with LBC_ROOT_DIR.
+      - name: logos-blockchain-circuits v0.5.7 (prebuilt release asset, pinned by SHA-256)
+        shell: bash
+        run: |
+          grep -q 'logos-blockchain-circuits.git?tag=v0.5.7#' Cargo.lock ||
+            { echo "Cargo.lock no longer pins logos-blockchain-circuits v0.5.7: update the hashes here"; exit 1; }
+          case "${{ matrix.target }}" in
+            linux-x86_64) a=linux-x86_64; s=92a0c6ad810d486631518b7b9b247a2b66f66af6f8f8ddce381acbbdfedc0f7f ;;
+            linux-aarch64) a=linux-aarch64; s=1eaa3e339d85d741dd70314c4ad45b7ee67c2baaf6c55e35170801161c372d7b ;;
+            macos-arm64) a=macos-aarch64; s=75a52885bf3b3aad513457f929fe4842cd51b3c46226e145f21a0858bb8b4b25 ;;
+          esac
+          n=logos-blockchain-circuits-v0.5.7-$a
+          curl -fsSL -o "$RUNNER_TEMP/$n.tar.gz" "https://github.com/logos-blockchain/logos-blockchain-circuits/releases/download/v0.5.7/$n.tar.gz"
+          echo "$s  $RUNNER_TEMP/$n.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$n.tar.gz" -C "$RUNNER_TEMP"
+          test -d "$RUNNER_TEMP/$n/lib"
+          echo "LBC_ROOT_DIR=$RUNNER_TEMP/$n" >> "$GITHUB_ENV"
 
       - name: Toolchain (rust-toolchain.toml)
         run: |
@@ -258,7 +278,7 @@ jobs:
         run: |
           tag="v$VERSION"
           cat > notes.md <<EOF
-          Prebuilt \`lezreg\` $VERSION for Linux (x86_64, aarch64; glibc 2.35 or newer) and macOS (arm64, x86_64).
+          Prebuilt \`lezreg\` $VERSION for Linux (x86_64, aarch64) and macOS (arm64).
 
           Install (no sudo; installs to ~/.lezreg/bin):
 

@@ -139,7 +139,7 @@ main() {
 
   detect_target
   case $target in
-    linux-x86_64 | linux-aarch64 | macos-arm64 | macos-x86_64) ;;
+    linux-x86_64 | linux-aarch64 | macos-arm64) ;;
     *) unsupported ;;
   esac
 
