@@ -18,8 +18,8 @@ app discovery).
   each name and a profile sealed under a key derived from it, so a name's records can't be
   read without knowing the name. That is not secrecy: every record's address is visible on
   chain (a block scan lists them), and a name that can be guessed can be found by trying it
-  (Argon2 makes each guess cost about 30 ms, and one salt serves every registry; a reviewer
-  recovered 4 of 7 live names from a 1,500-word list in 141 s on a laptop). **Treat an app
+  (Argon2 slows each guess, to about 36 a second on a laptop, but one salt serves every
+  registry; a reviewer recovered 4 of 7 live names from a 1,500-word list in 141 s). **Treat an app
   record under a guessable name as public.** Being listed is a choice (section 5).
 - **Programs come with it.** The app record names the programs the app calls, and each one
   shows its source-verification status from this registry.

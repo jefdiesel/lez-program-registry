@@ -280,10 +280,25 @@ pub fn open_profile(key: &[u8; 32], sealed: &[u8], name: &str) -> Option<Profile
 /// Decodes a record `{version, owner_tag, expires, sealed, claimed}` and opens its profile.
 pub fn decode_record(bytes: &[u8], key: &[u8; 32], name: &str) -> Result<NameRecord> {
     let mut r = Reader(bytes);
-    let _version = r.u8()?;
+    let version = r.u8()?;
     let owner_tag = r.bytes32()?;
     let expires = r.u64()?;
     let sealed = r.byte_vec()?;
+    // SPEC §5: version 6 ends with `claimed`; earlier versions end at `sealed`. A version this
+    // reader doesn't know, or bytes after the record, are refused rather than guessed at (the
+    // Names CLI also refuses trailing bytes).
+    match version {
+        6 => {
+            if r.u8()? > 1 {
+                return Err(Error::Invalid("an LNS record's claimed flag is not 0 or 1".into()));
+            }
+        }
+        1..=5 => {}
+        v => return Err(Error::Invalid(format!("an LNS record of unknown version {v}"))),
+    }
+    if !r.0.is_empty() {
+        return Err(Error::Invalid("an LNS record has bytes after its end".into()));
+    }
     Ok(NameRecord {
         owner_tag,
         expires,
@@ -401,6 +416,25 @@ mod tests {
             assert_eq!(parse_name(input), Err(why), "{input:?}");
         }
         assert!(parse_name(&"a".repeat(32)).is_ok(), "32 a's is not base58 of 32 bytes");
+    }
+
+    #[test]
+    fn records_of_unknown_shape_are_refused() {
+        let key = [7_u8; 32];
+        let record = |version: u8, tail: &[u8]| {
+            let mut b = vec![version];
+            b.extend([1_u8; 32]);
+            b.extend(u64::MAX.to_le_bytes());
+            b.extend(0_u32.to_le_bytes());
+            b.extend(tail);
+            b
+        };
+        assert!(decode_record(&record(6, &[0]), &key, "jef").is_ok());
+        assert!(decode_record(&record(5, &[]), &key, "jef").is_ok());
+        assert!(decode_record(&record(6, &[0, 0xab]), &key, "jef").is_err(), "trailing bytes");
+        assert!(decode_record(&record(6, &[2]), &key, "jef").is_err(), "claimed is a bool");
+        assert!(decode_record(&record(99, &[0]), &key, "jef").is_err(), "unknown version");
+        assert!(decode_record(&record(6, &[]), &key, "jef").is_err(), "v6 without claimed");
     }
 
     #[test]

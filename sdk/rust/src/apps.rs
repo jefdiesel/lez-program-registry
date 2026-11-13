@@ -249,10 +249,8 @@ pub fn check_download(module: &str, record: &AppRecord, bytes: &[u8]) -> Result<
             hex::encode(want)
         )));
     }
-    if let Some(named) = record.cid.as_deref().and_then(cid_content_sha256) {
-        if named != have {
-            return Err(Error::Invalid("the file is not the content its CID names".into()));
-        }
+    if record.cid.as_deref().and_then(cid_content_sha256).is_some_and(|named| named != have) {
+        return Err(Error::Invalid("the file is not the content its CID names".into()));
     }
     let contents = Contents::from_lgx(bytes)?;
     if !contents.root_matches() {
