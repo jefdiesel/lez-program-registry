@@ -542,10 +542,8 @@ impl Verdict {
 /// How one release judges a package whose root is the release's.
 fn judge(contents: &Contents, release: &Release) -> std::result::Result<bool, (bool, String)> {
     // Ok(true): whole package proven; Ok(false): files only; Err((file, why)): file or manifest mismatch.
-    if let Some(v) = &release.version {
-        if *v != contents.manifest.version {
-            return Err((false, format!("the manifest says version {:?}, the release is {v:?}", contents.manifest.version)));
-        }
+    if let Some(v) = release.version.as_ref().filter(|v| **v != contents.manifest.version) {
+        return Err((false, format!("the manifest says version {:?}, the release is {v:?}", contents.manifest.version)));
     }
     match &contents.form {
         Form::Lgx { sha256 } => match release.sha256 {
