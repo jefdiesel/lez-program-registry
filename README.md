@@ -45,6 +45,41 @@ LEZ testnet 0.4 has not launched. The `testnet` network is a placeholder: it has
 registry id yet, and `lezreg` says so. The registry will be deployed there on launch day with
 `chain/deploy.sh`.
 
+## Run the demo
+
+One command, from a clean clone, on Linux or macOS:
+
+```sh
+git clone https://github.com/jefdiesel/lez-program-registry && cd lez-program-registry
+scripts/demo.sh
+```
+
+It checks the prerequisites first and prints the exact install command for anything missing:
+Rust, the RISC Zero toolchain and `r0vm`, git, curl, python3, and on Linux `libpcsclite-dev`.
+Then it builds `lezreg` and builds LEZ's standalone `sequencer_service` from the tag this repo
+pins. The sequencer build is cached; a cold build takes about 40 minutes. It also downloads the
+pinned Logos Storage release and checks its sha256.
+
+It then starts a fresh local chain and three Storage nodes and walks every Functionality,
+Usability and Reliability criterion of LP-0023 in the spec's order. That includes the
+unauthorised deployer-entry attempt being rejected (step `F3.c` onwards). Each criterion gets a
+heading, each step prints PASS, FAIL or SKIP, and a summary table comes at the end. The exit code
+is nonzero if any step fails.
+- The source-verification rebuild needs Docker. Without Docker it is reported as SKIP, not PASS.
+- The JS SDK step needs node 19 or later.
+
+The transcript of a real run is [`docs/demo.log`](docs/demo.log), and the criterion-by-criterion
+self-assessment is [`docs/FURPS.md`](docs/FURPS.md).
+
+Options:
+- `--prepare-only` builds everything without running the demo.
+- `--keep` leaves the chain running afterwards.
+- To reuse binaries you already have, set `SEQUENCER_BIN`, `SEQUENCER_CONFIG`, `STORAGE_BIN` or
+  `LEZREG`.
+- To move off busy ports, set `DEMO_RPC_PORT` or `DEMO_STORAGE_PORT`.
+- `scripts/demo.sh --testnet --rpc <URL> --registry <ID>` runs the read-only walk against a public
+  sequencer. It refuses to run without those values, because testnet 0.4 has not launched.
+
 ## Install
 
 Build from source. You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ
@@ -427,9 +462,8 @@ LEE_WALLET_HOME_DIR=<copy> ENTRY=<entry> PAYER=<funded> scripts/test-not-include
 LEZREG_E2E_RPC=http://127.0.0.1:3062 LEZREG_E2E_REGISTRY=<id> \
   [LEZREG_E2E_PAYER=<funded> LEE_WALLET_HOME_DIR=<wallet copy>] \
   cargo test --release -p lezreg-sdk --test e2e -- --nocapture --test-threads 1
-# the M2 demo (deploys a fresh registry; copies the wallet; transcript in demo-out/; a
-# previous demo-out/ is moved to demo-out.prev-<time>, since its wallet holds that registry's keys):
-WALLET_SRC=<funded wallet> FUNDER=<account> REG_ELF=<lez_program_registry.bin> SAMPLE_ELF=<program.bin> scripts/demo-m2.sh
+# the evaluator demo (its own fresh chain and Storage nodes; transcript in demo-out/demo.log):
+scripts/demo.sh
 ```
 
 Network check (2026-11-02, macOS `sandbox-exec` on the Mini): with outbound network denied
@@ -458,7 +492,7 @@ rsync -a --delete --exclude target --exclude .git --exclude _deps \
 | `cli/` | `lezreg` |
 | `action/` | the GitHub Action (`verify`, `prepare`) |
 | `chain/deploy.sh` | deploys the registry and its self-entry |
-| `scripts/demo-m2.sh` | the M2 demo |
+| `scripts/demo.sh` | the evaluator demo (local chain, or `--testnet`) |
 | `idl/` | the generated IDL |
 | `tools/` | engine tests, IDL drift checks, the M1 smoke client |
 | `docs/` | design notes and demo transcripts |

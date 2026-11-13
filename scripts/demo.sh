@@ -217,7 +217,7 @@ prereqs() {
     if [ -z "${STORAGE_BIN:-}" ]; then
       if [ -z "$(storage_sha "$PLATFORM")" ]; then echo "   MISSING Logos Storage: no pinned $STORAGE_VERSION release for $PLATFORM; set STORAGE_BIN=<logos-storage binary>"; miss=1
       elif ! command -v unzip >/dev/null 2>&1; then echo "   MISSING unzip (to unpack the Storage release)"; miss=1
-      else echo "   ok   Logos Storage $STORAGE_VERSION release for $PLATFORM (downloaded, sha256-checked)"; fi
+      else echo "   ok   Logos Storage $STORAGE_VERSION release for $PLATFORM (to be downloaded and sha256-checked)"; fi
     else echo "   ok   STORAGE_BIN=$STORAGE_BIN"; fi
     local p
     for p in "$RPC_PORT" "$METRICS_PORT" "$SP" $((SP + 1)) $((SP + 2)) "$PP" $((PP + 1)) $((PP + 2)); do
@@ -640,6 +640,9 @@ EOF
     sh -c '"$1" --json show "$2" | python3 -c "import json,sys; d=json.load(sys.stdin); print(\"  \", d[\"freshness\"]); sys.exit(d[\"freshness\"][\"status\"]!=\"fresh\")"' _ "$LEZREG" "$X"
   ok X.e "a community entry claiming an account with no program is flagged NO-PROGRAM" \
     sh -c '"$1" register --third-party --program "$2" --publisher "$3" --payer "$4" --name demo-sample --version 9.9.9 --label "Demo Labs" --description "claims a program that does not exist" --image-id "$5" --idl-cid raw --idl-file "$6" >/dev/null 2>&1 && "$1" list --limit 1 | tee /dev/stderr | grep -q NO-PROGRAM' _ "$LEZREG" "$M" "$Q" "$PAYER" "$LIVE" "$REG_IDL"
+  ok X.e2 "show <name> lists every entry of that name and ranks the NO-PROGRAM one last" \
+    sh -c '"$1" show Demo-Sample | tee /dev/stderr | tail -1 | grep -q NO-PROGRAM' _ "$LEZREG"
+  ok X.e3 "show --revision 2: the write-once release snapshot of X's revision 2" lz show "$X" --revision 2
   ok X.f "search by tag and by (unproven) label" sh -c '"$1" search tag demo && "$1" search label "Demo Labs"' _ "$LEZREG"
   ok X.g "freeze X (author B signs)" lz freeze "$X" --payer "$PAYER"
   refused X.h "a frozen entry refuses updates" "frozen" update "$X" --version 9.9.9 --payer "$PAYER"
@@ -648,6 +651,10 @@ EOF
   export LEZREG_NETWORK=demo
   refused X.j "writes through a sequencer that is not on this machine need --yes" "is not on this machine" \
     --rpc http://192.0.2.1:3062 wallet auth-transfer send --from "Public/$PAYER" --to "Public/$A" --amount 1
+  refused X.j2 "the URL is parsed, not prefix-matched: 127.0.0.1:PORT@elsewhere is elsewhere" "is not on this machine" \
+    --rpc "http://127.0.0.1:$RPC_PORT@example.invalid/" register --program "$X" --name x --version 1 --idl-cid raw --idl-file "$REG_IDL"
+  refused X.j3 "lezreg wallet refuses change-network (it never moves to another sequencer behind your back)" "change-network" \
+    wallet change-network testnet
   ok X.k "stats: the adoption table read from the chain" lz stats --by-month --by-author
   echo; echo "REG=$REG X=$X X3=$X3 A=$A B=$B Q=$Q M=$M"
 }
