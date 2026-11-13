@@ -535,7 +535,7 @@
         "name": "lez_program_registry",
         "program_version": "0.1.0"
       },
-      "sha256": "0dd074b84752d6db56e5421faa967c1f634c62542e3fd5572f8ba9c726415613",
+      "sha256": "dd02d715f6494fd4e9c539f5734a55f82d68f81bc087bcd83e22ad9e61294bad",
       "status": "ok"
     },
     "sdk/fixtures/idl/garbage.json": {
