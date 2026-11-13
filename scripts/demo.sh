@@ -709,8 +709,6 @@ print("   walked", n, "of", d["total"]); sys.exit(n!=d["total"])' "$LEZREG"
 }
 
 main() {
-  trap cleanup EXIT
-  trap 'exit 130' INT TERM
   echo "LEZ Program Registry: LP-0023 demo ($MODE mode), $(date -u '+%Y-%m-%d %H:%M:%SZ')"
   echo "repo $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo '(not a git checkout)')$(git -C "$ROOT" status --porcelain 2>/dev/null | grep -q . && echo ' (with uncommitted changes)')"
   echo "host $(uname -srm); RISC0_DEV_MODE=${RISC0_DEV_MODE:-unset}; output $OUT"
@@ -723,5 +721,7 @@ main() {
   [ "$NFAIL" -eq 0 ]
 }
 
-main 2>&1 | tee "$LOG"
+# The traps go on an explicit subshell: bash 3.2 (macOS) skips an EXIT trap set inside a
+# function that runs as a pipeline element.
+( trap cleanup EXIT; trap 'exit 130' INT TERM; main ) 2>&1 | tee "$LOG"
 exit "${PIPESTATUS[0]}"
