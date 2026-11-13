@@ -105,7 +105,13 @@ pub fn cli_version(cli: &Path) -> Res<String> {
 /// What a failed send's output says, as a code.
 fn code_of(text: &str) -> &'static str {
     let t = text.to_ascii_lowercase();
-    if t.contains("holds no key") || t.contains("no key for") || t.contains("both signatures") {
+    if t.contains("wallet_locked") || t.contains("is encrypted") {
+        "wallet_locked"
+    } else if t.contains("not a lez program registry image") || t.contains("registry image") {
+        "unknown_registry"
+    } else if t.contains("above the") && t.contains("prepared with") {
+        "over_gas_cap"
+    } else if t.contains("holds no key") || t.contains("no key for") || t.contains("both signatures") {
         "missing_key"
     } else if t.contains("outside the registry's 10-minute window") {
         "expired"
@@ -250,6 +256,9 @@ mod tests {
         assert_eq!(code_of("it is outside the registry's 10-minute window; prepare it again"), "expired");
         assert_eq!(code_of("block 9: REVERTED"), "reverted");
         assert_eq!(code_of("something else"), "signer_failed");
+        assert_eq!(code_of("the lezreg wallet at /x is encrypted, and `lezreg module send` has no terminal (wallet_locked)"), "wallet_locked");
+        assert_eq!(code_of("X runs image ab, which is not a LEZ Program Registry image lezreg trusts"), "unknown_registry");
+        assert_eq!(code_of("this change needs a gas limit of 9, above the 5 it was prepared with"), "over_gas_cap");
     }
 
     /// A stand-in `lezreg` that answers like `lezreg --json module send` does.
