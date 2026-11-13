@@ -94,10 +94,14 @@ GitHub release, checks its SHA-256 against the release's `SHA256SUMS`, and puts 
 curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh -s -- --with-r0vm --with-storage
 ```
 
-- Builds exist for Linux x86_64 and aarch64 (glibc 2.35 or newer: Ubuntu 22.04, Debian 12,
-  Fedora 36 and later) and macOS arm64. Windows: use WSL. Intel Macs are not supported, even
-  from source: the LEZ crates link logos-blockchain-circuits, which ships no macOS x86_64
-  library. Anything else: build from source (below).
+- Builds exist for Linux x86_64 and aarch64 and macOS arm64 (macOS 12 or newer).
+  - Linux needs glibc 2.34 or newer, and on aarch64 also libstdc++ from GCC 11 or newer.
+    Nothing else: no libpcsclite, no Rust. Ubuntu 22.04, Debian 13 and Fedora 45 are tested
+    in bare containers by the release workflow. Debian 12 and RHEL 9 meet the same minimum
+    but are not tested.
+  - Windows: use WSL.
+  - Intel Macs are not supported, even from source: the LEZ crates link
+    logos-blockchain-circuits, which ships no macOS x86_64 library.
 - The installer does not edit your shell files. It prints the `export PATH=...` line to add.
 - `--with-r0vm` also fetches RISC Zero's `r0vm` 3.0.5 from RISC Zero's own GitHub release,
   checked against a pinned SHA-256. **Every write needs it** (see below). Prebuilt `r0vm`
@@ -105,6 +109,9 @@ curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/dow
   build it (`cargo install --locked risc0-r0vm --version 3.0.5`).
 - `--with-storage` also fetches the Logos Storage v0.5.3 node from its official release,
   checked the same way, as `logos-storage`. `lezreg storage up` starts it, to upload your IDL.
+  Its Linux builds need glibc 2.38 (Ubuntu 24.04, Debian 13 or newer). On older Linux the
+  installer skips it and says so; use a Storage node on another machine
+  (`LEZREG_STORAGE_API`).
 - Other options: `--version 0.1.0` for a given release, `--dry-run` to print what it would
   download and install, `--help`. It sends nothing about you anywhere; the only requests are
   the downloads.
@@ -133,9 +140,11 @@ too: `curl -L https://risczero.com/install | bash && rzup install cargo-risczero
 **Registering needs a Logos Storage node** for the IDL upload: `lezreg storage up` (with
 `logos-storage` on PATH, or `--bin`), or `LEZREG_STORAGE_API` pointing at a node you run.
 
-**Linux and smart cards.** The Linux builds carry a small stand-in for `libpcsclite`, so they
-start without it. The built-in wallet's Keycard commands load the system's `libpcsclite.so.1`
-when they run, so install your distro's PC/SC package only if you use a Keycard.
+**Linux and smart cards.** The Linux builds don't link `libpcsclite`. They carry a small
+stand-in ([`scripts/release/pcsc-dlopen.c`](scripts/release/pcsc-dlopen.c)), so they start
+on systems without it. The built-in wallet's Keycard commands load the system's
+`libpcsclite.so.1` when they run. Install your distro's PC/SC package only if you use a
+Keycard.
 
 ### Build from source
 
@@ -143,9 +152,11 @@ You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ v0.4.0-rc3). O
 the PC/SC headers, pkg-config and clang (`sudo apt install libpcsclite-dev pkg-config clang`).
 Building `lezreg` needs no RISC Zero toolchain: the LEZ crates embed their programs from LEZ's
 committed artifacts. The build does download logos-blockchain-circuits' prebuilt static
-libraries from its GitHub release (or uses `LBC_ROOT_DIR` if set). You need RISC Zero's toolchain only to build the registry guest itself
-(`.github/workflows/ci.yml` installs it), and `r0vm` at run time as above. The read-only SDK
-(`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
+libraries from its GitHub release, or uses `LBC_ROOT_DIR` if set. Those exist only for Linux
+x86_64 and aarch64, macOS arm64 and Windows. You need RISC Zero's toolchain only to build the
+registry guest itself (`.github/workflows/ci.yml` installs it), and `r0vm` at run time as
+above. The read-only SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor
+risc0.
 
 ```sh
 git clone https://github.com/jefdiesel/lez-program-registry

@@ -244,7 +244,9 @@ jobs:
           if lezreg doctor; then echo "(doctor passed)"; else echo "(doctor exit $?: expected, no sequencer here)"; fi
           lezreg --help | head -3
           if [ -x h/bin/r0vm ]; then h/bin/r0vm --version; fi
-          if [ -x h/bin/logos-storage ]; then h/bin/logos-storage --version || h/bin/logos-storage --help | head -3; fi
+          # The Storage v0.5.3 Linux build needs glibc 2.38: installed and running on newer
+          # images, refused by the installer (not installed) on older ones.
+          if [ -x h/bin/logos-storage ]; then h/bin/logos-storage --version; else echo "logos-storage not installed (glibc $(getconf GNU_LIBC_VERSION))"; fi
 
   release:
     needs: [version, build, test-linux]
@@ -278,7 +280,7 @@ jobs:
         run: |
           tag="v$VERSION"
           cat > notes.md <<EOF
-          Prebuilt \`lezreg\` $VERSION for Linux (x86_64, aarch64) and macOS (arm64).
+          Prebuilt \`lezreg\` $VERSION for Linux x86_64 and aarch64 (glibc 2.34 or newer) and macOS arm64 (macOS 12 or newer).
 
           Install (no sudo; installs to ~/.lezreg/bin):
 

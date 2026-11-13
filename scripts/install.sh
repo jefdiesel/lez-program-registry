@@ -166,6 +166,18 @@ main() {
     linux-x86_64) st_asset=logos-storage-linux-amd64-v0.5.3; st_sha=$STORAGE_LINUX_X86_64 ;;
     linux-aarch64) st_asset=logos-storage-linux-arm64-v0.5.3; st_sha=$STORAGE_LINUX_AARCH64 ;;
   esac
+  st_why="Logos Storage v0.5.3 has no build for $target"
+  # The official Linux builds of Logos Storage v0.5.3 need glibc 2.38 (Ubuntu 24.04, Debian 13,
+  # Fedora 39 and newer); on older systems they do not start, so do not install them there.
+  if [ "$os" = linux ] && [ -n "$st_asset" ]; then
+    glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | sed -n 's/^glibc \([0-9]*\.[0-9]*\).*/\1/p')
+    gmaj=${glibc%%.*}
+    gmin=${glibc#*.}
+    if [ -z "$glibc" ] || [ "$gmaj" -lt 2 ] || { [ "$gmaj" -eq 2 ] && [ "$gmin" -lt 38 ]; }; then
+      st_asset=
+      st_why="the Logos Storage v0.5.3 Linux build needs glibc 2.38 or newer, and this system has ${glibc:+glibc }${glibc:-no glibc}"
+    fi
+  fi
 
   if [ "$dry" = 1 ]; then
     say "Dry run: nothing is downloaded or written."
@@ -185,7 +197,7 @@ main() {
       if [ -n "$st_asset" ]; then
         say "  download:  $STORAGE_URL/$st_asset.zip (SHA-256 $st_sha), install $bin/logos-storage"
       else
-        say "  storage:   no Logos Storage v0.5.3 build for $target; would print where to get one"
+        say "  storage:   skipped: $st_why"
       fi
     fi
     exit 0
@@ -242,7 +254,7 @@ main() {
   if [ "$with_storage" = 1 ]; then
     if [ -z "$st_asset" ]; then
       say ""
-      say "--with-storage: Logos Storage v0.5.3 has no build for $target; skipped (see below)."
+      say "--with-storage: skipped: $st_why (see below)."
     elif ! command -v unzip >/dev/null 2>&1; then
       say ""
       say "--with-storage: needs unzip (the release is a .zip); skipped. Install unzip and rerun."
@@ -255,7 +267,12 @@ main() {
       cp "$tmp/st/$st_asset" "$bin/logos-storage.new"
       chmod 755 "$bin/logos-storage.new"
       mv -f "$bin/logos-storage.new" "$bin/logos-storage"
-      say "Installed $bin/logos-storage"
+      if "$bin/logos-storage" --version >/dev/null 2>&1; then
+        say "Installed $bin/logos-storage"
+      else
+        rm -f "$bin/logos-storage"
+        say "--with-storage: the downloaded Logos Storage node does not run on this system; removed it (see below)."
+      fi
     fi
   fi
 
@@ -297,7 +314,7 @@ main() {
     if [ -n "$st_asset" ]; then
       say "   or rerun this installer with --with-storage. Or point LEZREG_STORAGE_API at a node you run."
     else
-      say "   (none for $target), or point LEZREG_STORAGE_API at a node you run elsewhere."
+      say "   Not here: $st_why. Point LEZREG_STORAGE_API at a node you run on another machine."
     fi
   fi
   say ""
