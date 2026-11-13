@@ -167,41 +167,77 @@ All take an optional `payer` (an account in the lezreg wallet that pays the fee)
 `source` and `build` take the shapes `resolve_program` shows; `image_id` defaults to the live
 program's. A change is valid for 10 minutes (the registry's time window).
 
+Each change comes back with a random `change_id` and a `summary` for a confirm sheet, built by
+the module from the instruction it encoded and from the chain, never from your input: `values`
+(everything the change writes: name, version, description, tags, label, IDL, source and build
+pointers, image id, author or new author), `current` (the entry as it is now), the full ids of
+the entry and of every signer, the `payer`, `spends_real_funds` (when `allow_remote` is set),
+`max_gas` and `max_fee` (`lezreg` refuses to send a change that would need more gas). Show it.
+
 ```qml
 logos.callModuleAsync("program_registry", "prepare_freeze", [JSON.stringify({ program: id })], function (reply) {
     var r = JSON.parse(reply)
-    if (!r.success) return show(r.error + " (" + r.code + ")")      // codes: frozen, not_author, no_entry, …
+    if (!r.success) return show(r.error + " (" + r.code + ")")      // codes: frozen, not_author, no_entry, unknown_registry, …
     confirmSheet(r.value.summary, function () {                      // show the person what will be signed
         logos.callModuleAsync("program_registry", "submit", [JSON.stringify(r.value)], function (j) {
-            var v = JSON.parse(j).value                              // {job} for a trusted app, {request} otherwise
-            follow(v.job || v.request)                               // submit_status(id) until applied/failed/denied
+            var v = JSON.parse(j).value                              // {job} for the browser or the host, {request} otherwise
+            follow(v.job || v.request)                               // submit_status(id) until applied/failed/denied/expired
         }, 10000)
     })
 }, 20000)
 ```
 
-`submit` answers at once with a job; `submit_status(job)` reports `running`, `applied` (with the
-transaction and block) or `failed` (with a `code`: `missing_key`, `expired`, `refused`,
-`reverted`, `insufficient_funds`, `no_wallet`, `remote_sequencer`, …), and the `change_settled`
-event fires when it ends. The `lezreg` that signs is found on `PATH`, `~/.local/bin` or
-`~/.cargo/bin`, or set with `config_set('{"cli": "/abs/path/to/lezreg"}')`; `signer_status()`
-says which one. Before signing, `lezreg module send` decodes the change with the real program
-and refuses anything that is not exactly the registry transaction it claims to be.
+`submit` takes only a change this same app prepared, exactly as returned, once: another app
+can't submit it, a changed copy is refused (`code: "changed"`), and a second submit is
+`unknown_change`. It answers at once; `submit_status(id)` reports `running`, `applied` (with the
+transaction and block), `failed` (with a `code`: `missing_key`, `expired`, `refused`,
+`reverted`, `insufficient_funds`, `over_gas_cap`, `unknown_registry`, `wallet_locked`,
+`no_wallet`, `remote_sequencer`, …), or for a request `awaiting_approval`, `denied`, `expired`.
+The `change_settled` event carries only the job and its state; each app reads its own details
+with `submit_status`.
 
-**Who may sign.** The module knows which app calls it (Basecamp names each app's credential).
-Only the registry browser (`registry_browser`), the Names Wallet (`names_ui`) and the host
-(Basecamp itself, or `logosctl`) may change its settings (`config_set`; others get `code: "not_allowed"`) or have a change signed
-straight away. Any other app's `submit` signs nothing: it answers `{request, state:
-"awaiting_approval"}`, and the person approves or refuses it in the Program Registry app
-(`pending_requests`, `approve_request`, `deny_request`). Follow it with `submit_status(request)`,
-which turns into the job once approved; an app only sees what it submitted itself. Reads
-(`resolve_program`, `program_label`, `get_idl`, lists, searches, `prepare_*`) stay open to every
-app. Still show your own summary before you submit. (`logosctl` acts as the host whatever
-client token it presents, so it is trusted; the gate is about other apps inside Basecamp.)
+The `lezreg` that signs is found on `PATH`, `~/.local/bin` or `~/.cargo/bin`; only the host can
+point the module at another one. Before signing, `lezreg module send`:
+
+- decodes the change with the real program and refuses anything that is not exactly the
+  registry transaction it claims to be;
+- refuses a registry whose **live code** is not a registry image lezreg trusts: the committed
+  reproducible build (`artifacts/lez_program_registry.imageid`), plus images you pin in lezreg
+  itself (`lezreg network set <network> --registry-image <hex>` or `LEZREG_REGISTRY_IMAGE`). A
+  registry id alone proves nothing: any program can answer with a self-entry named
+  `lez_program_registry`, and it then receives changes your accounts signed (one attempt to
+  move a signer's funds that way was refused by the rc3 engine, which is not a proof; see
+  DESIGN §10). Every other `lezreg` write checks the same;
+- refuses an encrypted wallet with no `LEE_WALLET_PASSWORD` (`wallet_locked`): it has no
+  terminal to ask on. Putting the password in Basecamp's environment gives it to every module
+  Basecamp starts; signing from a terminal is safer.
+
+**Who may sign.** The module knows which app calls it: Basecamp names each app's credential.
+Only the Program Registry app (`registry_browser`) and the host (Basecamp itself, or
+`logosctl`, which reaches the module as the host whatever client token it presents) may change
+its settings (`config_set`; others get `code: "not_allowed"`), see other apps' requests, or have
+a change signed straight away. `cli`, `basecamp_data` and `registry_images` are the host's
+alone. Any other app's `submit` signs nothing: it answers `{request, state:
+"awaiting_approval"}`, and the person approves or refuses it in the Program Registry app before
+the change expires (`pending_requests`, `approve_request`, `deny_request`); the card says the
+app's name is the app's own, unverified. Reads and `prepare_*` stay open to every app.
+
+**What that trust rests on.** The gate trusts a package *name*, and a package chooses its own
+name. Installing a package that calls itself `registry_browser` with a higher version replaces
+the real one (the package manager checks a package's files against the hashes in its own
+manifest, not against a publisher; packages are unsigned today), and from then on it can change
+the module's sequencer and registry and sign without a request. So install the Program Registry
+app only from a catalog you trust, until the module checks `registry_browser`'s publisher
+through its LNS app record (docs/APPS.md; the root-recomputing app checks are in progress).
+
+**Restarts.** Prepared changes, waiting requests and jobs live in the module's memory: a restart
+of the module (or of Basecamp) forgets them. A `lezreg` already started keeps running, and its
+transaction may still land; read the entry back from the chain to know.
 
 **Not yet:** signing through the Logos wallet module `lez_core` (`"signer": "lez_core"` answers
 `lez_core_unavailable`): its generic public send exists on its main branch since 2026-11-13 but
-has no release for Basecamp 0.3.x and is pinned to LEZ rc1, whose wallet sends with a fixed gas limit and no simulation (DESIGN §7.3).
+has no release for Basecamp 0.3.x and is pinned to LEZ rc1, whose wallet sends with a fixed gas
+limit and no simulation (DESIGN §7.3).
 
 ## How this was tested
 
