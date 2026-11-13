@@ -13,3 +13,7 @@ _deps/
 /module/rust-lib/generated/
 /.claude/
 /registry_browser/result*
+/tools/caller-probe/logos-rust-sdk-src
+/tools/caller-probe/rust-lib/target/
+/tools/caller-probe/rust-lib/generated/
+/tools/caller-probe/result*
