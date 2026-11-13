@@ -8,8 +8,8 @@
 #   3. install each Linux build with scripts/install.sh in bare containers (Debian stable,
 #      Ubuntu 22.04, Fedora) and run `lezreg --version` and `lezreg doctor`;
 #   4. write SHA256SUMS and attach everything, install.sh included, to a DRAFT release for tag
-#      vX.Y.Z. Publishing the draft is left to a person. A rerun replaces the draft's files; a
-#      published release is never touched.
+#      vX.Y.Z. Publishing the draft is left to a person. A rerun replaces an earlier draft of
+#      the same version; a published release is never touched.
 #
 # What the build does not need: the RISC Zero toolchain. lezreg builds no guest (the LEZ crates
 # embed their programs from LEZ's committed artifacts/), so rzup is not installed here.
@@ -276,7 +276,7 @@ jobs:
           subject-path: |
             dist/install.sh
             dist/SHA256SUMS
-      - name: Draft release v${{ env.VERSION }} (create, or replace the files of an existing draft)
+      - name: Draft release v${{ env.VERSION }} (replacing an earlier draft of this version)
         run: |
           tag="v$VERSION"
           cat > notes.md <<EOF
@@ -294,14 +294,15 @@ jobs:
           Built by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA.
           EOF
           sed -i 's/^          //' notes.md
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$tag\") | \"\(.id) \(.draft)\"" | head -1)
-          if [ -z "$existing" ]; then
-            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "lezreg $VERSION" --notes-file notes.md dist/*
-          elif [ "${existing#* }" = true ]; then
-            id=${existing%% *}
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f target_commitish="$GITHUB_SHA" -F body=@notes.md >/dev/null
-            gh release upload "$tag" --clobber dist/*
-          else
-            echo "release $tag is already published: not touching it"; exit 1
-          fi
+          # A published release for this tag is never touched. Drafts for this version (matched by
+          # tag or by title: a draft can lose its tag name) are deleted and made again, so a rerun
+          # leaves exactly one draft with this run's files.
+          rels=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$tag\" or (.draft and .name == \"lezreg $VERSION\")) | \"\(.id) \(.draft)\"")
+          if echo "$rels" | grep -q ' false$'; then echo "release $tag is already published: not touching it"; exit 1; fi
+          for id in $(echo "$rels" | cut -d' ' -f1); do
+            echo "deleting the earlier draft $id"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "lezreg $VERSION" --notes-file notes.md dist/*
           gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | {draft, prerelease, html_url, target_commitish, assets: [.assets[].name]}"
