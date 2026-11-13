@@ -1,6 +1,6 @@
 # LEZ Program Registry: final design
 
-Status: final design, 2026-11-02. Target: λPrize LP-0023, LEZ testnet 0.4. The registry is built and tested against LEZ `v0.4.0-rc1` (`1806e873`) on a local standalone sequencer, and deployed to testnet 0.4 on the day it launches.
+Status: final design, 2026-11-02. Target: λPrize LP-0023, LEZ testnet 0.4. The registry is built and tested against LEZ `v0.4.0-rc3` (`bafd07be`; moved from `v0.4.0-rc1` `1806e873` on 2026-11-13, see the rc3 note in §2.7) on a local standalone sequencer, and deployed to testnet 0.4 on the day it launches. File:line citations below are against rc1 (`lez:`) unless marked.
 
 **Revised 2026-11-02 after M0 spikes (a) and (d).** Findings F1–F5 (`spikes/spel-idl/RESULT.md`) and N5 plus the measured fees (`spikes/d-deploy-and-register/RESULT.md`) are folded in below. M0 (b) and (c) are replaced by GitHub Actions reproducible builds, and (e) is deferred (§11).
 
@@ -363,7 +363,7 @@ The LEZ indexer's `getEvents` serves them (`lez/indexer/service/rpc/src/lib.rs:9
 
 `registered_at = now`, supplied by the client. The handler sets `timestamp_window([now, now+600_000))`, so the sequencer rejects the transaction unless its block timestamp falls in that range. The stored value is therefore at most 10 minutes earlier than the including block.
 
-The client takes `now` from the chain clock (`lez/programs/clock/core/src/lib.rs:6-46`), as `LNS/cli/src/main.rs:862-871` does. `seq` gives a total order. Evaluators can also read the block timestamp of the registering transaction.
+The client takes `now` from the chain clock (`lez/programs/clock/core/src/lib.rs:6-46`; one account since rc3, §2.7), as `LNS/cli/src/main.rs:862-871` does. `seq` gives a total order. Evaluators can also read the block timestamp of the registering transaction.
 
 We rejected a sync `clock::AssertTimestamp`: it costs one more delivery for no gain.
 
@@ -398,6 +398,8 @@ Execution gas = cycles, summed over every delivery. Storage gas = borsh transact
 Fee ≈ `cycles × base_fee_exec + bytes × base_fee_stor`, with both at 8 today (`lez/programs/fee/core/src/market.rs`). A registration is therefore on the order of 1–2M native units, well below `MAX_GAS_EXEC` 10M / `MAX_GAS_STOR` 1M per block. The gas limit is the simulated value × 1.5, with a 30,000 minimum (`LNS/cli/src/main.rs:2041-2050`). **A charged revert costs the whole declared gas limit** (spike d), so this rule also caps what any revert can cost: the client always simulates first and never sends a fixed large limit. An attacker pays for their own failed attempts; the victim pays nothing.
 
 **`DeployAndRegister` cost:** the loader is not metered (`public_backend.rs:68-77`, confirmed on chain), so a `DeployAndRegister` costs about what a `RegisterDeployer` costs, whatever the program size (spike d: 83,456 vs 65,608 for the toy). The segments are written in earlier `WriteSegment` transactions (≤ 96 KiB each, well under `MAX_GAS_STOR` 1M per block). The two-transaction path (`CreateHeader`, then `RegisterDeployer`, no `born_with_deploy`) is kept for PDA-owned headers, where `DeployAndRegister` refuses `via_pda_seed` (§2.4, Q13), and for REG's own self-entry `(REG, REG)` (§2.2, N5). Its squat window is closed: between the two transactions nobody but X can write `(X, REG)` (spike d, N1).
+
+**LEZ rc3 changes (2026-11-13; they supersede the rc1 statements above and in §2.1).** (1) The loader is now metered: settlement charges `LOADER_CYCLES_PER_BYTE` = 1 gas per loader-state byte it reads (`lee/state_machine/src/validated_state_diff/mod.rs`, `run_program_loader`, LEZ #943). A `WriteSegment` with a `next_segment` costs about 98k gas (it reads the next segment), and `CreateHeader`/`UpdateHeader` cost about the user ELF's size in gas (they read the whole chain). So a `DeployAndRegister` now costs a `RegisterDeployer` **plus about the program's size** in execution gas, no longer "whatever the program size"; the client's simulation includes it. (2) Loader actor states are a tagged borsh `LoaderEntry` (`Header` = tag 0, `Segment` = tag 1), so a header is 66 bytes; the SDKs and the module decode the tag. (3) A `WriteSegment` target must now be authorized (signed), like a header; `lezreg` already signed each segment with its own fresh key. (4) The clock is one account, `CLOCK_PROGRAM_ACCOUNT_ID` (`/LEZ/ClockProgramAccount/0000000`); `AssertTimestamp` is gone (replaced by `ReadBlockId`/`ReadTimestamp` replies), and the tick is the last transaction of each block, so `now` read from it is the previous block's time. The registry never sent `AssertTimestamp` (above), so only the client's clock read changed. The loader `Message` layout, PDA and public account-id derivation, risc0 3.0.5 and the builder image are unchanged.
 
 ---
 
@@ -1020,7 +1022,7 @@ These are regression pins for the source facts in §2.1:
    - degradation: bogus CID, hash mismatch, unparseable IDL, Storage stopped;
    - `UpdateHeader` of the sample, which shows **stale**;
    - `lezreg verify <REG> --deep` giving `Match`.
-6. **`repro.yml`** builds with Docker `r0.1.91.1@sha256:fafb377a…`, diffs `artifacts/` (like LEZ `ci.yml:549-591`), and rebuilds once more with our `--network=none` Dockerfile, asserting identical bytes. It also runs the golden check that rebuilding rc1 `clock` gives `6f7b8745…b378`.
+6. **`repro.yml`** builds with Docker `r0.1.91.1@sha256:fafb377a…`, diffs `artifacts/` (like LEZ `ci.yml:549-591`), and rebuilds once more with our `--network=none` Dockerfile, asserting identical bytes. It also runs the golden check that rebuilding rc3 `clock` gives `7c356824…4c3e` (rc1's was `6f7b8745…b378`).
 7. **`module.yml`:** `nix build .#lgx-portable`, then logosctl `package install`, `module load`, `call program_registry resolve_program <REG>` against the e2e sequencer (the `LNS/.github/workflows/basecamp-linux-test.yml` pattern).
 8. JS vectors: JS-built transactions equal the Rust bytes and run through the engine.
 

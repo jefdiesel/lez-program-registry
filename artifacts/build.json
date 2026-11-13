@@ -1,0 +1,11 @@
+{
+  "builder_image": "risczero/risc0-guest-builder:r0.1.91.1@sha256:fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+  "risc0_build": "3.0.5",
+  "host_risc0_rust": "",
+  "manifest_path": "methods/guest/Cargo.toml",
+  "binary": "lez_program_registry",
+  "commit": "5c87d700c7874f7b898fc3534aee4ce70ab1e3a5",
+  "lock_sha256": "dd4b807d6fe31b1ab9db525d9efca3bf02ff9b8e00a09cb9a3349b727794987e",
+  "bin_sha256": "651101e128c4b42bf3dda07593eed66cf309124089386dbecbfa7b58f251000e",
+  "image_id": "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc"
+}

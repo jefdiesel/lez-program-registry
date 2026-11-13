@@ -334,7 +334,8 @@ mod tests {
         }
 
         fn deploy(&self, program: AccountId, image: u8) {
-            let mut v = vec![image; 32];
+            let mut v = vec![0]; // LoaderEntry::Header
+            v.extend_from_slice(&[image; 32]);
             v.extend_from_slice(&[3; 32]);
             v.push(0);
             self.rpc.set(program, LOADER, v);

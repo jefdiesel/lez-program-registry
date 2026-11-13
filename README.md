@@ -31,10 +31,10 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 
 | Milestone | State |
 |---|---|
-| M1: program, `spel04-shim`, guest, tests, IDL, **reproducible build** | **done.** CI builds the guest on two runners, byte-identical; the image (`5f42948a…4b55`) is in [`artifacts/`](artifacts/) |
+| M1: program, `spel04-shim`, guest, tests, IDL, **reproducible build** | **done.** CI builds the guest on two runners, byte-identical; the image (`5ffbf8f5…6bdc` on LEZ rc3; `5f42948a…4b55` on rc1) is in [`artifacts/`](artifacts/) |
 | M2: Rust SDK, `lezreg` CLI, `chain/deploy.sh` | **done** ([`docs/demo-m2.log`](docs/demo-m2.log)) |
 | M3: IDLs on Logos Storage | **done:** `idl push`, `--idl-cid push` inside register/update, `idl get` (hash-checked fetch ladder), `pin`, `pin-all`, `storage up` |
-| M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets `5f42948a…` again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
+| M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets the committed image (`5ffbf8f5…` on rc3) again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
 | M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
 | M6: Basecamp core module `program_registry` | **done:** `resolve_program`, `program_label`, `get_idl`, list and search, and the app checks below; built with `mkLogosModule` and published to the module catalog [`jefdiesel/logos-modules`](https://github.com/jefdiesel/logos-modules) (forked from `logos-modules-release-base`, released with `logos-modules-release-action`) for macOS and Linux. Names Wallet's approval sheet uses it. Writes go through the SDK and CLI |
 | M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
@@ -48,7 +48,7 @@ registry id yet, and `lezreg` says so. The registry will be deployed there on la
 ## Install
 
 Build from source. You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ
-v0.4.0-rc1) and the RISC Zero toolchain, installed as `.github/workflows/ci.yml` does it:
+v0.4.0-rc3) and the RISC Zero toolchain, installed as `.github/workflows/ci.yml` does it:
 `lezreg` links the registry program crate, which simulates transactions locally. The read-only
 SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
 
@@ -71,8 +71,8 @@ arm64, and Windows is planned (DESIGN §7.4); those binaries will need `r0vm` to
 
 ### A local sequencer and the registry ELF
 
-The `local` network is a LEZ v0.4.0-rc1 sequencer in standalone mode on `127.0.0.1:3062`. In a
-LEZ v0.4.0-rc1 checkout, run `just run-sequencer-standalone <home> --rpc-listen-address
+The `local` network is a LEZ v0.4.0-rc3 sequencer in standalone mode on `127.0.0.1:3062`. In a
+LEZ v0.4.0-rc3 checkout, run `just run-sequencer-standalone <home> --rpc-listen-address
 127.0.0.1:3062` (LEZ README, "Standalone mode"), and fund a wallet account from it.
 
 The registry guest is built by `cargo build --release -p lezreg-methods` and lands at
@@ -146,7 +146,9 @@ the wallet derives for itself, with paths like `/0/0/0`; you can ignore them.
 **How much to fund.** On the local rc1 sequencer a register reserves about 3–3.5M while it
 runs (it costs about 1.4M), and deploying a 330 KB program plus registering it reserves up to
 about 5.3M (it costs about 3.9M). Run the command with `--dry-run` first: it prints the reserve
-for the payer you chose. A refusal for funds says how much more to send.
+for the payer you chose. A refusal for funds says how much more to send. Since rc3 the loader
+charges 1 gas per byte it reads, so on rc3 a deploy costs more than these rc1 figures: about
+another 100k gas per segment write and the program's size in gas for the `CreateHeader`.
 
 ### Writes
 
@@ -399,7 +401,7 @@ the CLI reports the same kinds as `{"error", "kind"}`, plus `tx` when a transact
 
 ```sh
 cargo test -p lezreg-types -p lezreg-program            # unit tests
-cargo test --release -p lezreg-engine-test              # the real guest on the rc1 state machine
+cargo test --release -p lezreg-engine-test              # the real guest on the rc3 state machine
 cargo test --release -p lezreg-sdk -p lezreg            # SDK against a mocked sequencer; CLI unit tests
 scripts/test-deploy-sh.sh                               # chain/deploy.sh resume/failure cases (stub lezreg)
 # a write whose inclusion is never confirmed is confirmed by read-back (local sequencer, wallet copy):
