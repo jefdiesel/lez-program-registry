@@ -33,6 +33,7 @@ pub mod error;
 pub mod idl;
 pub mod idl_format;
 pub mod jcs;
+pub mod lgx;
 pub mod json;
 pub mod lns;
 pub mod read;
