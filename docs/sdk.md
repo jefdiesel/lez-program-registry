@@ -171,8 +171,16 @@ before installing, `publisher_apps(name)` to list a name's apps. Set the LNS pro
 `config_set({"lns": "<program id>"})`. The CLI equivalents are `lezreg app show`,
 `lezreg app verify`, `lezreg app record` (with `--upload`, the package goes on Logos Storage and
 its CID into the record) and `lezreg app get`, which installs a package by CID only if its
-sha256 and root match what the name vouches for. In Rust, `AppRecord::matches_download(bytes)`
-does the download check.
+sha256 (required) and recomputed root match what the name vouches for. In Rust,
+`lgx::Contents::from_lgx(bytes)` / `from_installed(dir)` recompute a package's root from its
+files, `apps::check_following` (or `Names::verify`) checks them against the publisher's name,
+and `apps::check_download` checks a download. A check from a manifest alone is no longer
+possible: the manifest's `hashes.root` is a claim, and only files prove it. (The module's
+`verify_app` / `verify_package` at commit 74a0010 still compare that claim; see APPS.md §4.)
+
+A name's records can't be read without the name, but they are not secret: record addresses are
+visible on chain and a guessable name can be found by trying it, so treat an app record under a
+guessable name as public.
 
 ## 5. Search and listing
 

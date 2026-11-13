@@ -26,6 +26,10 @@ ureq = "3.4.2"
 # and the AES-256-GCM seal, as logos-names SPEC.md §3 specifies them.
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 aes-gcm = "0.10"
+# Recomputing a package's root from a .lgx (src/lgx.rs): gzip, and strict JSON (no duplicate
+# keys) for app records.
+flate2 = "1"
+serde = "1"
 
 lezreg-program = { path = "../../program", optional = true }
 lee_core = { workspace = true, optional = true }
