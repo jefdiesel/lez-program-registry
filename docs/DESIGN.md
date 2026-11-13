@@ -623,9 +623,9 @@ The same extension is the template `lezreg idl gen` writes for third-party progr
 ### 5.2 Hashing and integrity
 
 - Canonical bytes are RFC 8785 JCS: sorted keys, no whitespace.
-- The upload name is always `<name>-<version>.idl.json`, mimetype `application/json`. The manifest CID depends on bytes, filename and mimetype, and identical triples give identical CIDs (Storage v0.5.3, research §storage).
+- The upload name is `<name>-<version>.idl.json` for a recognised format (SPEL v2: `<name>-2.idl.json`) and `idl-<first 16 hex of sha256>.idl.json` otherwise, mimetype `application/json`. The manifest CID depends on bytes, filename and mimetype, and identical triples give identical CIDs (Storage v0.5.3, research §storage).
 - On chain, `ContentRef` holds the binary manifest CID, the content sha256, the size and an optional `peer_hint`.
-- The client checks that `size ≤ 120 KiB`, below the relay allowance, and that the sha256 matches, and only then parses JSON (with depth and size limits) as `SpelIdl` and checks `x-lez04`.
+- The client checks that `size ≤ 120 KiB`, below the relay allowance, and that the sha256 matches, and only then parses JSON (with depth and size limits) and classifies its format (`sdk/rust/src/idl_format.rs`): SPEL v1, SPEL v2 (logos-co/spel#301), or unknown. Hashing and canonicalization don't depend on the format.
 - If the hash doesn't match, the bytes are discarded unparsed. Every transport is untrusted: Storage, mirrors, caches, and bring-your-own bytes.
 
 ### 5.3 Upload and fetch, with retries and fallbacks
@@ -662,11 +662,12 @@ The same extension is the template `lezreg idl gen` writes for third-party progr
 `resolve(program)` returns `{entry, header, verification, idl: IdlStatus}` and never fails because of the IDL.
 
 `IdlStatus` is one of:
-- `Ok(SpelIdl)`
+- `Ok(Value)`: a recognised format (SPEL v1 or v2); `info()` gives the format, `calls()` the call names, args and types
+- `UnknownFormat(Value)`: the right bytes and a JSON object, in no format the SDK knows; available, shown raw as "format not recognised"
 - `Pending` (still fetching; an event follows)
 - `Unavailable{NoStorageNode|NotFound|Timeout|TooLarge}`
 - `HashMismatch{expected, got}`
-- `ParseError{msg}`
+- `ParseError{msg}`: not JSON, not an object, or over the size or depth limits
 
 What each client shows:
 - **CLI:** the metadata block, then `IDL: unavailable (timeout after 3 tries; try 'lezreg idl <id> --connect')`.

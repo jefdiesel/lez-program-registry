@@ -53,6 +53,7 @@ pub fn content(
         let raw = std::fs::read(f).with_context(|| format!("cannot read {}", f.display()))?;
         let prepared =
             lezreg_sdk::idl::prepare_idl(&raw).map_err(|e| anyhow!("{}: {e}", f.display()))?;
+        crate::storage_cmd::note_format(f, &prepared.info);
         let api = std::env::var("LEZREG_STORAGE_API")
             .unwrap_or_else(|_| lezreg_sdk::storage::DEFAULT_API.to_owned());
         eprintln!(

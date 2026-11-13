@@ -562,7 +562,15 @@ pub struct InitOpts {
     pub ci: bool,
 }
 
-/// The `[program] idl` default: the only `*.idl.json` under idl/, else the only JSON there.
+/// The format of an IDL file, or `None` if it is unreadable or not a JSON object.
+fn idl_info(path: &Path) -> Option<lezreg_sdk::IdlInfo> {
+    let bytes = std::fs::read(path).ok()?;
+    let v = lezreg_sdk::idl::parse_limited(&bytes).ok()?;
+    lezreg_sdk::idl_format::detect(&v).ok()
+}
+
+/// The `[program] idl` default: the only `*.idl.json` under idl/, else the only JSON there;
+/// failing both, the only file there in a known IDL format (SPEL v1 or v2).
 fn detect_idl(dir: &Path) -> Option<String> {
     let rd = std::fs::read_dir(dir.join("idl")).ok()?;
     let mut json: Vec<String> = rd
@@ -576,9 +584,19 @@ fn detect_idl(dir: &Path) -> Option<String> {
         .filter(|n| n.ends_with(".idl.json"))
         .cloned()
         .collect();
+    let known = |names: &[String]| -> Vec<String> {
+        names
+            .iter()
+            .filter(|n| idl_info(&dir.join("idl").join(n)).is_some_and(|i| i.format.is_known()))
+            .cloned()
+            .collect()
+    };
     match (idl.as_slice(), json.as_slice()) {
         ([one], _) | ([], [one]) => Some(format!("idl/{one}")),
-        _ => None,
+        _ => match (known(&idl).as_slice(), known(&json).as_slice()) {
+            ([one], _) | ([], [one]) => Some(format!("idl/{one}")),
+            _ => None,
+        },
     }
 }
 
@@ -739,6 +757,17 @@ pub fn detect(o: &InitOpts) -> Result<(Manifest, Vec<String>)> {
         });
     if !idl.is_empty() && !dir.join(&idl).is_file() {
         bail!("the IDL {idl} does not exist");
+    }
+    if !idl.is_empty() {
+        match idl_info(&dir.join(&idl)) {
+            None => notes.push(format!(
+                "{idl} is not a JSON object: `publish` will refuse it as an IDL"
+            )),
+            Some(i) if !i.format.is_known() => notes.push(format!(
+                "{idl} is JSON but not an IDL format lezreg recognises (SPEL v1 or v2): it will be published as is and shown as \"format not recognised\""
+            )),
+            Some(_) => {}
+        }
     }
     let m = Manifest {
         program: ProgramSection {
@@ -989,7 +1018,13 @@ mod tests {
             dir: d.clone(),
             ..Default::default()
         };
-        let (path, m, _) = init(&o).unwrap();
+        let (path, m, notes) = init(&o).unwrap();
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("not an IDL format lezreg recognises")),
+            "{notes:?}"
+        );
         assert_eq!(m.program.name, "sample_guest");
         assert_eq!(m.program.version, "2.3.4", "workspace-inherited version");
         assert_eq!(m.program.description, "A sample");
@@ -1009,6 +1044,31 @@ mod tests {
         sh(&d, &["commit", "-qm", "toml"]);
         Project::load(&path).unwrap().save_program("Abc").unwrap();
         assert!(dirty_files(&d).unwrap().is_empty());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn detect_idl_prefers_a_recognised_format() {
+        let d = std::env::temp_dir().join(format!("lezreg-detect-idl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("idl")).unwrap();
+        std::fs::write(d.join("idl/a.json"), r#"{"hello":1}"#).unwrap();
+        std::fs::write(
+            d.join("idl/b.json"),
+            r#"{"version":"2","name":"t","messages":[{"name":"Ping","tag":0}]}"#,
+        )
+        .unwrap();
+        assert_eq!(detect_idl(&d).as_deref(), Some("idl/b.json"), "SPEL v2");
+        std::fs::write(
+            d.join("idl/c.json"),
+            r#"{"name":"t","version":"1","instructions":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            detect_idl(&d),
+            None,
+            "two recognised IDLs: the author picks"
+        );
         std::fs::remove_dir_all(&d).ok();
     }
 

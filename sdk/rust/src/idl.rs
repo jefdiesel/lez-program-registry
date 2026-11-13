@@ -5,6 +5,9 @@
 //! the user's Storage node) are kept only if their sha256 and size match the on-chain
 //! [`ContentRef`]; anything else is discarded unparsed. `resolve` never fails because of an
 //! IDL: callers get an [`IdlStatus`] instead.
+//!
+//! The hash check is on the raw bytes, before any parsing, so it is the same for every IDL
+//! format; [`crate::idl_format`] classifies the JSON afterwards.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -14,6 +17,7 @@ use lezreg_types::pda::sha256;
 use serde_json::Value;
 
 use crate::cid;
+pub use crate::idl_format::{IdlArg, IdlCall, IdlFormat, IdlInfo};
 use crate::storage::{MAX_IDL, StorageClient, StorageError};
 
 /// Deepest JSON nesting an IDL may have. SPEL IDLs nest a handful of levels; this only stops
@@ -21,10 +25,18 @@ use crate::storage::{MAX_IDL, StorageClient, StorageError};
 pub const MAX_DEPTH: usize = 64;
 
 /// What became of an entry's IDL.
+///
+/// [`IdlStatus::Ok`] and [`IdlStatus::UnknownFormat`] both mean the IDL is available (the
+/// right bytes, a JSON object); [`IdlStatus::info`] says which format it is in and
+/// [`IdlStatus::calls`] lists its calls. Don't assume the SPEL v1 shape (`instructions`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum IdlStatus {
-    /// Fetched, hash-checked and parsed. The value is the IDL JSON.
+    /// Fetched, hash-checked and parsed, in a format this SDK knows (SPEL v1 or v2; see
+    /// [`IdlFormat`]). The value is the IDL JSON.
     Ok(Value),
+    /// Fetched, hash-checked and a JSON object, but in no format this SDK knows. The value is
+    /// the IDL JSON. Show it as "available, format not recognised", not as unavailable.
+    UnknownFormat(Value),
     /// Not fetched by anything yet (a caller that fetches in the background shows this first).
     Pending,
     Unavailable(Unavailable),
@@ -33,7 +45,8 @@ pub enum IdlStatus {
         expected: [u8; 32],
         got: [u8; 32],
     },
-    /// The content is the right bytes but not a usable IDL.
+    /// The content is the right bytes but not a usable IDL: not JSON, not a JSON object, or
+    /// over the size or nesting limits.
     ParseError(String),
 }
 
@@ -54,6 +67,7 @@ impl std::fmt::Display for IdlStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Ok(_) => write!(f, "ok"),
+            Self::UnknownFormat(_) => write!(f, "available, format not recognised"),
             Self::Pending => write!(f, "pending"),
             Self::Unavailable(u) => match u {
                 Unavailable::NoStorageNode(m) => write!(f, "unavailable: no Storage node ({m})"),
@@ -71,6 +85,43 @@ impl std::fmt::Display for IdlStatus {
                 )
             }
             Self::ParseError(m) => write!(f, "not a usable IDL: {m}"),
+        }
+    }
+}
+
+impl IdlStatus {
+    /// The IDL JSON, if it is available (in a known format or not).
+    #[must_use]
+    pub fn idl(&self) -> Option<&Value> {
+        match self {
+            Self::Ok(v) | Self::UnknownFormat(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// The IDL's format, its version and the name it states, if it is available.
+    #[must_use]
+    pub fn info(&self) -> Option<IdlInfo> {
+        self.idl().and_then(|v| crate::idl_format::detect(v).ok())
+    }
+
+    /// The calls the IDL lists (empty unless it is in a known format).
+    #[must_use]
+    pub fn calls(&self) -> Vec<IdlCall> {
+        self.idl().map(crate::idl_format::calls).unwrap_or_default()
+    }
+
+    /// A stable one-word status for JSON output: `ok`, `unknown-format`, `pending`,
+    /// `unavailable`, `hash-mismatch` or `unparseable`.
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Ok(_) => "ok",
+            Self::UnknownFormat(_) => "unknown-format",
+            Self::Pending => "pending",
+            Self::Unavailable(_) => "unavailable",
+            Self::HashMismatch { .. } => "hash-mismatch",
+            Self::ParseError(_) => "unparseable",
         }
     }
 }
@@ -209,25 +260,19 @@ pub fn fetch_idl(r: &ContentRef, cfg: &FetchConfig) -> IdlStatus {
     }
 }
 
-/// Parses IDL bytes (already hash-checked) and checks they are a SPEL spec-0.1.0 IDL.
+/// Parses IDL bytes (already hash-checked) and classifies them: `Ok` for a known format,
+/// `UnknownFormat` for any other JSON object, `ParseError` for anything else.
 #[must_use]
 pub fn parse_idl(bytes: &[u8]) -> IdlStatus {
     let v = match parse_limited(bytes) {
         Ok(v) => v,
         Err(e) => return IdlStatus::ParseError(e),
     };
-    let Some(obj) = v.as_object() else {
-        return IdlStatus::ParseError("not a JSON object".into());
-    };
-    for key in ["name", "version", "instructions"] {
-        if !obj.contains_key(key) {
-            return IdlStatus::ParseError(format!("missing `{key}`"));
-        }
+    match crate::idl_format::detect(&v) {
+        Err(e) => IdlStatus::ParseError(e),
+        Ok(i) if i.format.is_known() => IdlStatus::Ok(v),
+        Ok(_) => IdlStatus::UnknownFormat(v),
     }
-    if !obj["instructions"].is_array() {
-        return IdlStatus::ParseError("`instructions` is not a list".into());
-    }
-    IdlStatus::Ok(v)
 }
 
 /// Parses JSON of at most [`MAX_IDL`] bytes and [`MAX_DEPTH`] levels.
@@ -309,11 +354,18 @@ pub struct PreparedIdl {
     pub bytes: Vec<u8>,
     pub filename: String,
     pub sha256: [u8; 32],
+    /// Its format. `IdlFormat::Unknown` is accepted (callers may warn): a registry that
+    /// refused formats it doesn't know would refuse the next one.
+    pub info: IdlInfo,
 }
 
-/// Canonicalizes (RFC 8785) an IDL file's bytes and checks it is an IDL within the limits.
-/// The upload name is `<name>-<version>.idl.json` from the IDL itself, so identical IDLs get
-/// identical CIDs (DESIGN §5.2).
+/// Canonicalizes (RFC 8785) an IDL file's bytes and checks it is a JSON object within the
+/// limits, in any format. The canonical form and the hash do not depend on the format.
+///
+/// The upload name, which goes into the CID, is fixed by the content so identical IDLs get
+/// identical CIDs (DESIGN §5.2): `<name>-<version>.idl.json` for a known format (v1: the
+/// program version; v2: the format version `2`), `idl-<first 16 hex of sha256>.idl.json` for
+/// an unknown one, whose fields are not checked.
 pub fn prepare_idl(raw: &[u8]) -> Result<PreparedIdl, String> {
     let bytes = crate::jcs::canonicalize(raw)?;
     if bytes.len() > MAX_IDL {
@@ -322,32 +374,46 @@ pub fn prepare_idl(raw: &[u8]) -> Result<PreparedIdl, String> {
             bytes.len()
         ));
     }
-    let IdlStatus::Ok(v) = parse_idl(&bytes) else {
-        return Err(match parse_idl(&bytes) {
+    let status = parse_idl(&bytes);
+    let Some(info) = status.info() else {
+        return Err(match status {
             IdlStatus::ParseError(e) => e,
             other => other.to_string(),
         });
     };
-    let part = |k: &str| -> Result<String, String> {
-        let s = v.get(k).and_then(Value::as_str).unwrap_or_default();
-        if s.is_empty()
-            || !s
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
-            || s.len() > 64
-        {
-            return Err(format!(
-                "the IDL's `{k}` must be 1–64 characters of a-z, 0-9, '-', '_' or '.'"
-            ));
-        }
-        Ok(s.to_owned())
-    };
-    let filename = format!("{}-{}.idl.json", part("name")?, part("version")?);
     let sha256 = sha256(&bytes);
+    let filename = if info.format.is_known() {
+        let part = |k: &str, s: Option<&str>| -> Result<String, String> {
+            let s = s.unwrap_or_default();
+            if s.is_empty()
+                || !s
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+                || s.len() > 64
+            {
+                return Err(format!(
+                    "the IDL's `{k}` must be 1–64 characters of a-z, 0-9, '-', '_' or '.'"
+                ));
+            }
+            Ok(s.to_owned())
+        };
+        let version = match info.format {
+            IdlFormat::SpelV2 => info.format_version.as_deref(),
+            _ => info.program_version.as_deref(),
+        };
+        format!(
+            "{}-{}.idl.json",
+            part("name", info.name.as_deref())?,
+            part("version", version)?
+        )
+    } else {
+        format!("idl-{}.idl.json", &hex::encode(sha256)[..16])
+    };
     Ok(PreparedIdl {
         bytes,
         filename,
         sha256,
+        info,
     })
 }
 
@@ -410,6 +476,11 @@ mod tests {
     }
 
     const IDL: &[u8] = br#"{"version":"0.1.0","name":"toy","instructions":[{"name":"go","accounts":[],"args":[]}]}"#;
+    const OURS: &[u8] = include_bytes!("../../../idl/lez_program_registry.idl.json");
+    const V2: &[u8] = include_bytes!("../../fixtures/idl/spel-v2-state-entry.json");
+    const V2_NO_STATE: &[u8] = include_bytes!("../../fixtures/idl/spel-v2-no-state.json");
+    const UNKNOWN: &[u8] = include_bytes!("../../fixtures/idl/unknown-object.json");
+    const GARBAGE: &[u8] = include_bytes!("../../fixtures/idl/garbage.json");
 
     #[test]
     fn a_directory_copy_is_used_only_if_its_hash_matches_and_is_then_cached() {
@@ -460,10 +531,13 @@ mod tests {
     #[test]
     fn parse_checks_shape_and_depth() {
         assert!(matches!(parse_idl(b"[]"), IdlStatus::ParseError(_)));
-        assert!(matches!(
-            parse_idl(br#"{"name":"x","version":"1"}"#),
-            IdlStatus::ParseError(_)
-        ));
+        assert!(matches!(parse_idl(GARBAGE), IdlStatus::ParseError(_)));
+        // A JSON object in no known format is available, not unparseable.
+        let s = parse_idl(br#"{"name":"x","version":"1"}"#);
+        assert!(matches!(s, IdlStatus::UnknownFormat(_)));
+        assert_eq!(s.label(), "unknown-format");
+        assert_eq!(s.to_string(), "available, format not recognised");
+        assert!(s.calls().is_empty());
         let deep = format!("{}{}", "[".repeat(MAX_DEPTH + 1), "]".repeat(MAX_DEPTH + 1));
         assert!(
             matches!(parse_idl(deep.as_bytes()), IdlStatus::ParseError(e) if e.contains("nested"))
@@ -487,5 +561,74 @@ mod tests {
             "canonical input is a fixed point"
         );
         assert!(prepare_idl(br#"{"name":"../x","version":"1","instructions":[]}"#).is_err());
+    }
+
+    #[test]
+    fn every_format_is_classified_and_reported() {
+        for (bytes, label, format, version) in [
+            (OURS, "ok", IdlFormat::SpelV1, Some("0.1.0")),
+            (V2, "ok", IdlFormat::SpelV2, Some("2")),
+            (V2_NO_STATE, "ok", IdlFormat::SpelV2, Some("2")),
+            (UNKNOWN, "unknown-format", IdlFormat::Unknown, None),
+        ] {
+            let s = parse_idl(bytes);
+            assert_eq!(s.label(), label);
+            let i = s.info().unwrap();
+            assert_eq!((i.format, i.format_version.as_deref()), (format, version));
+            assert_eq!(s.calls().is_empty(), !format.is_known());
+            assert!(s.idl().is_some());
+        }
+        let g = parse_idl(GARBAGE);
+        assert_eq!((g.label(), g.info(), g.idl()), ("unparseable", None, None));
+        assert!(g.to_string().starts_with("not a usable IDL"));
+        assert!(prepare_idl(GARBAGE).is_err());
+    }
+
+    /// RFC 8785 canonicalization, the sha256 and the CID check don't depend on the format:
+    /// a reformatted copy canonicalizes to the same bytes, and the fetch ladder keeps exactly
+    /// the bytes the reference names, whatever they are.
+    #[test]
+    fn canonical_form_hash_and_fetch_check_are_format_independent() {
+        for (tag, raw, filename) in [
+            ("v1", OURS, Some("lez_program_registry-0.1.0.idl.json")),
+            ("v2", V2, Some("lez_program_registry-2.idl.json")),
+            ("v2n", V2_NO_STATE, Some("lez_program_registry-2.idl.json")),
+            ("unk", UNKNOWN, None),
+        ] {
+            let p = prepare_idl(raw).unwrap();
+            let pretty = serde_json::to_vec_pretty(&parse_limited(raw).unwrap()).unwrap();
+            assert_ne!(pretty, p.bytes);
+            assert_eq!(
+                prepare_idl(&pretty).unwrap(),
+                p,
+                "{tag}: reformatting changes nothing"
+            );
+            assert_eq!(
+                prepare_idl(&p.bytes).unwrap(),
+                p,
+                "{tag}: canonical is a fixed point"
+            );
+            assert_eq!(p.sha256, sha256(&p.bytes));
+            let want = filename.map_or_else(
+                || format!("idl-{}.idl.json", &hex::encode(p.sha256)[..16]),
+                str::to_owned,
+            );
+            assert_eq!(p.filename, want, "{tag}");
+
+            let r = reference(&p.bytes);
+            assert_eq!(cid::raw_sha256(&r.cid), Some(p.sha256));
+            let byo = tmpdir(&format!("fmt-{tag}"));
+            std::fs::write(byo.join("pretty.json"), &pretty).unwrap();
+            assert!(
+                matches!(
+                    fetch_idl(&r, &offline(None, vec![byo.clone()])),
+                    IdlStatus::Unavailable(_)
+                ),
+                "{tag}: the same IDL in other bytes is not the content"
+            );
+            std::fs::write(byo.join("canonical.json"), &p.bytes).unwrap();
+            let got = fetch_idl(&r, &offline(None, vec![byo]));
+            assert_eq!(got.info(), Some(p.info.clone()), "{tag}");
+        }
     }
 }

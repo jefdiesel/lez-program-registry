@@ -1,0 +1,8 @@
+{
+  "format": "some-future-idl",
+  "format_version": "0.1",
+  "program": "counter",
+  "calls": [
+    { "selector": "00", "inputs": [ { "id": "by", "kind": "u64" } ] }
+  ]
+}

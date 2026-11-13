@@ -43,12 +43,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. The IDL from Logos Storage, checked against the sha256 the chain records. Every failure
     //    is a status, never an error: the entry above stays shown.
     let cfg = FetchConfig { storage_api: args.next().or(FetchConfig::default().storage_api), ..FetchConfig::default() };
-    match fetch_idl(&entry.idl, &cfg) {
-        IdlStatus::Ok(idl) => {
-            let instructions = idl["instructions"].as_array().map_or(0, Vec::len);
-            println!("  IDL: {instructions} instructions");
+    //    An IDL can be in any format (SPEL v1, SPEL v2, or one this SDK doesn't know); the
+    //    status says which, and `calls()` lists its messages or instructions either way.
+    let status = fetch_idl(&entry.idl, &cfg);
+    match (&status, status.info()) {
+        (IdlStatus::Ok(_), Some(info)) => {
+            let calls = status.calls();
+            let names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
+            println!(
+                "  IDL: {} {}, {} calls: {}",
+                info.format,
+                info.format_version.as_deref().unwrap_or("(no version)"),
+                calls.len(),
+                names.join(", ")
+            );
         }
-        other => println!("  IDL unavailable ({other}); the entry's metadata still stands"),
+        (IdlStatus::UnknownFormat(_), _) => {
+            println!("  IDL: available, format not recognised (not SPEL v1 or v2); shown as raw JSON only")
+        }
+        (other, _) => println!("  IDL unavailable ({other}); the entry's metadata still stands"),
     }
     Ok(())
 }

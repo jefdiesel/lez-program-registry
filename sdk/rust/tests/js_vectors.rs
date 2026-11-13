@@ -70,6 +70,38 @@ fn h(b: &[u8]) -> String {
     hex::encode(b)
 }
 
+/// IDL samples, as paths from the repository root: ours (SPEL v1), two SPEL v2 outputs of
+/// logos-co/spel#301 for our program, an object in no known format, and bytes that are not
+/// JSON. A new format adds its sample here.
+const FIXTURES: &[&str] = &[
+    "idl/lez_program_registry.idl.json",
+    "sdk/fixtures/idl/spel-v2-state-entry.json",
+    "sdk/fixtures/idl/spel-v2-no-state.json",
+    "sdk/fixtures/idl/unknown-object.json",
+    "sdk/fixtures/idl/garbage.json",
+];
+
+/// Per sample: its status, format and call view, as the JS SDK's `parseIdl` must report them.
+fn idl_formats() -> Value {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut out = serde_json::Map::new();
+    for f in FIXTURES {
+        let bytes = std::fs::read(root.join(f)).unwrap();
+        let s = lezreg_sdk::idl::parse_idl(&bytes);
+        let info = s.info().map(|i| lezreg_sdk::json::idl_info(&i));
+        out.insert(
+            (*f).to_owned(),
+            json!({
+                "sha256": h(&sha256(&bytes)),
+                "status": s.label(),
+                "info": info,
+                "calls": lezreg_sdk::json::idl_calls(&s.calls()),
+            }),
+        );
+    }
+    Value::Object(out)
+}
+
 fn vectors() -> Value {
     let reg = id(0xa5);
     let e = entry();
@@ -119,6 +151,7 @@ fn vectors() -> Value {
         "head": {"borsh": h(&borsh::to_vec(&head).unwrap()), "count": head.count, "newest": id(3).to_base58()},
         "release": {"borsh": h(&borsh::to_vec(&release).unwrap()), "revision": 2, "at": release.at.to_string()},
         "sha256:abc": h(&sha256(b"abc")),
+        "idl_formats": idl_formats(),
     })
 }
 

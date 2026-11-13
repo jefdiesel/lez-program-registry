@@ -93,10 +93,22 @@ pub fn deployer_entry(r: &Registry<HttpRpc>, target: &str) -> Result<Entry> {
     }
 }
 
-fn status_json(s: &IdlStatus) -> serde_json::Value {
-    match s {
-        IdlStatus::Ok(_) => json!({"status": "ok"}),
-        other => json!({"status": "unavailable", "reason": other.to_string()}),
+/// Says on stderr when an IDL is JSON in no format lezreg knows. Not an error: other
+/// tooling may emit a format this version predates.
+pub fn note_format(what: &std::path::Path, info: &idl::IdlInfo) {
+    if !info.format.is_known() {
+        eprintln!(
+            "note: {} is a JSON object but not an IDL format lezreg recognises (SPEL v1 or v2); it is used as is, and clients will show it as \"format not recognised\"",
+            what.display()
+        );
+    }
+}
+
+/// `spel-v2 2`, `spel-v1 0.1.0`, `spel-v1` (no version stated), `unknown`.
+fn format_text(info: &idl::IdlInfo) -> String {
+    match &info.format_version {
+        Some(v) => format!("{} {v}", info.format),
+        None => info.format.to_string(),
     }
 }
 
@@ -110,9 +122,22 @@ pub fn get(
 ) -> Result<()> {
     let e = deployer_entry(r, target)?;
     let status = idl::fetch_idl(&e.idl, &o.fetch_config()?);
-    match &status {
-        IdlStatus::Ok(v) => {
+    match (&status, status.info()) {
+        (IdlStatus::Ok(v) | IdlStatus::UnknownFormat(v), Some(info)) => {
             let pretty = serde_json::to_string_pretty(v)?;
+            if info.format.is_known() {
+                eprintln!(
+                    "{} {}: IDL format {}",
+                    e.name,
+                    e.version,
+                    format_text(&info)
+                );
+            } else {
+                eprintln!(
+                    "{} {}: the IDL is available but its format is not recognised (not SPEL v1 or v2); printed as is",
+                    e.name, e.version
+                );
+            }
             if let Some(path) = save {
                 // The canonical bytes, exactly what the chain hashes, not the pretty print.
                 let bytes = idl::fetch_content(
@@ -135,11 +160,21 @@ pub fn get(
             } else {
                 out.text(&pretty);
             }
-            out.json(json!({"name": e.name, "version": e.version, "idl": v, "cid": cid::to_string(&e.idl.cid), "sha256": hex::encode(e.idl.sha256)}));
+            let st = lezreg_sdk::json::idl_status(&status);
+            out.json(json!({
+                "name": e.name,
+                "version": e.version,
+                "idl": v,
+                "cid": cid::to_string(&e.idl.cid),
+                "sha256": hex::encode(e.idl.sha256),
+                "status": st["status"],
+                "format": lezreg_sdk::json::idl_info(&info),
+                "calls": st["calls"],
+            }));
             Ok(())
         }
-        other => {
-            out.json(json!({"name": e.name, "idl": status_json(other), "cid": cid::to_string(&e.idl.cid)}));
+        (other, _) => {
+            out.json(json!({"name": e.name, "idl": lezreg_sdk::json::idl_status(other), "cid": cid::to_string(&e.idl.cid)}));
             bail!(
                 "{} {}: IDL {other}. Try --pin-peer <peer> or ask the author to run `lezreg pin {}`",
                 e.name,
@@ -154,6 +189,7 @@ pub fn get(
 pub fn push(out: &mut Out, file: &std::path::Path, o: &StorageOpts) -> Result<ContentRef> {
     let raw = std::fs::read(file).map_err(|e| anyhow!("cannot read {}: {e}", file.display()))?;
     let prepared = idl::prepare_idl(&raw).map_err(|e| anyhow!("{}: {e}", file.display()))?;
+    note_format(file, &prepared.info);
     let node = StorageClient::new(&o.storage_api);
     eprintln!(
         "uploading {} ({} B canonical) to {}",
@@ -176,7 +212,7 @@ pub fn push(out: &mut Out, file: &std::path::Path, o: &StorageOpts) -> Result<Co
         hex::encode(r.sha256),
         r.size
     ));
-    out.json(json!({"cid": cid_text, "sha256": hex::encode(r.sha256), "size": r.size, "peer": peer, "filename": prepared.filename}));
+    out.json(json!({"cid": cid_text, "sha256": hex::encode(r.sha256), "size": r.size, "peer": peer, "filename": prepared.filename, "format": lezreg_sdk::json::idl_info(&prepared.info)}));
     Ok(r)
 }
 

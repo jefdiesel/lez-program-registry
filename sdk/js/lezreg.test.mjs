@@ -3,13 +3,15 @@
 import { readFileSync } from "node:fs";
 import {
   Registry, addr, accountId, decodeEntry, decodeHead, decodeLink, decodeRelease, fetchIdl,
-  fromBase58, fromHex, hex, sha256, toBase58,
+  fromBase58, fromHex, hex, idlFormat, parseIdl, sha256, toBase58,
 } from "./lezreg.js";
 
 const v = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url)));
 let failed = 0;
+// Compares as JSON with object keys sorted (the Rust side writes sorted keys).
+const canon = (x) => JSON.stringify(x, (_, val) => (val && typeof val === "object" && !Array.isArray(val) ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : val));
 const check = (what, got, want) => {
-  const ok = JSON.stringify(got) === JSON.stringify(want);
+  const ok = canon(got) === canon(want);
   if (!ok) failed++;
   console.log(`${ok ? "ok  " : "FAIL"} ${what}${ok ? "" : `\n     got  ${JSON.stringify(got)}\n     want ${JSON.stringify(want)}`}`);
 };
@@ -71,7 +73,35 @@ check("label", (await registry.programLabel(program)).text, "token-é 1.2.0");
 check("unregistered label", (await registry.programLabel(toBase58(id(6)))).kind, "unregistered");
 const goodRef = { ...e.idl, sha256: hex(await sha256(idlBytes)), size: idlBytes.length };
 check("IDL ok", (await fetchIdl({ idl: goodRef }, { fetch: fakeFetch })).status, "ok");
+check("IDL ok: SPEL v1, no calls", (({ kind, format, calls }) => [kind, format, calls])(await fetchIdl({ idl: goodRef }, { fetch: fakeFetch })), ["ok", "spel-v1", []]);
 check("IDL hash mismatch refused", (await fetchIdl({ idl: e.idl }, { fetch: fakeFetch })).status.startsWith("hash mismatch"), true);
+
+// IDL formats: every sample classified as the Rust SDK classifies it (status, format, calls).
+const sample = (path) => new Uint8Array(readFileSync(new URL(`../../${path}`, import.meta.url)));
+for (const [path, want] of Object.entries(v.idl_formats)) {
+  const bytes = sample(path);
+  check(`IDL sample sha256 ${path}`, hex(await sha256(bytes)), want.sha256);
+  const r = parseIdl(bytes);
+  const info = r.idl ? idlFormat(r.idl) : null;
+  check(`IDL format ${path}`, [r.kind, info && { format: info.format, format_version: info.formatVersion, name: info.name, program_version: info.programVersion }], [want.status, want.info]);
+  check(`IDL calls ${path}`, r.calls, want.calls);
+}
+check("IDL samples cover every kind", [...new Set(Object.values(v.idl_formats).map((x) => x.info?.format ?? x.status))].sort(), ["spel-v1", "spel-v2", "unknown", "unparseable"]);
+
+// The fetch keeps exactly the bytes the chain names, in any format, and only then classifies.
+for (const [path, kind, format] of [
+  ["sdk/fixtures/idl/spel-v2-state-entry.json", "ok", "spel-v2"],
+  ["sdk/fixtures/idl/unknown-object.json", "unknown-format", "unknown"],
+  ["sdk/fixtures/idl/garbage.json", "unparseable", null],
+]) {
+  const bytes = sample(path);
+  const serve = async () => ({ ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) });
+  const ref = { ...e.idl, sha256: hex(await sha256(bytes)), size: bytes.length };
+  const got = await fetchIdl({ idl: ref }, { fetch: serve });
+  check(`fetch ${format ?? "garbage"}: kind, format`, [got.kind, got.format, got.idl !== null], [kind, format, kind !== "unparseable"]);
+  const wrong = await fetchIdl({ idl: { ...ref, sha256: hex(await sha256(idlBytes)) } }, { fetch: serve });
+  check(`fetch ${format ?? "garbage"}: other bytes refused before parsing`, [wrong.kind, wrong.idl], ["hash-mismatch", null]);
+}
 
 console.log(failed ? `${failed} FAILED` : "ALL PASS");
 process.exit(failed ? 1 : 0);

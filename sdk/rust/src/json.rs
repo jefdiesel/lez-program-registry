@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 
 use crate::{
     cid,
+    idl::IdlStatus,
+    idl_format::{IdlCall, IdlInfo},
     read::{Freshness, Header, Kind, Listed, Located, Resolved},
 };
 
@@ -147,5 +149,49 @@ pub fn release(r: &Release) -> Value {
         "image_id": hex::encode(r.image_id),
         "build_hash": hex::encode(r.build_hash),
         "at": r.at,
+    })
+}
+
+/// An IDL's format: `{"format": "spel-v1" | "spel-v2" | "unknown", "format_version", "name",
+/// "program_version"}` (absent values are `null`).
+#[must_use]
+pub fn idl_info(i: &IdlInfo) -> Value {
+    json!({
+        "format": i.format.id(),
+        "format_version": i.format_version,
+        "name": i.name,
+        "program_version": i.program_version,
+    })
+}
+
+/// The common call view: `[{"name", "tag", "args": [{"name", "type", "label"}]}]`, where
+/// `type` is the IDL's own type JSON and `label` its display form.
+#[must_use]
+pub fn idl_calls(calls: &[IdlCall]) -> Value {
+    calls
+        .iter()
+        .map(|c| {
+            json!({
+                "name": c.name,
+                "tag": c.tag,
+                "args": c.args.iter().map(|a| json!({"name": a.name, "type": a.ty, "label": a.label})).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
+/// An IDL status without the IDL itself: `{"status", "reason", "format", "format_version",
+/// "calls"}`. `status` is [`IdlStatus::label`]; `reason` is the status text when the IDL is not
+/// `ok`; `format` and `format_version` are `null` unless the IDL is available; `calls` is the
+/// common call view (empty for an unknown format).
+#[must_use]
+pub fn idl_status(s: &IdlStatus) -> Value {
+    let info = s.info();
+    json!({
+        "status": s.label(),
+        "reason": (!matches!(s, IdlStatus::Ok(_))).then(|| s.to_string()),
+        "format": info.as_ref().map(|i| i.format.id()),
+        "format_version": info.and_then(|i| i.format_version),
+        "calls": idl_calls(&s.calls()),
     })
 }

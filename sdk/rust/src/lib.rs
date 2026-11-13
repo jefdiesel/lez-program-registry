@@ -31,6 +31,7 @@ pub mod apps;
 pub mod cid;
 pub mod error;
 pub mod idl;
+pub mod idl_format;
 pub mod jcs;
 pub mod json;
 pub mod lns;
@@ -46,6 +47,7 @@ use std::path::PathBuf;
 
 pub use error::{Error, Result};
 pub use idl::{FetchConfig, IdlStatus, Peer, Unavailable};
+pub use idl_format::{IdlCall, IdlFormat, IdlInfo};
 pub use lezreg_types as types;
 pub use read::{
     Found, Freshness, Header, Kind, LOADER, LinkCache, Listed, Located, Page, Registry, Resolved,

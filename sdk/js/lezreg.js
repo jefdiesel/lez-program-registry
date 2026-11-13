@@ -404,31 +404,125 @@ export class Registry {
   }
 }
 
+// ── IDL formats ───────────────────────────────────────────────────────────────────────
+// The same classification as sdk/rust/src/idl_format.rs (pinned by vectors.json): SPEL v1
+// (`instructions[]`), SPEL v2 (logos-co/spel#301: `version: "2"`, `messages[]`), and any other
+// JSON object as "unknown" (available, format not recognised). A file counts as a known format
+// only if every part read here has the right shape. To add a format: one entry in
+// IDL_FORMATS, mirroring the Rust table, plus a fixture in sdk/fixtures/idl/.
+
+const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const isU64 = (x) => Number.isSafeInteger(x) && x >= 0;
+const str = (o, k) => (has(o, k) && typeof o[k] === "string" ? o[k] : null);
+
+/** `items` is an array of objects, each with a string `name`, and each passing `each`. */
+function namedList(items, each) {
+  return Array.isArray(items) && items.every((x) => isObj(x) && typeof x.name === "string" && each(x));
+}
+/** Absent, or a list of `{name, type}`. */
+const fieldsOk = (o, k) => !has(o, k) || namedList(o[k], (a) => has(a, "type"));
+const args = (list) => (list ?? []).map((a) => ({ name: a.name, type: has(a, "type") ? a.type : null, label: typeLabel(has(a, "type") ? a.type : null) }));
+
+/** A short display form of an IDL type, identical to the Rust SDK's `type_label`. */
+export function typeLabel(t) {
+  if (typeof t === "string") return t;
+  if (isObj(t)) {
+    const keys = Object.keys(t);
+    if (keys.length === 1) {
+      const k = keys[0];
+      const inner = t[k];
+      if (k === "defined" && typeof inner === "string") return inner;
+      if (k === "defined" && isObj(inner) && typeof inner.name === "string") return inner.name;
+      if (k === "array" && Array.isArray(inner) && inner.length === 2 && isU64(inner[1])) return `[${typeLabel(inner[0])}; ${inner[1]}]`;
+      return `${k}<${typeLabel(inner)}>`;
+    }
+  }
+  return "?";
+}
+
+/** The known formats; the first whose `claims` accepts a file wins. */
+export const IDL_FORMATS = [
+  {
+    id: "spel-v1",
+    claims: (o) => namedList(o.instructions, (ix) => fieldsOk(ix, "args")),
+    info: (o) => ({ formatVersion: str(o, "spec"), name: str(o, "name"), programVersion: str(o, "version") }),
+    calls: (o) =>
+      o.instructions.map((ix) => {
+        const d = ix.discriminator;
+        return { name: ix.name, tag: Array.isArray(d) && d.length === 1 && isU64(d[0]) && d[0] <= 255 ? d[0] : null, args: args(ix.args) };
+      }),
+  },
+  {
+    id: "spel-v2",
+    claims: (o) => str(o, "version") === "2" && namedList(o.messages, (m) => (!has(m, "tag") || isU64(m.tag)) && fieldsOk(m, "fields")),
+    info: (o) => ({ formatVersion: "2", name: str(o, "name"), programVersion: null }),
+    calls: (o) => o.messages.map((m) => ({ name: m.name, tag: has(m, "tag") ? m.tag : null, args: args(m.fields) })),
+  },
+];
+
+/**
+ * An IDL's format: `{format: "spel-v1"|"spel-v2"|"unknown", formatVersion, name,
+ * programVersion}`, or null if it is not a JSON object (not an IDL at all).
+ */
+export function idlFormat(idl) {
+  if (!isObj(idl)) return null;
+  const f = IDL_FORMATS.find((f) => f.claims(idl));
+  return f ? { format: f.id, ...f.info(idl) } : { format: "unknown", formatVersion: null, name: str(idl, "name"), programVersion: null };
+}
+
+/** The calls a known-format IDL lists: `[{name, tag, args: [{name, type, label}]}]`; else []. */
+export function idlCalls(idl) {
+  if (!isObj(idl)) return [];
+  const f = IDL_FORMATS.find((f) => f.claims(idl));
+  return f ? f.calls(idl) : [];
+}
+
+function idlResult(status, kind, idl = null) {
+  const info = idl ? idlFormat(idl) : null;
+  return { status, kind, idl, format: info?.format ?? null, formatVersion: info?.formatVersion ?? null, calls: idl ? idlCalls(idl) : [] };
+}
+
+/**
+ * Classifies IDL bytes that already passed the hash check. `kind` is `ok` (a known format),
+ * `unknown-format` (a JSON object in no known format: available, `idl` is set) or
+ * `unparseable` (not JSON, not an object, or too large).
+ */
+export function parseIdl(bytes) {
+  if (bytes.length > MAX_IDL) return idlResult("not a usable IDL: too large", "unparseable");
+  let idl;
+  try {
+    idl = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch (e) {
+    return idlResult(`not a usable IDL: ${e.message}`, "unparseable");
+  }
+  const info = idlFormat(idl);
+  if (!info) return idlResult("not a usable IDL: not a JSON object", "unparseable");
+  return info.format === "unknown" ? idlResult("available, format not recognised", "unknown-format", idl) : idlResult("ok", "ok", idl);
+}
+
 /**
  * Fetches IDL bytes from a Logos Storage node and keeps them only if they match the entry's
- * sha256 and size; then parses. Returns `{status, idl}`; never throws for the IDL itself.
+ * sha256 and size; then parses. Never throws for the IDL itself. Returns
+ * `{status, kind, idl, format, formatVersion, calls}`: `status` is "ok" or the reason as text
+ * (as in the Rust SDK's `IdlStatus` Display), `kind` one of `ok`, `unknown-format`,
+ * `unavailable`, `hash-mismatch`, `unparseable`. `idl` is set for `ok` and `unknown-format`.
  */
 export async function fetchIdl(entry, { storageApi = "http://127.0.0.1:8080/api/storage/v1", fetch: f } = {}) {
   const get = f ?? globalThis.fetch.bind(globalThis);
   const ref = entry.idl;
-  if (ref.size > MAX_IDL) return { status: "unavailable: too large", idl: null };
+  if (ref.size > MAX_IDL) return idlResult("unavailable: too large", "unavailable");
   const cid = "z" + toBase58(ref.cid);
   let bytes;
   try {
     const res = await get(`${storageApi}/data/${cid}/network/stream?advertise=false`, { redirect: "error" });
-    if (!res.ok) return { status: `unavailable: HTTP ${res.status}`, idl: null };
+    if (!res.ok) return idlResult(`unavailable: HTTP ${res.status}`, "unavailable");
     bytes = new Uint8Array(await res.arrayBuffer());
   } catch (e) {
-    return { status: `unavailable: ${e.message}`, idl: null };
+    return idlResult(`unavailable: ${e.message}`, "unavailable");
   }
-  if (bytes.length > MAX_IDL) return { status: "unavailable: too large", idl: null };
+  if (bytes.length > MAX_IDL) return idlResult("unavailable: too large", "unavailable");
   const got = hex(await sha256(bytes));
-  if (got !== ref.sha256 || bytes.length !== ref.size) return { status: `hash mismatch: the chain names ${ref.sha256}, the bytes hash to ${got}`, idl: null };
-  try {
-    const idl = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    if (!idl || typeof idl !== "object" || !Array.isArray(idl.instructions)) return { status: "not a usable IDL", idl: null };
-    return { status: "ok", idl };
-  } catch (e) {
-    return { status: `not a usable IDL: ${e.message}`, idl: null };
-  }
+  if (got !== ref.sha256 || bytes.length !== ref.size) return idlResult(`hash mismatch: the chain names ${ref.sha256}, the bytes hash to ${got}`, "hash-mismatch");
+  return parseIdl(bytes);
 }

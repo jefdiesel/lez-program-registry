@@ -343,6 +343,7 @@ pub async fn publish(
     let raw = std::fs::read(&plan.idl)
         .with_context(|| format!("cannot read the IDL {}", plan.idl.display()))?;
     let prepared = prepare_idl(&raw).map_err(|e| anyhow!("{}: {e}", plan.idl.display()))?;
+    crate::storage_cmd::note_format(&plan.idl, &prepared.info);
     lezreg_types::validate::entry_fields(
         &plan.name,
         &plan.version,
@@ -671,6 +672,7 @@ pub fn prepare(
     let raw = std::fs::read(&plan.idl)
         .with_context(|| format!("cannot read the IDL {}", plan.idl.display()))?;
     let idl = prepare_idl(&raw).map_err(|e| anyhow!("{}: {e}", plan.idl.display()))?;
+    crate::storage_cmd::note_format(&plan.idl, &idl.info);
     let payload = ReleasePayload::of(&plan, &bin, &idl.bytes, image);
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(out_dir.join(BIN_FILE), &bin)?;

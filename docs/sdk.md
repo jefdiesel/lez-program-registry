@@ -25,7 +25,7 @@ cargo run -p lezreg-sdk --no-default-features --example resolve_program -- \
 lez_program_registry 0.1.0 by 7Pq…
   The LEZ Program Registry, registered in itself: …
   fresh: the program runs the image the entry claims
-  IDL: 6 instructions
+  IDL: spel-v1 0.1.0, 6 calls: register_deployer, register_third_party, update, transfer_author, freeze, deploy_and_register
 ```
 
 The steps it takes:
@@ -66,9 +66,16 @@ Show a stale entry as stale. Its IDL may not match the program anymore.
 ```rust
 use lezreg_sdk::idl::{FetchConfig, IdlStatus, fetch_idl};
 
-match fetch_idl(&entry.idl, &FetchConfig::default()) {
-    IdlStatus::Ok(idl) => { /* SPEL IDL JSON: instructions, accounts, types */ }
+let status = fetch_idl(&entry.idl, &FetchConfig::default());
+match &status {
+    IdlStatus::Ok(idl) => { /* a format we know: status.info(), status.calls() */ }
+    IdlStatus::UnknownFormat(idl) => { /* the right bytes, a format we don't know: show it raw */ }
     other => { /* show "IDL unavailable: {other}", keep showing the entry */ }
+}
+for call in status.calls() {
+    // e.g. "Transfer (tag 2): to: account_id, amount: u128"
+    let args: Vec<String> = call.args.iter().map(|a| format!("{}: {}", a.name, a.label)).collect();
+    println!("{} (tag {:?}): {}", call.name, call.tag, args.join(", "));
 }
 ```
 
@@ -76,6 +83,29 @@ match fetch_idl(&entry.idl, &FetchConfig::default()) {
 hashed and compared with the sha256 on chain before it is parsed. **It never fails the view:** an
 unreachable node, a wrong hash or an unparsable IDL each come back as a status (`Unavailable`,
 `HashMismatch`, `ParseError`), so the entry's metadata still displays.
+
+**IDL formats.** Programs publish whatever IDL their tooling makes, and on LEZ 0.4 there is more
+than one kind. The SDK reads the file and says which kind it is (`status.info()`):
+
+| format | what it looks like | made by |
+| --- | --- | --- |
+| `spel-v1` | `instructions[]` with accounts and args | `spel generate-idl` up to v0.7.0; this registry's own IDL |
+| `spel-v2` | `"version": "2"`, `messages[]`, `state`, `events`, `types` | SPEL's LEZ 0.4 rewrite (logos-co/spel#301) |
+| `unknown` | any other JSON object | a format this SDK version doesn't know yet |
+
+So an entry's IDL is in one of four states:
+
+- **ok**: the bytes match the chain and the format is one we know. `status.calls()` lists the
+  program's messages (v2) or instructions (v1) with their argument names and types, enough to
+  label a call in a wallet.
+- **unknown format**: the bytes match the chain and are JSON, but not a format we know. The IDL
+  is still there (`status.idl()`); show it raw and say the format is not recognised. It is not
+  "unavailable".
+- **unavailable** or **hash mismatch**: no trustworthy bytes.
+- **unparseable**: the right bytes, but not JSON (or too large or too deeply nested).
+
+The SDK lists calls but doesn't encode or decode them. The hash check and the canonical form
+used for uploads (RFC 8785) work on bytes and don't depend on the format.
 
 **Source verification** is a local action (`lezreg verify <program> --mark`): it rebuilds the
 recorded source with the recorded build configuration and marks the program verified on this
@@ -94,8 +124,11 @@ const reg = new Registry({ rpc: "http://127.0.0.1:3062", registry: "<registry id
 const { deployer, freshness } = await reg.resolve("<program id>");
 if (deployer) {
   console.log(deployer.name, deployer.version, freshness);           // "fresh", "stale" or "no-program"
-  const { status, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
-  console.log(status === "ok" ? idl.instructions.length : `IDL unavailable: ${status}`);
+  const { kind, status, format, calls } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
+  // kind: "ok" | "unknown-format" | "unavailable" | "hash-mismatch" | "unparseable"
+  if (kind === "ok") console.log(format, calls.map((c) => c.name));      // "spel-v2", ["Transfer", …]
+  else if (kind === "unknown-format") console.log("IDL format not recognised");
+  else console.log(`IDL unavailable: ${status}`);
 }
 
 // One line for a prompt:
@@ -122,6 +155,9 @@ var resolved = JSON.parse(logos.callModule("program_registry", "resolve_program"
 var idl = JSON.parse(logos.callModule("program_registry", "get_idl", ["<program id>"]))
 // idl.value: { status: "ok", idl: {...} } or { status: "unavailable: …", idl: null }
 ```
+
+The module is pinned to an SDK release, so its `get_idl` may not report the format yet; read it
+from the IDL itself (`version: "2"` with `messages` is SPEL v2, `instructions` is SPEL v1).
 
 `program_label.verified` is true only when this machine rebuilt the running image from its
 recorded source (`lezreg verify --mark`) and the program still runs that image. Names Wallet

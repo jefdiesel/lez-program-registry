@@ -1,0 +1,877 @@
+{
+  "version": "2",
+  "name": "lez_program_registry",
+  "messages": [
+    {
+      "name": "RegisterDeployer",
+      "tag": 0,
+      "docs": "Deployer entry for program `X`, at the root actor `(X, registry)`. `X` must authorize it:\nits signature, or (via `via_pda_seed`) the owner program of a PDA header. The author\nco-signs and may equal `X`.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "The co-signing author's account id."
+        },
+        {
+          "name": "revision",
+          "type": "u32",
+          "docs": "Must be 1."
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "`revision` as 32 little-endian bytes (the release PDA seed)."
+        },
+        {
+          "name": "now",
+          "type": "u64",
+          "docs": "Block timestamp lower bound, ms; valid for 10 minutes."
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RegisterThirdParty",
+      "tag": 1,
+      "docs": "Third-party entry for `program`, at `pda[\"lezreg/v1/tp\", program, publisher]`. The\npublisher is the root actor and the author; one entry per (program, publisher).",
+      "fields": [
+        {
+          "name": "program",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "Update",
+      "tag": 2,
+      "docs": "Update by the entry's author, rooted at the author's own actor. Writes a write-once\nrelease snapshot; `revision` must be the stored revision + 1.",
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "version",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "tags",
+          "type": {
+            "option": {
+              "vec": "string"
+            }
+          }
+        },
+        {
+          "name": "author_label",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "option": {
+              "defined": "SourceRef"
+            }
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "option": {
+              "defined": "BuildConfig"
+            }
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "TransferAuthor",
+      "tag": 3,
+      "docs": "Hands the entry to the new author. Both sign.",
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "new_author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Freeze",
+      "tag": 4,
+      "docs": "Irreversibly freezes the entry.",
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "DeployAndRegister",
+      "tag": 5,
+      "docs": "Deploys program `X` (loader `CreateHeader`, sent first) and writes its deployer entry in\none transaction.",
+      "fields": [
+        {
+          "name": "first_segment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "immutable",
+          "type": "bool"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "state": {
+    "defined": "Entry"
+  },
+  "events": [
+    {
+      "name": "Registered",
+      "selector": "f7e10a32e3134cad",
+      "type": {
+        "defined": "Registered"
+      }
+    },
+    {
+      "name": "Updated",
+      "selector": "99d67fef2c827eca",
+      "type": {
+        "defined": "Updated"
+      }
+    },
+    {
+      "name": "AuthorTransferred",
+      "selector": "cf450a1d3ff46fb5",
+      "type": {
+        "defined": "AuthorTransferred"
+      }
+    },
+    {
+      "name": "Frozen",
+      "selector": "b50933e5871bae9c",
+      "type": {
+        "defined": "Frozen"
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "AuthorTransferred",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "from",
+          "type": "account_id"
+        },
+        {
+          "name": "to",
+          "type": "account_id"
+        }
+      ]
+    },
+    {
+      "name": "BuildConfig",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "builder",
+          "type": "u8",
+          "docs": "1 = risc0-build Docker (`cargo risczero build`)."
+        },
+        {
+          "name": "image_digest",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "sha256 digest of `risczero/risc0-guest-builder` (authoritative)."
+        },
+        {
+          "name": "image_tag",
+          "type": "string",
+          "docs": "e.g. `r0.1.91.1` (informational)."
+        },
+        {
+          "name": "risc0_build",
+          "type": "string",
+          "docs": "e.g. `3.0.5`."
+        },
+        {
+          "name": "host_risc0_rust",
+          "type": "string",
+          "docs": "rzup Rust version on the host (changes RUSTFLAGS)."
+        },
+        {
+          "name": "manifest_path",
+          "type": "string",
+          "docs": "Guest Cargo.toml, relative to `docker_root`."
+        },
+        {
+          "name": "binary",
+          "type": "string",
+          "docs": "Bin target name."
+        },
+        {
+          "name": "features",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "lock_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "sha256 of the Cargo.lock the guest build uses."
+        },
+        {
+          "name": "docker_env",
+          "type": {
+            "vec": {
+              "defined": "EnvVar"
+            }
+          },
+          "docs": "Extra `ENV` lines from `DockerOptions::env`; usually empty."
+        }
+      ]
+    },
+    {
+      "name": "ContentRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cid",
+          "type": {
+            "vec": "u8"
+          },
+          "docs": "Binary CIDv1 of the Storage manifest, at most 64 bytes."
+        },
+        {
+          "name": "sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "sha256 of the content bytes."
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        },
+        {
+          "name": "peer_hint",
+          "type": {
+            "option": {
+              "vec": "u8"
+            }
+          },
+          "docs": "libp2p peer id of a pinning node, at most 48 bytes."
+        }
+      ]
+    },
+    {
+      "name": "Entry",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "kind",
+          "type": "u8",
+          "docs": "0 = Deployer, 1 = ThirdParty."
+        },
+        {
+          "name": "flags",
+          "type": "u8",
+          "docs": "bit0 frozen, bit1 born_with_deploy."
+        },
+        {
+          "name": "program",
+          "type": "account_id",
+          "docs": "The program's header account `X`."
+        },
+        {
+          "name": "author",
+          "type": "account_id",
+          "docs": "Proven co-signer; the only account allowed to change the entry."
+        },
+        {
+          "name": "registrant",
+          "type": "account_id",
+          "docs": "The original author, kept after a transfer."
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "docs": "`[a-z0-9][a-z0-9._-]*`, 1..=32 bytes, immutable (also a PDA seed)."
+        },
+        {
+          "name": "version",
+          "type": "string",
+          "docs": "Printable ASCII, 1..=32 bytes."
+        },
+        {
+          "name": "author_label",
+          "type": "string",
+          "docs": "UTF-8, 0..=64 bytes, UNPROVEN display name."
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "docs": "UTF-8, 0..=512 bytes."
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          },
+          "docs": "At most 8 tags of `[a-z0-9-]`, 1..=24 bytes each."
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "docs": "Claimed image id; equals `ProgramHeader.image_id` while the entry is fresh."
+        },
+        {
+          "name": "registered_at",
+          "type": "u64",
+          "docs": "Milliseconds, bound to the block time by a `[now, now + 10 min)` window."
+        },
+        {
+          "name": "updated_at",
+          "type": "u64"
+        },
+        {
+          "name": "revision",
+          "type": "u32",
+          "docs": "1 at registration, +1 per `Update`."
+        }
+      ]
+    },
+    {
+      "name": "EnvVar",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Frozen",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        }
+      ]
+    },
+    {
+      "name": "Registered",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "program",
+          "type": "account_id"
+        },
+        {
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "name": "author",
+          "type": "account_id"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "seq",
+          "type": "u64"
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "idl_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "born_with_deploy",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "SourceRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "repo",
+          "type": "string",
+          "docs": "`https://` or git URL, at most 160 bytes; may be empty if `archive` is set."
+        },
+        {
+          "name": "commit",
+          "type": {
+            "vec": "u8"
+          },
+          "docs": "20 bytes (sha1) or 32 bytes (sha256 object format); empty only without a repo."
+        },
+        {
+          "name": "docker_root",
+          "type": "string",
+          "docs": "Build context inside the repo, at most 96 bytes."
+        },
+        {
+          "name": "archive",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          },
+          "docs": "Deterministic `git archive` of `docker_root` at `commit`, on Storage."
+        }
+      ]
+    },
+    {
+      "name": "Updated",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "idl_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "build_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

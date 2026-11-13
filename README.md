@@ -378,6 +378,14 @@ lezreg verify <program> [--mark]                    # rebuild in Docker, compile
 lezreg build . --binary my_guest                    # the canonical image id before you deploy
 ```
 
+**IDL formats.** The registry takes an IDL in any JSON format and tells clients which one it is:
+SPEL v1 (`instructions[]`, what `spel generate-idl` v0.7.0 makes and what the registry's own IDL
+uses), SPEL v2 (`"version": "2"` with `messages[]`, from SPEL's LEZ 0.4 rewrite), or "format not
+recognised" for any other JSON object. An unrecognised format is still available, just shown
+raw; only bytes that are not JSON count as unparseable. `idl get --json` reports `status`,
+`format` and the list of calls (names, tags, argument names and types). See
+[`docs/sdk.md`](docs/sdk.md#1-rust).
+
 **JavaScript** (`sdk/js/lezreg.js`, no dependencies, browsers and Node 19+):
 
 ```js
@@ -385,7 +393,8 @@ import { Registry, fetchIdl } from "./lezreg.js";
 const reg = new Registry({ rpc: "http://127.0.0.1:3062", registry: "<registry id>" });
 const label = await reg.programLabel("<program id>");   // { text, kind, stale, upgradeable, ... }
 const { deployer } = await reg.resolve("<program id>");
-const { status, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
+const { kind, format, calls, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
+// kind: "ok" | "unknown-format" | "unavailable" | "hash-mismatch" | "unparseable"; format: "spel-v1" | "spel-v2" | "unknown"
 ```
 
 **Basecamp apps:** depend on the `program_registry` core module and call
