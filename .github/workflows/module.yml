@@ -1,0 +1,205 @@
+# The Logos modules (DESIGN §8.3 item 7, milestone M6): build program_registry and
+# registry_browser as .lgx packages with the pinned logos-module-builder, run their unit tests,
+# then install the core module into logosctl (the Logos Core runtime Basecamp runs on), load it
+# and use it against a real LEZ v0.4.0-rc3 standalone sequencer with the registry deployed:
+#
+# 1. `call program_registry resolve_program <REG>` must name lez_program_registry (the M6 exit
+#    check), and `program_label` / `get_idl` must answer;
+# 2. writes through the module: `prepare_register` a deployer entry for a fresh account, `submit`
+#    it (signed by lezreg's wallet through `lezreg module send`), follow `submit_status` until
+#    applied, then `prepare_update` + `submit`, then `prepare_freeze` + `submit`; the chain must
+#    show revision 2, frozen.
+#
+# Nothing here needs a secret: the payer is LEZ's published local-test genesis account.
+# The steps were run by hand on macOS (docs/INTEGRATE.md, "How this was tested"); this file runs
+# them on Linux x86_64 with the logosctl AppImage.
+name: module
+
+on:
+  push:
+    branches: [main]
+    paths: ["module/**", "registry_browser/**", "sdk/rust/**", "cli/**", "crates/**", ".github/workflows/module.yml"]
+  pull_request:
+    paths: ["module/**", "registry_browser/**", "sdk/rust/**", "cli/**", "crates/**", ".github/workflows/module.yml"]
+  workflow_dispatch:
+
+env:
+  # Keep these equal to e2e.yml's (one sequencer cache for both).
+  LEZ_TAG: v0.4.0-rc3
+  LEZ_COMMIT: "bafd07be"  # quoted: a hex commit can read as a number in YAML
+  # The builder module/flake.nix and registry_browser/flake.nix pin (Basecamp 0.3.x's).
+  BUILDER_REV: de169fd45d7bdf6e28ce1f151b4c34880523ace9
+  LOGOSCTL_VERSION: "0.3.2"
+  RPC: http://127.0.0.1:3062
+
+jobs:
+  module:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://cache.nix.logos.co/public
+            extra-trusted-public-keys = public:l4HrXgL4nw246+LBh2SOJyhz64BoGegOYLheT/iIAPU=
+
+      - name: Build program_registry (.lgx)
+        working-directory: module
+        run: nix build '.#lgx-portable' -o result-portable -L
+      - name: Build registry_browser (.lgx)
+        working-directory: registry_browser
+        run: nix build '.#lgx-portable' --override-input program_registry "path:$GITHUB_WORKSPACE/module" -o result-portable -L
+      - name: The packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/lgx-core" "$RUNNER_TEMP/lgx-ui"
+          cp module/result-portable/*.lgx "$RUNNER_TEMP/lgx-core/"
+          cp registry_browser/result-portable/*.lgx "$RUNNER_TEMP/lgx-ui/"
+          for f in "$RUNNER_TEMP"/lgx-*/*.lgx; do tar xzOf "$f" manifest.json | jq -c '{name, version, type}'; done
+          tar xzOf "$RUNNER_TEMP"/lgx-core/*.lgx manifest.json | jq -e '.name == "program_registry"'
+          tar xzOf "$RUNNER_TEMP"/lgx-ui/*.lgx manifest.json | jq -e '.name == "registry_browser"'
+          tar tzf "$RUNNER_TEMP"/lgx-ui/*.lgx | grep -q 'RegistryLabel.qml'
+
+      - name: Module unit tests (write vectors, signing bridge) and the browser's logic
+        run: |
+          nix build "github:logos-co/logos-module-builder/$BUILDER_REV#rust-sdk-src" -o module/logos-rust-sdk-src
+          (cd module/rust-lib && cargo test --locked)
+          node registry_browser/logic.test.mjs
+
+      # ---- a chain with the registry, as e2e.yml makes it ----
+      - name: System libraries (PC/SC for the wallet's Keycard support)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
+      - name: Install rzup (risc0 toolchain; r0vm executes simulations)
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.risc0/bin:$PATH"
+          rzup install cargo-risczero 3.0.5
+          rzup install rust
+      - name: Restore the standalone sequencer (per LEZ commit)
+        id: seqcache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/lez-seq
+          key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
+      - name: Build sequencer_service --features standalone at ${{ env.LEZ_TAG }}
+        if: steps.seqcache.outputs.cache-hit != 'true'
+        run: |
+          git clone --quiet --depth 1 --branch "$LEZ_TAG" https://github.com/logos-blockchain/logos-execution-zone.git "$RUNNER_TEMP/lez"
+          test "$(git -C "$RUNNER_TEMP/lez" rev-parse --short=8 HEAD)" = "$LEZ_COMMIT"
+          (cd "$RUNNER_TEMP/lez" && cargo build --release --features standalone -p sequencer_service)
+          mkdir -p ~/lez-seq
+          cp "$RUNNER_TEMP/lez/target/release/sequencer_service" ~/lez-seq/
+          cp "$RUNNER_TEMP/lez/lez/sequencer/service/networks/local.json" ~/lez-seq/
+          rm -rf "$RUNNER_TEMP/lez"
+      - name: Save the standalone sequencer
+        if: steps.seqcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/lez-seq
+          key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
+      - name: Start the sequencer (fresh chain)
+        run: |
+          S=~/lez-seq/sequencer_service
+          "$S" setup "$RUNNER_TEMP/seq" --config ~/lez-seq/local.json \
+            --funding-public-key 0101010101010101010101010101010101010101010101010101010101010100 --create-channel
+          RUST_LOG=warn nohup "$S" start "$RUNNER_TEMP/seq" --rpc-listen-address 127.0.0.1:3062 \
+            --metrics-listen-address 127.0.0.1:9162 > "$RUNNER_TEMP/seq.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -X POST "$RPC" -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"getLastBlockId","params":[]}' && break
+            sleep 2
+          done
+          echo
+      - uses: Swatinem/rust-cache@v2
+      - name: Build lezreg
+        run: |
+          cargo build --release -p lezreg
+          mkdir -p "$RUNNER_TEMP/bin" && cp target/release/lezreg "$RUNNER_TEMP/bin/lezreg"
+      - name: Wallet with LEZ's published local-test genesis account; deploy the registry
+        run: |
+          {
+            echo "LEE_WALLET_HOME_DIR=$RUNNER_TEMP/wallet"
+            echo "LEE_WALLET_PASSWORD="
+            echo "LEZREG_CONFIG_DIR=$RUNNER_TEMP/config"
+            echo "XDG_CACHE_HOME=$RUNNER_TEMP/cache"
+            echo "XDG_DATA_HOME=$RUNNER_TEMP/data"
+            echo "XDG_CONFIG_HOME=$RUNNER_TEMP/xdgconfig"
+          } >> "$GITHUB_ENV"
+          export LEE_WALLET_HOME_DIR="$RUNNER_TEMP/wallet" LEE_WALLET_PASSWORD= LEZREG_CONFIG_DIR="$RUNNER_TEMP/config"
+          mkdir -p "$LEE_WALLET_HOME_DIR"
+          L="$RUNNER_TEMP/bin/lezreg"
+          "$L" wallet config set sequencer_addr "$RPC" || true
+          "$L" wallet account list >/dev/null
+          # PRIVATE_KEY_PUB_ACC_A in lez/testnet_initial_state/src/lib.rs (public test key; local chains only).
+          out=$("$L" wallet account import public --private-key 10a26a9aec7d34b82364eeae45c5294dbb0a764b000b94eeb9b58511dc487c4d)
+          payer=$(echo "$out" | sed -n 's|.*Public/\([1-9A-HJ-NP-Za-km-z]*\).*|\1|p' | head -1)
+          test -n "$payer"
+          echo "PAYER=$payer" >> "$GITHUB_ENV"
+          "$L" network set e2e --rpc "$RPC"
+          LEZREG="$L" chain/deploy.sh --elf artifacts/lez_program_registry.bin --payer "$payer" --rpc "$RPC" \
+            --network e2e --commit "$GITHUB_SHA" | tee deploy.log
+          REG=$(sed -n 's/^REG=//p' deploy.log | tail -1)
+          test -n "$REG"
+          echo "REG=$REG" >> "$GITHUB_ENV"
+          # The account the module registers a deployer entry for (its key is in this wallet).
+          x=$("$L" wallet account new public | sed -n 's|.*Public/\([1-9A-HJ-NP-Za-km-z]*\).*|\1|p' | head -1)
+          test -n "$x"
+          echo "X=$x" >> "$GITHUB_ENV"
+
+      # ---- the module in logosctl ----
+      - name: logosctl ${{ env.LOGOSCTL_VERSION }}
+        run: |
+          curl -fsSL "https://github.com/logos-co/logos-logoscore-cli/releases/download/$LOGOSCTL_VERSION/logosctl-x86_64-linux.tar.gz" | tar xz
+          # The runner has no FUSE: unpack the AppImage once and run what's inside.
+          chmod +x logosctl-x86_64.AppImage && ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
+          echo "LOGOSCTL=$PWD/squashfs-root/usr/bin/logosctl" >> "$GITHUB_ENV"
+          echo "LOGOSCTL_CONFIG_DIR=$RUNNER_TEMP/session" >> "$GITHUB_ENV"
+      - name: Install and load program_registry; resolve the registry through it
+        run: |
+          # The daemon's environment reaches the module and the lezreg it runs to sign.
+          PATH="$RUNNER_TEMP/bin:$PATH" "$LOGOSCTL" daemon start --detach > daemon.log 2>&1
+          "$LOGOSCTL" install --dir "$RUNNER_TEMP/lgx-core" -y
+          "$LOGOSCTL" module load program_registry
+          "$LOGOSCTL" module ls
+          c() { "$LOGOSCTL" --json call program_registry "$@" | python3 -c 'import sys,json;r=json.load(sys.stdin)["result"];r=json.loads(r) if isinstance(r,str) else r;print(json.dumps(r))'; }
+          c config_set "{\"sequencer\":\"$RPC\",\"registry\":\"$REG\",\"cli\":\"$RUNNER_TEMP/bin/lezreg\"}" | tee set.json
+          c resolve_program "$REG" | tee resolve.json
+          python3 -c 'import json;r=json.load(open("resolve.json"));assert r["success"],r;e=r["value"]["deployer_entry"];assert e["name"]=="lez_program_registry",e;assert r["value"]["freshness"]["status"]=="fresh",r;print("resolve_program OK:",e["name"],e["version"])'
+          c program_label "$REG" | tee label.json
+          python3 -c 'import json;r=json.load(open("label.json"));assert r["success"] and r["value"]["kind"]=="deployer",r;print("program_label:",r["value"]["text"])'
+          c get_idl "$REG" | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["success"],r;print("get_idl status:",r["value"]["status"],r["value"]["reason"])'
+          c signer_status | tee signer.json
+      - name: Register, update and freeze an entry through the module
+        run: |
+          c() { "$LOGOSCTL" --json call program_registry "$@" | python3 -c 'import sys,json;r=json.load(sys.stdin)["result"];r=json.loads(r) if isinstance(r,str) else r;print(json.dumps(r))'; }
+          send() { # prepare_<what> <input>: prepare, submit, wait for the job
+            c "prepare_$1" "$2" > prep.json
+            python3 -c 'import json;r=json.load(open("prep.json"));assert r["success"],r;json.dump(r["value"],open("change.json","w"));print("prepared",r["value"]["what"],"for",r["value"]["entry"])'
+            c submit "$(cat change.json)" > job.json
+            job=$(python3 -c 'import json;r=json.load(open("job.json"));assert r["success"],r;print(r["value"]["job"])')
+            for i in $(seq 1 90); do
+              c submit_status "$job" > st.json
+              state=$(python3 -c 'import json;print(json.load(open("st.json"))["value"]["state"])')
+              [ "$state" != running ] && break; sleep 2
+            done
+            cat st.json
+            test "$state" = applied
+          }
+          IDL='{"cid":"raw","sha256":"1111111111111111111111111111111111111111111111111111111111111111","size":16}'
+          SRC='{"repo":"https://github.com/acme/token","commit":"abababababababababababababababababababab","docker_root":"."}'
+          BLD='{"image_digest":"fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0","image_tag":"r0.1.91.1","risc0_build":"3.0.5","host_risc0_rust":"1.91.1","manifest_path":"methods/guest/Cargo.toml","binary":"token"}'
+          send register "{\"program\":\"$X\",\"name\":\"ci-token\",\"version\":\"1.0.0\",\"description\":\"registered through the module\",\"tags\":[\"ci\"],\"idl\":$IDL,\"source\":$SRC,\"build\":$BLD,\"image_id\":\"$(printf '44%.0s' $(seq 32))\",\"payer\":\"$PAYER\"}"
+          send update "{\"program\":\"$X\",\"version\":\"1.0.1\",\"payer\":\"$PAYER\"}"
+          send freeze "{\"program\":\"$X\",\"payer\":\"$PAYER\"}"
+          "$RUNNER_TEMP/bin/lezreg" --network e2e --json show "$X" > show.json
+          python3 -c 'import json;s=json.dumps(json.load(open("show.json")));assert "\"ci-token\"" in s and "\"1.0.1\"" in s and "\"frozen\": true" in s, s[:1500];print("on chain: ci-token 1.0.1, revision 2, frozen")'
+          # A frozen entry refuses further changes before anything is signed.
+          c prepare_update "{\"program\":\"$X\",\"version\":\"2\"}" | python3 -c 'import sys,json;r=json.load(sys.stdin);assert r["code"]=="frozen",r;print("refused:",r["error"])'
+      - name: The daemon's log
+        if: always()
+        run: |
+          "$LOGOSCTL" status || true
+          tail -80 daemon.log || true
+          find "$LOGOSCTL_CONFIG_DIR" -name '*.log' -exec tail -50 {} + || true
+          tail -30 "$RUNNER_TEMP/seq.log" || true
