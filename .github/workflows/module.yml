@@ -15,6 +15,9 @@
 # them on Linux x86_64 with the logosctl AppImage.
 name: module
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -30,6 +33,10 @@ env:
   # The builder module/flake.nix and registry_browser/flake.nix pin (Basecamp 0.3.x's).
   BUILDER_REV: de169fd45d7bdf6e28ce1f151b4c34880523ace9
   LOGOSCTL_VERSION: "0.3.2"
+  LOGOSCTL_SHA256: 294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762  # logosctl-x86_64-linux.tar.gz
+  # Guests execute in-process (lee's `prove` feature): no r0vm, so no rzup install script.
+  RISC0_EXECUTOR: local
+  RISC0_PROVER: local
   RPC: http://127.0.0.1:3062
 
 jobs:
@@ -37,8 +44,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
         with:
           extra_nix_config: |
             extra-substituters = https://cache.nix.logos.co/public
@@ -75,35 +82,28 @@ jobs:
       # ---- a chain with the registry, as e2e.yml makes it ----
       - name: System libraries (PC/SC for the wallet's Keycard support)
         run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
-      - name: Install rzup (risc0 toolchain; r0vm executes simulations)
-        run: |
-          curl -L https://risczero.com/install | bash
-          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.risc0/bin:$PATH"
-          rzup install cargo-risczero 3.0.5
-          rzup install rust
       - name: Restore the standalone sequencer (per LEZ commit)
         id: seqcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/lez-seq
-          key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
-      - name: Build sequencer_service --features standalone at ${{ env.LEZ_TAG }}
+          key: lez-seq-standalone-prove-${{ env.LEZ_COMMIT }}
+      - name: Build sequencer_service --features standalone,prove at ${{ env.LEZ_TAG }}
         if: steps.seqcache.outputs.cache-hit != 'true'
         run: |
           git clone --quiet --depth 1 --branch "$LEZ_TAG" https://github.com/logos-blockchain/logos-execution-zone.git "$RUNNER_TEMP/lez"
           test "$(git -C "$RUNNER_TEMP/lez" rev-parse --short=8 HEAD)" = "$LEZ_COMMIT"
-          (cd "$RUNNER_TEMP/lez" && cargo build --release --features standalone -p sequencer_service)
+          (cd "$RUNNER_TEMP/lez" && cargo build --release --features standalone,prove -p sequencer_service)
           mkdir -p ~/lez-seq
           cp "$RUNNER_TEMP/lez/target/release/sequencer_service" ~/lez-seq/
           cp "$RUNNER_TEMP/lez/lez/sequencer/service/networks/local.json" ~/lez-seq/
           rm -rf "$RUNNER_TEMP/lez"
       - name: Save the standalone sequencer
         if: steps.seqcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/lez-seq
-          key: lez-seq-standalone-${{ env.LEZ_COMMIT }}
+          key: lez-seq-standalone-prove-${{ env.LEZ_COMMIT }}
       - name: Start the sequencer (fresh chain)
         run: |
           S=~/lez-seq/sequencer_service
@@ -117,10 +117,10 @@ jobs:
             sleep 2
           done
           echo
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Build lezreg
         run: |
-          cargo build --release -p lezreg
+          cargo build --release -p lezreg --features local-execute
           mkdir -p "$RUNNER_TEMP/bin" && cp target/release/lezreg "$RUNNER_TEMP/bin/lezreg"
       - name: Wallet with LEZ's published local-test genesis account; deploy the registry
         run: |
@@ -156,7 +156,9 @@ jobs:
       # ---- the module in logosctl ----
       - name: logosctl ${{ env.LOGOSCTL_VERSION }}
         run: |
-          curl -fsSL "https://github.com/logos-co/logos-logoscore-cli/releases/download/$LOGOSCTL_VERSION/logosctl-x86_64-linux.tar.gz" | tar xz
+          curl -fsSL -o logosctl.tar.gz "https://github.com/logos-co/logos-logoscore-cli/releases/download/$LOGOSCTL_VERSION/logosctl-x86_64-linux.tar.gz"
+          echo "$LOGOSCTL_SHA256  logosctl.tar.gz" | sha256sum -c -
+          tar xzf logosctl.tar.gz
           # The runner has no FUSE: unpack the AppImage once and run what's inside.
           chmod +x logosctl-x86_64.AppImage && ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
           echo "LOGOSCTL=$PWD/squashfs-root/usr/bin/logosctl" >> "$GITHUB_ENV"

@@ -131,7 +131,14 @@ lezreg --rpc http://host:port --registry <ID> list   # any sequencer, any regist
 ```
 
 The settings live in `~/.config/lezreg/networks.json` (override with `LEZREG_CONFIG_DIR`). You
-can also set `LEZREG_NETWORK`, `LEZREG_RPC` and `LEZREG_REGISTRY` in the environment. Every
+can also set `LEZREG_NETWORK`, `LEZREG_RPC` and `LEZREG_REGISTRY` in the environment.
+
+**Writes are signed only for registry code lezreg trusts.** Before any write, lezreg reads the
+live image of the program the registry id names and refuses unless it is the committed
+reproducible build (`artifacts/lez_program_registry.imageid`) or an image you pinned:
+`lezreg network set <network> --registry-image <64 hex>` (or `LEZREG_REGISTRY_IMAGE`, comma
+separated). A registry id alone proves nothing: any program can answer as a registry and would then
+receive changes your accounts signed (DESIGN §10). Every
 command accepts `--json` and then prints exactly one JSON object on stdout; progress goes to
 stderr.
 
