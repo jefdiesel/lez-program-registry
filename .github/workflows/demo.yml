@@ -1,0 +1,91 @@
+# The evaluator demo, run the way an evaluator runs it (LP-0023: "Evaluators will independently
+# clone the repository and run the demo script from a clean environment; the script must succeed
+# without modification"): a fresh checkout on a clean runner, only the README's prerequisites
+# installed, then `scripts/demo.sh --verify`. Docker and Node are on the runner, so the source
+# rebuild (F7.b, `lezreg verify --mark`, then `lezreg verified`) and the JS SDK step (U1.b) run
+# here too. The job fails on any FAIL and on any SKIP other than F8 (testnet 0.4, not launched).
+#
+# Only shortcut: the standalone sequencer that e2e.yml builds from the pinned LEZ tag is restored
+# from e2e's cache (restore only; this job never saves) and placed where demo.sh caches its own
+# build, so the script takes the same "built from the tag, cached" path an evaluator's second run
+# takes. On a cache miss the script builds it from the tag itself (about 35 min).
+name: demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, demo-ci]  # demo-ci: TEMPORARY, so the workflow can run before it is on main
+    paths:
+      - scripts/demo.sh
+      - "cli/**"
+      - "sdk/**"
+      - "program/**"
+      - "artifacts/**"
+      - .github/workflows/demo.yml
+
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk (the lezreg build and the Docker rebuild each need many GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+
+      # Exactly what README "Install" / demo.sh's prerequisite check ask for on Linux.
+      - name: Prerequisites from the README (PC/SC, RISC Zero toolchain)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
+          curl -L https://risczero.com/install | bash
+          ~/.risc0/bin/rzup install cargo-risczero 3.0.5
+          ~/.risc0/bin/rzup install rust
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+          docker --version; node --version
+
+      - name: The pinned LEZ commit (read from e2e.yml, as demo.sh reads it)
+        id: lez
+        run: echo "commit=$(sed -n 's/^  LEZ_COMMIT: *"\{0,1\}\([^"# ]*\).*/\1/p' .github/workflows/e2e.yml | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Restore e2e.yml's standalone sequencer build (restore only)
+        id: seq
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/lez-seq
+          key: lez-seq-standalone-${{ steps.lez.outputs.commit }}
+      - name: Put it where demo.sh caches its own build
+        if: steps.seq.outputs.cache-hit == 'true'
+        run: |
+          d="$HOME/.cache/lezreg-demo/lez-seq-${{ steps.lez.outputs.commit }}"
+          mkdir -p "$d" && cp ~/lez-seq/sequencer_service ~/lez-seq/local.json "$d/"
+
+      - name: scripts/demo.sh --verify
+        run: scripts/demo.sh --verify
+
+      - name: No SKIP other than F8 (testnet 0.4)
+        if: always()
+        run: |
+          python3 - demo-out/demo.log <<'PY'
+          import re, sys
+          text = open(sys.argv[1]).read()
+          summary = text.split("######## Summary", 1)[1]
+          rows = re.findall(r"^(\S+)\s+(PASS|FAIL|SKIP|INFO)\s", summary, re.M)
+          print(len(rows), "rows")
+          bad = [(i, s) for i, s in rows if s == "FAIL" or (s == "SKIP" and i != "F8")]
+          for i, s in bad: print("not allowed:", i, s)
+          sys.exit(1 if bad or not rows else 0)
+          PY
+
+      - name: Transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-transcript
+          path: |
+            demo-out/demo.log
+            demo-out/build.log
+            demo-out/sequencer.log
+            demo-out/st-*.log
+            demo-out/verify.json*
+          if-no-files-found: warn

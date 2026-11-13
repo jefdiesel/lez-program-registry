@@ -560,8 +560,8 @@ sys.exit(not(s["repo"] and len(s["commit"])==40 and b["image_digest"].strip("0")
 import { Registry, fetchIdl } from "$ROOT/sdk/js/lezreg.js";
 const reg = new Registry({ rpc: "$RPC", registry: "$REG" });
 const { deployer, freshness } = await reg.resolve("$X");
-const { status, idl } = await fetchIdl(deployer, { storageApi: "$API_B" });
-console.log(deployer.name, deployer.version, freshness, status, idl ? idl.instructions.length + " instructions" : "");
+const { status, format, calls } = await fetchIdl(deployer, { storageApi: "$API_B" });
+console.log(deployer.name, deployer.version, freshness, "IDL", status, format, calls.length + " calls");
 if (deployer.name !== "demo-sample" || status !== "ok") process.exit(1);
 EOF
     printf '$ node %s\n' "u1.mjs (sdk/js/lezreg.js: Registry.resolve + fetchIdl)"
