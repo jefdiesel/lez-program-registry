@@ -12,7 +12,7 @@
  * installed. Where it is not, every call returns SCARD_E_NO_SERVICE ("the smart card resource
  * manager is not running"), which the pcsc crate reports as an ordinary error.
  *
- * The prototypes come from the system's <PCSC/winscard.h> (libpcsclite-dev), so the compiler
+ * The prototypes come from the system's <winscard.h> (libpcsclite-dev), so the compiler
  * checks each signature against the real library's. The three protocol control blocks are the
  * same constants pcsc-lite's own winscard_clnt.c defines.
  */
@@ -20,7 +20,7 @@
 #include <pthread.h>
 #include <stddef.h>
 
-#include <PCSC/winscard.h>
+#include <winscard.h> /* from libpcsclite-dev; cflags from pkg-config */
 
 const SCARD_IO_REQUEST g_rgSCardT0Pci = {SCARD_PROTOCOL_T0, sizeof(SCARD_IO_REQUEST)};
 const SCARD_IO_REQUEST g_rgSCardT1Pci = {SCARD_PROTOCOL_T1, sizeof(SCARD_IO_REQUEST)};

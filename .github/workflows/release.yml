@@ -22,9 +22,6 @@ name: release
 on:
   push:
     tags: ["v*"]
-    # TEMPORARY, remove before merging: workflow_dispatch only works once this file is on the
-    # default branch, so the first runs come from pushes to this branch (version = Cargo.toml).
-    branches: [release-ci]
   workflow_dispatch:
     inputs:
       version:
@@ -100,7 +97,7 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
           d="$RUNNER_TEMP/pcsc" && mkdir -p "$d"
-          cc -O2 -fPIC -Wall -Wextra -Werror -c scripts/release/pcsc-dlopen.c -o "$d/pcsc-dlopen.o"
+          cc -O2 -fPIC -Wall -Wextra -Werror $(pkg-config --cflags libpcsclite) -c scripts/release/pcsc-dlopen.c -o "$d/pcsc-dlopen.o"
           ar rcs "$d/libpcsclite.a" "$d/pcsc-dlopen.o"
           echo "PCSC_LIB_DIR=$d" >> "$GITHUB_ENV"
           echo "PCSC_LIB_NAME=static=pcsclite" >> "$GITHUB_ENV"
