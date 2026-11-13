@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Renders qml/Main.qml to PNG files without Basecamp, answering its module calls from a file
+of REAL program_registry replies (recorded with tools/record.sh over logosctl), the way the
+Names app's tools/replay.py does.
+
+  render.py <qml binary> <Logos.Theme import dir> <answers.json> <out dir> [scenario ...]
+
+<Logos.Theme import dir> is the `src/qml` folder of a logos-design-system checkout (the real
+tokens). Set QT_QPA_PLATFORM=offscreen to run without a display. A call with no recorded
+answer gets no reply, as a module that never answers would: the screen must still draw.
+
+Scenarios: list (the list as it opens), detail (the newest entry opened), search (a name
+search), freeze-confirm (the confirm sheet for Freeze), nomodule (no program_registry at all).
+"""
+import json, os, subprocess, sys, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+BRIDGE = r"""
+    width: 1280; height: 900
+    property var recorded: %(answers)s
+    property bool absent: %(absent)s
+    property var logos: QtObject {
+        function callModuleAsync(module, method, args, callback, timeout) {
+            if (root.absent) { Qt.callLater(function() { callback("") }); return }
+            var key = method + " " + JSON.stringify(args)
+            var reply = root.recorded[key] !== undefined ? root.recorded[key] : root.recorded[method]
+            if (reply === undefined) { console.log("unrecorded call: " + key); return }
+            Qt.callLater(function() { callback(reply) })
+        }
+    }
+    Timer {
+        interval: 1500; running: true
+        onTriggered: {
+            %(scenario)s
+            shot.start()
+        }
+    }
+    Timer {
+        id: shot; interval: 1500
+        onTriggered: root.grabToImage(function(r) { r.saveToFile("%(out)s"); Qt.quit() })
+    }
+"""
+
+SCENARIOS = {
+    "list": "",
+    "detail": "if (root.items.length) root.open(root.items[0])",
+    "search": 'root.query = "%(search)s"; root.loadList(false)',
+    "freeze-confirm": 'if (root.items.length) { root.open(root.items[0]); root.prepare("prepare_freeze", {}) }',
+    "nomodule": "",
+}
+
+
+def main():
+    qml, theme_dir, answers_path, out_dir = sys.argv[1:5]
+    wanted = sys.argv[5:] or list(SCENARIOS)
+    answers = json.load(open(answers_path))
+    search = answers.pop("__search", "")
+    source = open(os.path.join(HERE, "..", "qml", "Main.qml")).read()
+    marker = "Item {\n    id: root\n"
+    assert marker in source, "Main.qml no longer starts the way the harness expects"
+    os.makedirs(out_dir, exist_ok=True)
+    # The theme first, then whatever the Qt install needs (a bare `qml` from nixpkgs needs its
+    # own lib/qt-6/qml listed). Logos.Theme keeps a settings file under HOME: point HOME at a
+    # scratch folder when rendering.
+    imports = os.pathsep.join(p for p in [theme_dir, os.environ.get("QML_IMPORT_PATH", "")] if p)
+    env = dict(os.environ, QML_IMPORT_PATH=imports, QT_QPA_PLATFORM=os.environ.get("QT_QPA_PLATFORM", "offscreen"))
+    failed = 0
+    for scenario in wanted:
+        out = os.path.abspath(os.path.join(out_dir, scenario + ".png"))
+        if os.path.exists(out):
+            os.unlink(out)
+        bridge = BRIDGE % {"answers": json.dumps(answers), "absent": "true" if scenario == "nomodule" else "false",
+                           "scenario": SCENARIOS[scenario] % {"search": search}, "out": out}
+        # Beside Main.qml, so its relative imports (logic.mjs, RegistryLabel.qml) resolve.
+        with tempfile.NamedTemporaryFile("w", suffix=".qml", delete=False, dir=os.path.join(HERE, "..", "qml")) as handle:
+            handle.write(source.replace(marker, marker + bridge, 1))
+        try:
+            result = subprocess.run([qml, handle.name], capture_output=True, text=True, timeout=60, env=env)
+            problems = [l for l in result.stderr.splitlines() if l.strip() and "qt.qpa.fonts" not in l and "propagateSizeHints" not in l]
+        except subprocess.TimeoutExpired:
+            problems = ["did not quit within 60 s"]
+        finally:
+            os.unlink(handle.name)  # never leave it beside Main.qml: the package build copies qml/ whole
+        ok = os.path.exists(out)
+        failed += not ok
+        print(scenario, "ok" if ok else "FAILED", *problems[:8], sep="\n  " if problems else " ")
+    sys.exit(1 if failed else 0)
+
+
+main()
