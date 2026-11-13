@@ -257,12 +257,14 @@ rather than the view failing."
 
 - **Status: met in the SDKs and the module. The CLI only partly does this.**
 - **Evidence:**
-  - `fetch_idl` never fails. It returns `IdlStatus::{Ok, Unavailable(..), HashMismatch,
-    ParseError}`, and its unit tests are in `sdk/rust/src/idl.rs`.
+  - `fetch_idl` never fails. It returns a status instead: `IdlStatus::{Ok, UnknownFormat,
+    Unavailable(..), HashMismatch, ParseError}`. Its unit tests are in `sdk/rust/src/idl.rs`.
   - The worked example prints the metadata, then `IDL unavailable (<reason>)`. Demo rows:
     - `R1.a`: no Storage node;
     - `R1.b`: a CID nobody holds;
-    - `R1.c`: valid JSON that is not an IDL, so it fails to parse;
+    - `R1.c`: bytes that are not JSON, so they fail to parse;
+    - `R1.c2`: valid JSON in no format the client knows, shown as "available, format not
+      recognised" next to the metadata;
     - `R1.d`: the bytes do not match the on-chain sha256.
   - The module's `get_idl` answers `success: true` with `status: "unavailable: …"`. The JS
     `fetchIdl` returns a status.

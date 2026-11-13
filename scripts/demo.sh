@@ -592,16 +592,28 @@ EOF
   refused R1.b3 "lezreg idl get X reports the IDL as unavailable (and exits nonzero) instead of hanging or crashing" "IDL unavailable" \
     idl get "$X" --storage-api "$API_B" --tries 1
 
-  note "(c) a stored IDL that is not an IDL: valid JSON without name/version/instructions, uploaded to node B"
-  TMP=$OUT/not-an-idl.json; printf '{"hello":"this is not an IDL"}' >"$TMP"
-  printf '$ curl -X POST %s/data --data-binary @not-an-idl.json\n' "$API_B"
-  local BAD_CID; BAD_CID=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Content-Disposition: attachment; filename="not-an-idl.json"' --data-binary @"$TMP" "$API_B/data")
-  note "cid $BAD_CID"
-  ok R1.c0 "B updates X's IDL pointer to it (CID, sha256 and size of those bytes)" lz update "$X" --idl-cid "$BAD_CID" --idl-file "$TMP" --payer "$PAYER"
+  # Uploads a file to node B's REST API and points X's IDL at it (CID, sha256 and size of the bytes).
+  idl_to() { # ID TEXT FILE
+    local cid
+    printf '$ curl -X POST %s/data --data-binary @%s\n' "$API_B" "$(basename "$3")"
+    cid=$(curl -s -X POST -H 'Content-Type: application/json' -H "Content-Disposition: attachment; filename=\"$(basename "$3")\"" --data-binary @"$3" "$API_B/data")
+    note "cid $cid"
+    ok "$1" "$2" lz update "$X" --idl-cid "$cid" --idl-file "$3" --payer "$PAYER"
+  }
+  note "(c) stored bytes that do not parse at all: not JSON"
+  TMP=$OUT/not-json.idl; printf 'this is not JSON {' >"$TMP"
+  idl_to R1.c0 "B points X's IDL at those bytes, uploaded to node B" "$TMP"
   printf '$ resolve_program %s %s %s %s\n' "$RPC" "$REG" "$X" "$API_B"
   XDG_CACHE_HOME=$OUT/cache-r1c "$EXAMPLE" "$RPC" "$REG" "$X" "$API_B" >"$OUT/r1c.txt" 2>&1; rc=$?; sed 's/^/   | /' "$OUT/r1c.txt"
   ok R1.c "unparseable IDL: metadata shown, 'IDL unavailable (not a usable IDL ...)', exit 0" \
     sh -c '[ "$1" -eq 0 ] && grep -q "^demo-sample 1.2.0 by" "$2" && grep -q "IDL unavailable (not a usable IDL" "$2"' _ $rc "$OUT/r1c.txt"
+
+  note "(c2) valid JSON in no IDL format this client knows (not SPEL v1 or v2)"
+  TMP=$OUT/unknown-format.json; printf '{"hello":"this is not an IDL"}' >"$TMP"
+  idl_to R1.c2a "B points X's IDL at it, uploaded to node B" "$TMP"
+  XDG_CACHE_HOME=$OUT/cache-r1c2 "$EXAMPLE" "$RPC" "$REG" "$X" "$API_B" >"$OUT/r1c2.txt" 2>&1; rc=$?; sed 's/^/   | /' "$OUT/r1c2.txt"
+  ok R1.c2 "unknown IDL format: metadata shown, IDL 'available, format not recognised', exit 0" \
+    sh -c '[ "$1" -eq 0 ] && grep -q "^demo-sample 1.2.0 by" "$2" && grep -q "format not recognised" "$2"' _ $rc "$OUT/r1c2.txt"
 
   note "(d) bytes that are not the content the chain names: the pointer's sha256 does not match what the CID serves"
   IDL_SHA=$(printf 'other bytes' | python3 -c 'import sys,hashlib;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
