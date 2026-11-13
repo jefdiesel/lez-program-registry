@@ -372,7 +372,8 @@ newer; this system has glibc $glibc. Build from source: https://github.com/$REPO
       say "   RISC Zero publishes no prebuilt r0vm 3.0.5 for $target. Build it with Rust:"
       say "     cargo install --locked risc0-r0vm --version 3.0.5 --root \"$home\""
     fi
-    say "   lezreg finds it on PATH, or set RISC0_SERVER_PATH to the binary."
+    say "   lezreg finds it on PATH, in rzup's ~/.risc0/extensions/v3.0.5-cargo-risczero-*/ directory,"
+    say "   or at RISC0_SERVER_PATH."
   fi
   say ""
   if [ -x "$bin/logos-storage" ]; then

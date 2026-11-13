@@ -154,10 +154,21 @@ only from tags: a run started by hand builds and tests but attests nothing.
   it.
 
 **Writes need `r0vm` at run time.** Every write is simulated locally with the risc0 executor
-`r0vm` 3.0.5 before it is sent. `lezreg` finds it on PATH, or set `RISC0_SERVER_PATH` to the
-binary. Without it a write stops with "simulation needs the risc0 executor `r0vm`" and nothing
-is sent. Reads (`show`, `list`, `search`, `idl get`) never need it. RISC Zero's installer works
-too: `curl -L https://risczero.com/install | bash && rzup install cargo-risczero 3.0.5`.
+`r0vm` 3.0.5 before it is sent. Without it a write stops with "simulation needs the risc0
+executor `r0vm`" and nothing is sent. Reads (`show`, `list`, `search`, `idl get`) never need it.
+
+`lezreg` looks for `r0vm` where risc0 does, in this order:
+1. `RISC0_SERVER_PATH`, if set to the binary;
+2. rzup's install directory, `~/.risc0/extensions/v3.0.5-cargo-risczero-<platform>/r0vm`
+   (under `$RISC0_HOME` if that is set);
+3. `PATH`. The installer's `--with-r0vm` puts it in `~/.lezreg/bin`.
+
+RISC Zero's own installer works too:
+`curl -L https://risczero.com/install | bash && ~/.risc0/bin/rzup install cargo-risczero 3.0.5`.
+It puts `r0vm` only in the directory of step 2, which `lezreg` and `lezreg doctor` check.
+- On Linux there is no `~/.cargo/bin/r0vm` link afterwards.
+- On macOS a `~/.cargo/bin/r0vm` link exists only if rzup made one, e.g. after
+  `rzup install r0vm`. Either way it is found.
 
 **Registering needs a Logos Storage node** for the IDL upload: `lezreg storage up` (with
 `logos-storage` on PATH, or `--bin`), or `LEZREG_STORAGE_API` pointing at a node you run.
