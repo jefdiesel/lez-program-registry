@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use crate::writes::{FORMAT, Failure, Res};
 
 /// Why `lez_core` can't sign yet.
-pub const LEZ_CORE_BLOCKED: &str = "the lez_core wallet module can't sign registry changes yet: its generic public send (logos-execution-zone-module 0.6.0, merged 2026-11-13) has no release, is built with a newer module builder than Basecamp 0.3.x loads and against LEZ v0.4.0-rc1 (this registry runs on rc3), and its send neither simulates nor sizes gas, and isn't installed here. Use the lezreg CLI signer (the default)";
+pub const LEZ_CORE_BLOCKED: &str = "the lez_core wallet module can't sign registry changes yet: its generic public send (logos-execution-zone-module 0.6.0, merged 2026-11-13) has no release, is built with a newer module builder than Basecamp 0.3.x loads, and is pinned to LEZ v0.4.0-rc1, whose wallet sends with a fixed gas limit and no simulation (this registry runs on rc3, whose wallet measures gas first). Use the lezreg CLI signer (the default)";
 
 /// A send that takes longer than this is stopped.
 const PATIENCE: Duration = Duration::from_secs(10 * 60);

@@ -271,6 +271,27 @@ fn default_lns(sequencer: &str) -> Option<AccountId> {
     (sequencer.trim_end_matches('/') == TESTNET_SEQUENCER).then(|| AccountId::from_base58(TESTNET_LNS).expect("a valid id"))
 }
 
+/// Every change `prepare_*` built, by its message, until it expires. `submit` takes only these,
+/// and uses this copy: what a confirm sheet shows (what, entry, signers, summary, payer) is the
+/// module's own, so a caller can't relabel a Freeze as an Update around the same message.
+static PREPARED: std::sync::Mutex<std::collections::BTreeMap<String, Value>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn remember(change: &Value) {
+    if let (Some(m), Ok(mut p)) = (change["message"].as_str(), PREPARED.lock()) {
+        let now = now_ms();
+        p.retain(|_, c| c["expires_at"].as_u64().is_some_and(|e| e > now));
+        p.insert(m.to_owned(), change.clone());
+    }
+}
+
+/// The change this module prepared with the same message as `given`.
+fn prepared(given: &Value) -> Result<Value, writes::Failure> {
+    let m = given["message"].as_str().unwrap_or_default();
+    PREPARED.lock().ok().and_then(|p| p.get(m).cloned()).ok_or_else(|| {
+        writes::Failure::new("unknown_change", "submit only a change a prepare_* method of this module returned (within 10 minutes, since it last started)")
+    })
+}
+
 /// A change another app submitted, waiting for the person's approval.
 struct Request {
     from: String,
@@ -282,6 +303,13 @@ struct Request {
 
 static REQUESTS: std::sync::Mutex<std::collections::BTreeMap<String, Request>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+#[cfg(test)]
+fn config_path() -> Option<PathBuf> {
+    // Never the real settings file: a Basecamp-installed module reads that one.
+    Some(std::env::temp_dir().join(format!("lezreg-module-test-{}", std::process::id())).join("module.json"))
+}
+
+#[cfg(not(test))]
 fn config_path() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
     Some(base.join("lez-registry").join("module.json"))
@@ -432,13 +460,19 @@ impl ProgramRegistry {
     /// A built change, with the caller's send options and a summary for a confirm sheet.
     fn change(&self, built: &writes::Built, input: &Value, now: u64) -> Result<Value, writes::Failure> {
         let reg = self.write_registry()?;
+        let payer = input.get("payer").filter(|p| !p.is_null()).map(|p| writes::account(p, "payer")).transpose()?;
+        // What a confirm sheet shows. Built here from the instruction, never taken from a caller.
+        let fields: Vec<&str> = ["name", "version", "description", "tags", "author_label", "idl", "source", "build", "image_id", "new_author"]
+            .into_iter().filter(|k| input.get(*k).is_some_and(|v| !v.is_null())).collect();
         let summary = json!({"what": built.what, "entry": built.entry.to_base58(), "signers": built.signers.iter().map(AccountId::to_base58).collect::<Vec<_>>(),
-                             "registry": reg.to_base58(), "sequencer": self.sequencer, "irreversible": built.what == "Freeze"});
+                             "registry": reg.to_base58(), "sequencer": self.sequencer, "irreversible": built.what == "Freeze",
+                             "payer": payer.map(|p| p.to_base58()), "fields": fields});
         let mut c = built.change(&self.sequencer, &reg, now, summary);
-        if let Some(p) = input.get("payer").filter(|p| !p.is_null()) {
-            c["payer"] = json!(writes::account(p, "payer")?.to_base58());
+        if let Some(p) = payer {
+            c["payer"] = json!(p.to_base58());
         }
         c["allow_remote"] = json!(input.get("allow_remote") == Some(&json!(true)));
+        remember(&c);
         Ok(c)
     }
 
@@ -706,19 +740,21 @@ impl ProgramRegistryModule for ProgramRegistry {
 
     fn submit(&mut self, change_json: String) -> String {
         reply_coded((|| {
-            let change: Value = serde_json::from_str(&change_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
-            match change.get("signer").and_then(Value::as_str).unwrap_or("cli") {
+            let given: Value = serde_json::from_str(&change_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
+            match given.get("signer").and_then(Value::as_str).unwrap_or("cli") {
                 "cli" => {}
                 "lez_core" => return Err(writes::Failure::new("lez_core_unavailable", bridge::LEZ_CORE_BLOCKED)),
                 other => return Err(writes::Failure::input(format!("unknown signer '{other}': use \"cli\""))),
             }
+            if given["format"] != writes::FORMAT {
+                return Err(writes::Failure::input("not a change: pass what a prepare_* method returned"));
+            }
+            // Only what this module prepared, and its own copy of it.
+            let change = prepared(&given)?;
             // A change is only sent to the network this module is pointed at.
             let reg = self.write_registry()?;
             if change["registry"].as_str() != Some(reg.to_base58().as_str()) || change["sequencer"].as_str() != Some(self.sequencer.as_str()) {
                 return Err(writes::Failure::new("wrong_network", "this change was prepared for another registry or sequencer than the module is set to: prepare it again"));
-            }
-            if change["format"] != writes::FORMAT {
-                return Err(writes::Failure::input("not a change: pass what a prepare_* method returned"));
             }
             if change["expires_at"].as_u64().is_some_and(|e| now_ms() >= e) {
                 return Err(writes::Failure::new("expired", "this change was prepared more than 10 minutes ago and the registry would refuse it: prepare it again"));
@@ -862,7 +898,9 @@ mod tests {
         assert_eq!((v["success"].as_bool(), v["code"].as_str()), (Some(false), Some("no_registry")));
         assert_eq!(parsed(&m.prepare_update("nope".into()))["code"], "bad_input");
         m.registry = AccountId::from_base58("6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN");
-        let change = json!({"format": writes::FORMAT, "registry": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN", "sequencer": "http://127.0.0.1:9", "expires_at": u64::MAX});
+        let change = json!({"format": writes::FORMAT, "registry": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN", "sequencer": "http://127.0.0.1:9", "expires_at": u64::MAX, "message": "0a0b"});
+        assert_eq!(parsed(&m.submit(change.to_string()))["code"], "unknown_change", "only what this module prepared");
+        remember(&change);
         assert_eq!(parsed(&m.submit(change.to_string()))["code"], "wrong_network");
         let mut lez = change.clone();
         lez["signer"] = json!("lez_core");
@@ -906,8 +944,14 @@ mod tests {
         assert_eq!(parsed(&m.pending_requests())["code"], "not_allowed");
         assert_eq!(parsed(&m.config_get())["success"], true, "reads stay open");
         // A change from an untrusted app waits; nothing is signed.
-        let change = json!({"format": writes::FORMAT, "what": "Freeze", "registry": reg, "sequencer": DEFAULT_SEQUENCER, "expires_at": u64::MAX, "entry": reg});
-        let v = parsed(&m.submit(change.to_string()));
+        let change = json!({"format": writes::FORMAT, "what": "Freeze", "registry": reg, "sequencer": DEFAULT_SEQUENCER, "expires_at": u64::MAX, "entry": reg,
+                            "message": "04aa", "summary": {"what": "Freeze", "irreversible": true}});
+        remember(&change);
+        // The app relabels it: the module keeps showing (and sending) its own copy.
+        let mut relabelled = change.clone();
+        relabelled["what"] = json!("Update");
+        relabelled["summary"] = json!({"what": "Update", "irreversible": false});
+        let v = parsed(&m.submit(relabelled.to_string()));
         assert_eq!(v["value"]["state"], "awaiting_approval", "{v}");
         let request = v["value"]["request"].as_str().unwrap().to_owned();
         assert_eq!(parsed(&m.approve_request(request.clone()))["code"], "not_allowed", "it can't approve itself");
@@ -917,12 +961,48 @@ mod tests {
         // The person (through the browser) sees it and refuses it.
         as_caller(app("registry_browser"));
         let pending = parsed(&m.pending_requests());
-        assert!(pending["value"].as_array().unwrap().iter().any(|q| q["request"] == request.as_str() && q["from"] == "evil_ui"), "{pending}");
+        assert!(pending["value"].as_array().unwrap().iter().any(|q| q["request"] == request.as_str() && q["from"] == "evil_ui"
+            && q["change"]["what"] == "Freeze" && q["change"]["summary"]["irreversible"] == true), "the card shows the module's copy: {pending}");
         assert_eq!(parsed(&m.deny_request(request.clone()))["value"]["state"], "denied");
         assert_eq!(parsed(&m.deny_request(request.clone()))["code"], "no_request");
         as_caller(app("evil_ui"));
         assert_eq!(parsed(&m.submit_status(request))["value"]["state"], "denied");
         as_caller(logos_rust_sdk::LogosCaller::HostAnchor);
+    }
+
+    /// An approved request is signed through the CLI like a trusted submit.
+    #[test]
+    fn an_approved_request_is_sent_and_settles() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("lezreg-approve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cli = dir.join("lezreg");
+        std::fs::write(&cli, "#!/bin/sh\ncat > /dev/null\necho '{\"tx\":\"abc\",\"block\":9}'\n").unwrap();
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let reg = "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN";
+        let mut m = fresh();
+        m.registry = AccountId::from_base58(reg);
+        m.cli = Some(cli);
+        let change = json!({"format": writes::FORMAT, "what": "Freeze", "registry": reg, "sequencer": DEFAULT_SEQUENCER, "expires_at": u64::MAX, "entry": reg, "message": "04bb"});
+        remember(&change);
+        as_caller(app("some_dapp_ui"));
+        let request = parsed(&m.submit(change.to_string()))["value"]["request"].as_str().unwrap().to_owned();
+        as_caller(app("registry_browser"));
+        let v = parsed(&m.approve_request(request.clone()));
+        assert_eq!((v["value"]["state"].as_str(), v["value"]["requested_by"].as_str()), (Some("running"), Some("some_dapp_ui")), "{v}");
+        assert_eq!(parsed(&m.approve_request(request.clone()))["code"], "no_request", "approved once");
+        as_caller(app("some_dapp_ui"));
+        let mut state = Value::Null;
+        for _ in 0..100 {
+            state = parsed(&m.submit_status(request.clone()))["value"].clone();
+            if state["state"] != "running" {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert_eq!((state["state"].as_str(), state["receipt"]["block"].as_u64()), (Some("applied"), Some(9)), "{state}");
+        as_caller(logos_rust_sdk::LogosCaller::HostAnchor);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

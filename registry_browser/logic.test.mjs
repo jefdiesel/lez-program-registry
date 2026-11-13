@@ -45,5 +45,8 @@ check("jobText", [jobText({ what: "Freeze", state: "running" }), jobText({ what:
 
 check("requestTitle", requestTitle({ from: "evil_ui", change: { what: "Freeze" } }), "evil_ui asks to sign: Freeze");
 
+check("changeLines update shows fields and payer", changeLines({ what: "Update (revision 2)", entry: P, signers: [P], sequencer: "s", summary: { fields: ["version"], payer: P } }),
+  ["Update (revision 2) of entry 6YWH…VayN", "Changes: version", "Signed by 6YWH…VayN with your lezreg wallet", "Fee paid by 6YWH…VayN", "Sent to s"]);
+
 console.log(failures ? `${failures} FAILED` : "all ok");
 process.exit(failures ? 1 : 0);

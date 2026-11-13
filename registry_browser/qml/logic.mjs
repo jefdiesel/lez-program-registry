@@ -93,7 +93,9 @@ export function changeLines(change) {
   if (!change) return [];
   const s = change.summary || {};
   const lines = [`${change.what} of entry ${shortId(change.entry)}`];
+  if (/^Update/.test(change.what) && Array.isArray(s.fields) && s.fields.length) lines.push(`Changes: ${s.fields.join(", ")}`);
   lines.push(`Signed by ${(change.signers || []).map(shortId).join(" and ")} with your lezreg wallet`);
+  if (s.payer) lines.push(`Fee paid by ${shortId(s.payer)}`);
   lines.push(`Sent to ${change.sequencer}`);
   if (s.irreversible) lines.push("This can't be undone: a frozen entry never changes again.");
   return lines;
