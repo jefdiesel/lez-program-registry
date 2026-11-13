@@ -168,7 +168,8 @@ pub fn get(
                 "cid": cid::to_string(&e.idl.cid),
                 "sha256": hex::encode(e.idl.sha256),
                 "status": st["status"],
-                "format": lezreg_sdk::json::idl_info(&info),
+                "format": st["format"],
+                "format_version": st["format_version"],
                 "calls": st["calls"],
             }));
             Ok(())
@@ -212,7 +213,7 @@ pub fn push(out: &mut Out, file: &std::path::Path, o: &StorageOpts) -> Result<Co
         hex::encode(r.sha256),
         r.size
     ));
-    out.json(json!({"cid": cid_text, "sha256": hex::encode(r.sha256), "size": r.size, "peer": peer, "filename": prepared.filename, "format": lezreg_sdk::json::idl_info(&prepared.info)}));
+    out.json(json!({"cid": cid_text, "sha256": hex::encode(r.sha256), "size": r.size, "peer": peer, "filename": prepared.filename, "format": prepared.info.format.id(), "format_version": prepared.info.format_version}));
     Ok(r)
 }
 

@@ -51,10 +51,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let calls = status.calls();
             let names: Vec<&str> = calls.iter().map(|c| c.name.as_str()).collect();
             println!(
-                "  IDL: {} {}, {} calls: {}",
+                "  IDL: {} {} ({} {}): {}",
+                calls.len(),
+                // SPEL v1 lists instructions, v2 messages.
+                if info.format == lezreg_sdk::IdlFormat::SpelV1 { "instructions" } else { "messages" },
                 info.format,
                 info.format_version.as_deref().unwrap_or("(no version)"),
-                calls.len(),
                 names.join(", ")
             );
         }

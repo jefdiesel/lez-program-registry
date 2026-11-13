@@ -25,7 +25,7 @@ cargo run -p lezreg-sdk --no-default-features --example resolve_program -- \
 lez_program_registry 0.1.0 by 7Pq…
   The LEZ Program Registry, registered in itself: …
   fresh: the program runs the image the entry claims
-  IDL: spel-v1 0.1.0, 6 calls: register_deployer, register_third_party, update, transfer_author, freeze, deploy_and_register
+  IDL: 6 instructions (spel-v1 0.1.0): register_deployer, register_third_party, update, transfer_author, freeze, deploy_and_register
 ```
 
 The steps it takes:

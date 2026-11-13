@@ -826,7 +826,7 @@ Catalog repo (separate, required): `jefdiesel/lez-registry-catalog`, a fork of `
 let reg = Registry::new(Config { sequencer, registry: REG_TESTNET, storage: StorageCfg::local_default(),
                                  pin_peers: vec![], mirrors: vec![] });
 let r = reg.resolve(&program_id)?;      // 1 getAccount: Resolved { deployer: Option<Entry>, header: HeaderStatus,
-                                        //   third_party_count, verification: VerifyStatus, idl: IdlStatus<SpelIdl> }
+                                        //   third_party_count, verification: VerifyStatus, idl: IdlStatus (any format: SPEL v1, v2 or unknown, see §5.4) }
 println!("{} {} · {} · {}", r.name(), r.version(), r.kind_label(), r.badge());
 if let IdlStatus::Ok(idl) = &r.idl { let call = idl.decode_instruction(&calldata)?; }
 reg.list(Cursor::Newest, 50)?;          // global walk; incremental from cached seq
