@@ -1487,6 +1487,69 @@ impl Writer {
         Ok(r)
     }
 
+    /// Sends a change built somewhere else (the `program_registry` Logos module's `prepare_*`,
+    /// through `lezreg module send`), after checking it is exactly what this SDK would build:
+    ///
+    /// - `message` decodes as a registry [`Instruction`] and re-encodes to the same bytes;
+    /// - `accounts` are the actors [`actors_to_declare`] derives for it, in order;
+    /// - `signers` are the accounts that instruction must be signed by;
+    /// - its `now` is still inside the registry's time window on the chain's clock.
+    ///
+    /// `DeployAndRegister` is refused: it needs the segment writes [`Writer::deploy`] makes.
+    /// Then it is simulated, signed, sent and settled like every other write.
+    pub async fn send_prepared(
+        &mut self,
+        root: AccountId,
+        message: &[u8],
+        accounts: &[Actor],
+        signers: &[AccountId],
+        entry: Option<AccountId>,
+        opts: &SendOpts,
+    ) -> Result<Receipt> {
+        let ix: Instruction = borsh::from_slice(message)
+            .map_err(|e| Error::Invalid(format!("the change is not a registry instruction: {e}")))?;
+        if borsh::to_vec(&ix).map_err(|e| Error::Invalid(e.to_string()))? != message {
+            return Err(Error::Invalid(
+                "the change's message does not re-encode to the same bytes".into(),
+            ));
+        }
+        let (what, now, must_sign) = prepared_parts(root, &ix)?;
+        let expected = actors_to_declare(root, self.reg, &ix);
+        let mut given: Vec<Actor> = Vec::new();
+        for a in std::iter::once(Actor::new(root, self.reg)).chain(accounts.iter().copied()) {
+            if !given.contains(&a) {
+                given.push(a);
+            }
+        }
+        if given != expected {
+            return Err(Error::Invalid(format!(
+                "the change declares other accounts than a {what} needs ({} given, {} expected); prepare it again",
+                given.len(),
+                expected.len()
+            )));
+        }
+        let given_signers: BTreeSet<AccountId> = signers.iter().copied().collect();
+        let needed: BTreeSet<AccountId> = must_sign.iter().copied().collect();
+        if given_signers != needed {
+            return Err(Error::Invalid(format!(
+                "the change names other signers than a {what} needs: {}",
+                must_sign
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        let chain_now = self.now().await;
+        if opts.force_gas.is_none() && chain_now >= now.saturating_add(t::TIME_WINDOW_MS) {
+            return Err(Error::Invalid(format!(
+                "the change was prepared for {now} ms and the chain's clock reads {chain_now}: it is outside the registry's 10-minute window; prepare it again"
+            )));
+        }
+        self.ix(&what, root, &ix, &must_sign, None, opts, entry, None)
+            .await
+    }
+
     /// `Freeze`: irreversible.
     pub async fn freeze(
         &mut self,
@@ -1520,9 +1583,94 @@ impl Writer {
     }
 }
 
+/// A prepared instruction's name, its `now`, and who must sign it (root first).
+fn prepared_parts(root: AccountId, ix: &Instruction) -> Result<(String, u64, Vec<AccountId>)> {
+    let dedup = |v: Vec<AccountId>| {
+        let mut out: Vec<AccountId> = Vec::new();
+        for a in v {
+            if !out.contains(&a) {
+                out.push(a);
+            }
+        }
+        out
+    };
+    Ok(match ix {
+        Instruction::RegisterDeployer {
+            author_id,
+            now,
+            via_pda_seed,
+            ..
+        } => {
+            if via_pda_seed.is_some() {
+                return Err(Error::Invalid(
+                    "a PDA-header registration is signed through its owner program, not here"
+                        .into(),
+                ));
+            }
+            (
+                "RegisterDeployer".into(),
+                *now,
+                dedup(vec![root, AccountId::new(*author_id)]),
+            )
+        }
+        Instruction::RegisterThirdParty { now, .. } => {
+            ("RegisterThirdParty".into(), *now, vec![root])
+        }
+        Instruction::Update {
+            revision,
+            now,
+            via_pda_seed,
+            ..
+        } if via_pda_seed.is_none() => (format!("Update (revision {revision})"), *now, vec![root]),
+        Instruction::TransferAuthor {
+            new_author_id,
+            now,
+            via_pda_seed,
+            ..
+        } if via_pda_seed.is_none() => (
+            "TransferAuthor".into(),
+            *now,
+            dedup(vec![root, AccountId::new(*new_author_id)]),
+        ),
+        Instruction::Freeze {
+            now, via_pda_seed, ..
+        } if via_pda_seed.is_none() => ("Freeze".into(), *now, vec![root]),
+        Instruction::DeployAndRegister { .. } => {
+            return Err(Error::Invalid(
+                "DeployAndRegister needs the segment writes first: use `lezreg deploy` or `lezreg publish`".into(),
+            ));
+        }
+        _ => {
+            return Err(Error::Invalid(
+                "a change through a PDA header (via_pda_seed) is signed through its owner program, not here".into(),
+            ));
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepared_signers_follow_the_instruction() {
+        let a = AccountId::new([2; 32]);
+        let b = AccountId::new([3; 32]);
+        let t = Instruction::TransferAuthor {
+            entry_id: [1; 32],
+            new_author_id: *b.value(),
+            now: 5,
+            via_pda_seed: None,
+        };
+        let (what, now, signers) = prepared_parts(a, &t).unwrap();
+        assert_eq!((what.as_str(), now, signers), ("TransferAuthor", 5, vec![a, b]));
+        let f = Instruction::Freeze {
+            entry_id: [1; 32],
+            now: 0,
+            via_pda_seed: Some([9; 32]),
+        };
+        assert!(prepared_parts(a, &f).is_err());
+    }
 
     #[test]
     fn gas_limit_is_one_and_a_half_times_with_a_floor() {
