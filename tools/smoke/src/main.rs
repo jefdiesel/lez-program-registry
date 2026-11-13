@@ -157,8 +157,9 @@ impl Smoke {
             segs.push(self.new_account().await);
         }
         self.w.store_persistent_data()?;
+        // LEZ rc3 meters the loader (1 cycle per byte read): the wallet measures each write.
         let mut config = self.w.config().clone();
-        config.gas_limit = 1_000;
+        config.gas_limit = wallet::DEFAULT_GAS_LIMIT;
         self.w.set_config(config);
         let before = self.w.get_account_balance(payer).await?;
         for i in (0..chunks.len()).rev() {
@@ -182,7 +183,7 @@ impl Smoke {
         while let Some(seg) = next {
             let actor = Actor::new(seg, PROGRAM_LOADER_ACCOUNT_ID);
             let s = self.state(actor).await?;
-            next = ProgramSegment::from_bytes(&s).and_then(|p| p.next_segment);
+            next = ProgramSegment::from_loader_actor_state(&s).and_then(|p| p.next_segment);
             states.insert(actor, s.into());
             n += 1;
             if n > 32 {
@@ -281,7 +282,7 @@ impl Smoke {
     }
 
     async fn header(&self, account: AccountId) -> Result<Option<ProgramHeader>> {
-        Ok(ProgramHeader::from_bytes(&self.state(Actor::new(account, PROGRAM_LOADER_ACCOUNT_ID)).await?))
+        Ok(ProgramHeader::from_loader_actor_state(&self.state(Actor::new(account, PROGRAM_LOADER_ACCOUNT_ID)).await?))
     }
 
     fn reader(&self) -> impl Fn(&t::AccountId) -> Vec<u8> + '_ {
@@ -504,7 +505,7 @@ async fn main() -> Result<()> {
     println!("\n== read back");
     let account = s.w.client().get_account(x).await?.ok_or_else(|| anyhow!("no account X"))?;
     let entry_bytes = account.data.actor_state(reg).to_vec();
-    let header = ProgramHeader::from_bytes(account.data.actor_state(PROGRAM_LOADER_ACCOUNT_ID)).ok_or_else(|| anyhow!("no header at X"))?;
+    let header = ProgramHeader::from_loader_actor_state(account.data.actor_state(PROGRAM_LOADER_ACCOUNT_ID)).ok_or_else(|| anyhow!("no header at X"))?;
     let entry: t::Entry = borsh::from_slice(&entry_bytes)?;
     println!(
         "one getAccount(X): entry kind {} name {} v{} rev {} author {} born_with_deploy {}; header image {} (entry claims {}) -> {}",

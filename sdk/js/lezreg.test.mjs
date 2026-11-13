@@ -52,8 +52,8 @@ await throws("trailing bytes refused", () => decodeHead(fromHex(v.head.borsh + "
 // A mocked sequencer holding one deployer entry with a matching header, and its IDL on Storage.
 const program = toBase58(id(7));
 const entryBytes = fromHex(v.entry.borsh);
-const header = new Uint8Array(65);
-header.set(fromHex(v.entry.image_id), 0);
+const header = new Uint8Array(66); // tag 0 = LoaderEntry::Header
+header.set(fromHex(v.entry.image_id), 1);
 const idlBytes = new TextEncoder().encode('{"name":"token","version":"1.2.0","instructions":[]}');
 const fakeFetch = async (url, init) => {
   if (init?.method === "POST") {

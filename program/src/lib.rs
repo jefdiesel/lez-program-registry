@@ -2,7 +2,7 @@
 //!
 //! This one file is the input to both:
 //! 1. the released `spel generate-idl` v0.7.0 (syntactic; it never compiles this file), and
-//! 2. the LEZ v0.4.0-rc1 guest build, through `spel04-shim` (`spel` in Cargo.toml).
+//! 2. the LEZ v0.4.0-rc3 guest build, through `spel04-shim` (`spel` in Cargo.toml).
 //!
 //! A registry entry is the registry's actor state at an account. A deployer entry for program
 //! `X` lives at actor `(X, REG)`, and creating it needs `X`'s authorization: the credential the
@@ -18,7 +18,7 @@ use lezreg_types::{BuildConfig, ContentRef, SourceRef};
 use spel::lee_core::program::{ProgramEvent, SyncMessage};
 use spel::prelude::*;
 
-/// Same borsh layout as `program_loader_core::Message` (rc1), mirrored so the guest does not
+/// Same borsh layout as `program_loader_core::Message` (rc3), mirrored so the guest does not
 /// link the loader's host-only crates. `tools/engine-test` checks the encoding.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum LoaderMessage {

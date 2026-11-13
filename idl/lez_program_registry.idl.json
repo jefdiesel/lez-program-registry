@@ -1357,7 +1357,7 @@
   },
   "x-lez04": {
     "spec": "lezreg-idl-ext/0.1",
-    "lez": "v0.4.0-rc1",
+    "lez": "v0.4.0-rc3",
     "wire": {
       "root": "bare Instruction: u8 variant index (= instruction order = discriminator) + borsh args; not the spel v0.7.0 CLI's risc0-serde words",
       "discriminator": "one byte, the borsh variant index; not lssa-lang's sha256(\"global:<name>\")[..8]",

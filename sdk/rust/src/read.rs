@@ -17,8 +17,8 @@ use crate::{
 /// The LEZ program loader (`lee_core::program::PROGRAM_LOADER_ACCOUNT_ID`).
 pub const LOADER: AccountId = AccountId([0xFE; 32]);
 
-/// A loader `ProgramHeader` (borsh, 65 bytes): `image_id` (8 little-endian u32 words),
-/// `program_first_segment`, `immutable`.
+/// A loader `ProgramHeader` as LEZ rc3 stores it: borsh `LoaderEntry::Header`, 66 bytes: tag 0,
+/// `image_id` (8 little-endian u32 words), `program_first_segment`, `immutable`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
     pub image_id: [u8; 32],
@@ -30,13 +30,14 @@ impl Header {
     /// Decodes a loader actor state; `None` if it is not a header.
     #[must_use]
     pub fn decode(b: &[u8]) -> Option<Self> {
-        if b.len() != 65 || b[64] > 1 {
+        // Tag 1 is a `LoaderEntry::Segment`.
+        if b.len() != 66 || b[0] != 0 || b[65] > 1 {
             return None;
         }
         Some(Self {
-            image_id: b[..32].try_into().ok()?,
-            first_segment: AccountId(b[32..64].try_into().ok()?),
-            immutable: b[64] == 1,
+            image_id: b[1..33].try_into().ok()?,
+            first_segment: AccountId(b[33..65].try_into().ok()?),
+            immutable: b[65] == 1,
         })
     }
 }

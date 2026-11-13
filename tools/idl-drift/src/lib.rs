@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 pub mod codec;
 
 pub const IDL_EXT_SPEC: &str = "lezreg-idl-ext/0.1";
-pub const LEZ_VERSION: &str = "v0.4.0-rc1";
+pub const LEZ_VERSION: &str = "v0.4.0-rc3";
 
 /// Keys `extend` may add to an instruction.
 pub const ADDED_IX_KEYS: [&str; 3] = ["discriminator", "execution", "variant"];

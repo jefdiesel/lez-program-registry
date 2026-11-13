@@ -1,4 +1,4 @@
-# End to end against a real LEZ v0.4.0-rc1 standalone sequencer and real Logos Storage v0.5.3
+# End to end against a real LEZ v0.4.0-rc3 standalone sequencer and real Logos Storage v0.5.3
 # nodes (DESIGN §8.3, milestone M5). Nothing here needs a secret: the payer is LEZ's own
 # published local-test genesis account (lez/testnet_initial_state, funded by networks/local.json
 # on a fresh chain), and every binary is built from source or pinned by sha256.
@@ -18,8 +18,8 @@ on:
   workflow_dispatch:
 
 env:
-  LEZ_TAG: v0.4.0-rc1
-  LEZ_COMMIT: "1806e873"  # quoted: unquoted YAML reads it as 1806 × 10^873
+  LEZ_TAG: v0.4.0-rc3
+  LEZ_COMMIT: "bafd07be"  # quoted: a hex commit can read as a number in YAML (1806e873 did)
   STORAGE_ZIP: logos-storage-linux-amd64-v0.5.3.zip
   STORAGE_SHA256: 1086fae4f283cab882f133abe4d5a88cfae8d61edba9f0094c7f75b368ec9d56
   RPC: http://127.0.0.1:3062

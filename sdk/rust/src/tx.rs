@@ -45,9 +45,11 @@ pub const fn gas_limit_for(cycles: u64) -> u64 {
     if l < MIN_GAS_LIMIT { MIN_GAS_LIMIT } else { l }
 }
 
-/// Gas limit for loader `WriteSegment`s and native transfers: the loader is host code and
-/// meters no cycles (DESIGN §2.1); only bytes are billed.
-const UNMETERED_GAS_LIMIT: u64 = 1_000;
+/// Gas a loader `WriteSegment` declares at most, for the deploy's fee pre-flight. Since LEZ rc3
+/// the loader charges 1 cycle per loader-state byte it reads (`LOADER_CYCLES_PER_BYTE`): a write
+/// reads the next segment, up to `MAX_SEGMENT_DATA_LEN` bytes plus its header. The wallet
+/// measures each write and declares 25% above it (`public_gas_margin_percent`).
+const SEGMENT_WRITE_GAS: u64 = (program_loader_core::MAX_SEGMENT_DATA_LEN as u64 + 64) * 5 / 4;
 
 /// How long to wait for a sent transaction to be confirmed before checking its nonce
 /// instead: `LEZREG_TX_TIMEOUT_SECS`, default 120.
@@ -295,7 +297,7 @@ impl Writer {
     }
 
     pub async fn header(&self, account: AccountId) -> Result<Option<ProgramHeader>> {
-        Ok(ProgramHeader::from_bytes(
+        Ok(ProgramHeader::from_loader_actor_state(
             &self.state(account, PROGRAM_LOADER_ACCOUNT_ID).await?,
         ))
     }
@@ -326,7 +328,7 @@ impl Writer {
             .saturating_sub(60_000)
         };
         self.state(
-            clock_core::CLOCK_01_PROGRAM_ACCOUNT_ID,
+            clock_core::CLOCK_PROGRAM_ACCOUNT_ID,
             clock_core::clock_account_id(),
         )
         .await
@@ -551,7 +553,7 @@ impl Writer {
             while let Some(seg) = next {
                 let actor = Actor::new(seg, PROGRAM_LOADER_ACCOUNT_ID);
                 let s = self.state(seg, PROGRAM_LOADER_ACCOUNT_ID).await?;
-                next = ProgramSegment::from_bytes(&s).and_then(|p| p.next_segment);
+                next = ProgramSegment::from_loader_actor_state(&s).and_then(|p| p.next_segment);
                 states.insert(actor, s.into());
                 n += 1;
                 if n > 32 {
@@ -1049,10 +1051,7 @@ impl Writer {
         }
         self.save_wallet()?;
         self.wrote = true;
-        let saved = self.w.config().clone();
-        let mut config = saved.clone();
-        config.gas_limit = UNMETERED_GAS_LIMIT;
-        self.w.set_config(config);
+        // The wallet measures each write's gas (the loader's bytes read) and declares it.
         let result = async {
             for i in (0..chunks.len()).rev() {
                 self.say(&format!(
@@ -1087,7 +1086,6 @@ impl Writer {
             Ok(())
         }
         .await;
-        self.w.set_config(saved);
         result?;
         Ok((segs[0], user_len))
     }
@@ -1172,7 +1170,7 @@ impl Writer {
                         bytecode: c.clone(),
                         next_segment: placeholders.get(i + 1).copied(),
                     }
-                    .to_bytes(),
+                    .to_loader_actor_state(),
                 )
             })
             .collect();
@@ -1200,7 +1198,7 @@ impl Writer {
         let limit = opts.force_gas.unwrap_or_else(|| gas_limit_for(cycles));
         let mut need = self.reserve(limit, message.len()).await?;
         for c in &chunks {
-            need += self.reserve(UNMETERED_GAS_LIMIT, c.len() + 64).await?;
+            need += self.reserve(SEGMENT_WRITE_GAS, c.len() + 64).await?;
         }
         let balance = self.balance(payer).await?;
         self.say(&format!("   pre-flight: {what} simulated OK ({cycles} cycles, gas limit {limit}); payer {payer} holds {balance}, the whole deploy reserves up to about {need}"));

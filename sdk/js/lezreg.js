@@ -290,10 +290,11 @@ export function decodeHead(bytes) {
   return finish(r, { schema: r.u8(), count: r.u64(), newest: r.option(() => r.id()) });
 }
 
-/** A loader program header: 32-byte image id, first segment, immutable flag. */
+/** A loader program header (LEZ rc3 `LoaderEntry::Header`): tag 0, 32-byte image id, first
+ * segment, immutable flag. A segment (tag 1) or anything else is not a header. */
 export function decodeHeader(bytes) {
-  if (bytes.length !== 65 || bytes[64] > 1) return null;
-  return { imageId: hex(bytes.slice(0, 32)), firstSegment: toBase58(bytes.slice(32, 64)), immutable: bytes[64] === 1 };
+  if (bytes.length !== 66 || bytes[0] !== 0 || bytes[65] > 1) return null;
+  return { imageId: hex(bytes.slice(1, 33)), firstSegment: toBase58(bytes.slice(33, 65)), immutable: bytes[65] === 1 };
 }
 
 // ── the registry ──────────────────────────────────────────────────────────────────────

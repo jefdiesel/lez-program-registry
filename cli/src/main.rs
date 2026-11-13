@@ -28,7 +28,7 @@ use lezreg_sdk::{
 use lezreg_types::pda::addr;
 use serde_json::json;
 use wallet::{
-    PASSWORD_ENV_VAR, WalletCore,
+    FeeParams, PASSWORD_ENV_VAR, WalletCore,
     config::{SequencerConnectionData, WalletConfigOverrides},
     utils::{fetch_config_path, fetch_persistent_storage_path, read_password},
 };
@@ -680,6 +680,10 @@ async fn run_wallet(mut args: Vec<String>, net: Result<Net>) -> Result<()> {
     let Args {
         continuous_run,
         dry_run,
+        allow_revert,
+        gas_limit,
+        max_fee,
+        tip,
         fee_headroom,
         fee_payer,
         refund_to,
@@ -703,9 +707,6 @@ async fn run_wallet(mut args: Vec<String>, net: Result<Net>) -> Result<()> {
     // Native transfers meter no cycles and the whole limit is reserved: keep it tiny.
     if args.iter().any(|a| a == "auth-transfer") {
         overrides.gas_limit = Some(1_000);
-    }
-    if fee_headroom.is_some() {
-        overrides.private_fee_headroom_blocks = fee_headroom;
     }
     let overrides = Some(overrides);
     write_default_wallet_files(&rpc)?;
@@ -736,17 +737,22 @@ async fn run_wallet(mut args: Vec<String>, net: Result<Net>) -> Result<()> {
             wallet
         };
         wallet.set_dry_run(dry_run);
-        wallet.set_private_fee_payer(fee_payer);
-        wallet.set_private_refund_target(refund_to);
+        wallet.set_allow_revert(allow_revert);
+        wallet.set_fee_params(FeeParams {
+            gas_limit,
+            max_fee,
+            tip,
+            headroom_blocks: fee_headroom,
+            payer: fee_payer,
+            refund_to,
+        });
         match execute_subcommand(&mut wallet, command).await {
-            Err(error)
-                if matches!(
-                    error.root_cause().downcast_ref(),
-                    Some(ExecutionFailureKind::DryRun)
-                ) => {}
-            result => {
-                result?;
-            }
+            // A dry run stops the command with its report, as in LEZ's own wallet binary.
+            Err(error) => match error.root_cause().downcast_ref() {
+                Some(ExecutionFailureKind::DryRun(report)) => println!("{report}"),
+                _ => return Err(error),
+            },
+            Ok(_) => {}
         }
     } else {
         let password = read_password(&storage_path)?;

@@ -85,7 +85,7 @@ fn sequencer(rpc: &str) -> Vec<Check> {
         }
     }
     let clock = h.get_actor_state(
-        &tid(&clock_core::CLOCK_01_PROGRAM_ACCOUNT_ID),
+        &tid(&clock_core::CLOCK_PROGRAM_ACCOUNT_ID),
         &tid(&clock_core::clock_account_id()),
     );
     match clock.map(|s| borsh::from_slice::<clock_core::ClockAccountData>(&s)) {

@@ -60,7 +60,8 @@ fn entry(kind: u8, program: AccountId, author: AccountId, name: &str, image: u8)
 }
 
 fn header_bytes(image: u8, immutable: bool) -> Vec<u8> {
-    let mut v = vec![image; 32];
+    let mut v = vec![0]; // LoaderEntry::Header
+    v.extend_from_slice(&[image; 32]);
     v.extend_from_slice(&[7; 32]);
     v.push(u8::from(immutable));
     v
@@ -441,10 +442,13 @@ fn header_decoding() {
     let h = Header::decode(&header_bytes(3, true)).unwrap();
     assert_eq!(h.image_id, [3; 32]);
     assert!(h.immutable);
-    assert!(Header::decode(&header_bytes(3, true)[..64]).is_none());
+    assert!(Header::decode(&header_bytes(3, true)[..65]).is_none());
     let mut bad = header_bytes(3, true);
-    bad[64] = 2;
+    bad[65] = 2;
     assert!(Header::decode(&bad).is_none());
+    let mut segment = header_bytes(3, true);
+    segment[0] = 1; // LoaderEntry::Segment
+    assert!(Header::decode(&segment).is_none());
 }
 
 #[test]

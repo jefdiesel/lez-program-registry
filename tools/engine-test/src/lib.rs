@@ -1,4 +1,4 @@
-//! Engine-test harness: the real registry guest ELF on LEZ v0.4.0-rc1's real state machine
+//! Engine-test harness: the real registry guest ELF on LEZ v0.4.0-rc3's real state machine
 //! (`V03State`, `ValidatedStateDiff`), real signatures, real loader. No chain, no network, no
 //! fees (fee-exempt transactions), and **no admission evidence ever**: every transaction is
 //! built with an empty `admission_evidence` (DESIGN §8.2 test 7).
@@ -219,7 +219,7 @@ impl Engine {
     #[must_use]
     pub fn header(&self, account: &AccountId) -> Option<ProgramHeader> {
         let s = self.state.get_account_by_id(*account).data.actor_state(PROGRAM_LOADER_ACCOUNT_ID).to_vec();
-        ProgramHeader::from_bytes(&s)
+        ProgramHeader::from_loader_actor_state(&s)
     }
 
     #[must_use]
