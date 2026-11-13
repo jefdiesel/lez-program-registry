@@ -50,11 +50,17 @@ Item {
         return s.length <= 12 ? s : s.slice(0, 4) + "…" + s.slice(-4)
     }
 
+    // Chain text without characters that reorder or hide what follows (bidi overrides and
+    // isolates, zero-width, controls). Every Text here is also plain text: no markup.
+    function clean(s) {
+        return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    }
+
     function words() {
         var v = info
         if (!v || (v.kind !== "deployer" && v.kind !== "community"))
             return shortId(programId)
-        return v.name + " v" + v.version + (v.kind === "deployer" ? " by " + (v.author_short || shortId(v.author)) : " · community")
+        return clean(v.name) + " v" + clean(v.version) + (v.kind === "deployer" ? " by " + clean(v.author_short || shortId(v.author)) : " · community")
     }
 
     function refresh() {
@@ -99,13 +105,13 @@ Item {
     Row {
         id: line
         spacing: 0
-        Text {
+        Text { textFormat: Text.PlainText;
             text: label.words()
             color: label.info && (label.info.kind === "deployer" || label.info.kind === "community") ? label.textColor : label.quietColor
             font.pixelSize: label.pixelSize
             font.family: label.fontFamily
         }
-        Text {
+        Text { textFormat: Text.PlainText;
             visible: !!(label.info && label.info.verified)
             text: " ✓"
             color: label.verifiedColor
@@ -113,21 +119,21 @@ Item {
             font.family: label.fontFamily
             font.bold: true
         }
-        Text {
+        Text { textFormat: Text.PlainText;
             visible: !!(label.info && label.info.stale)
             text: " · stale"
             color: label.warnColor
             font.pixelSize: label.pixelSize
             font.family: label.fontFamily
         }
-        Text {
+        Text { textFormat: Text.PlainText;
             visible: !!(label.info && label.info.kind !== "unregistered" && label.info.deployed === false)
             text: " \u00b7 not deployed"
             color: label.warnColor
             font.pixelSize: label.pixelSize
             font.family: label.fontFamily
         }
-        Text {
+        Text { textFormat: Text.PlainText;
             visible: label.state_ === "asking"
             text: " …"
             color: label.quietColor

@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 // Checks the browser's own logic (qml/logic.mjs, which qml/Main.qml imports) without a QML
 // engine. Run with: node registry_browser/logic.test.mjs
-import { requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText } from "./qml/logic.mjs";
+import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -38,15 +39,41 @@ check("label community", labelText({ kind: "community", name: "token", version: 
 check("label unregistered", labelText({ kind: "unregistered" }, P), "6YWH…VayN");
 check("label none", labelText(null, P), "6YWH…VayN");
 check("when", [when(0), when(1790000000000)], ["", "2026-09-21 14:13 UTC"]);
-check("changeLines freeze", changeLines({ what: "Freeze", entry: P, signers: [P], sequencer: "http://127.0.0.1:3062", summary: { irreversible: true } }),
-  ["Freeze of entry 6YWH…VayN", "Signed by 6YWH…VayN with your lezreg wallet", "Sent to http://127.0.0.1:3062", "This can't be undone: a frozen entry never changes again."]);
 check("jobText", [jobText({ what: "Freeze", state: "running" }), jobText({ what: "Freeze", state: "applied", receipt: { block: 9 } }), jobText({ what: "Update", state: "failed", code: "missing_key", error: "no key" })],
   ["Freeze: sending…", "Freeze: applied in block 9", "Update: failed (missing_key): no key"]);
 
-check("requestTitle", requestTitle({ from: "evil_ui", change: { what: "Freeze" } }), "evil_ui asks to sign: Freeze");
 
-check("changeLines update shows fields and payer", changeLines({ what: "Update (revision 2)", entry: P, signers: [P], sequencer: "s", summary: { fields: ["version"], payer: P } }),
-  ["Update (revision 2) of entry 6YWH…VayN", "Changes: version", "Signed by 6YWH…VayN with your lezreg wallet", "Fee paid by 6YWH…VayN", "Sent to s"]);
+
+// The card: everything signed, from the module's own decoding, full ids (M6 review B).
+const Q = "EDUMLehqHhq3KgQMidXVWGE1M4mQs2kJufgwKNghu1YK";
+check("changeLines freeze", changeLines({ what: "Freeze", entry: P, signers: [P], sequencer: "http://127.0.0.1:3062",
+    summary: { current: { name: "token", version: "1.0", kind: "deployer", revision: 2, author: P }, values: { frozen: true }, irreversible: true, max_gas: 200000, max_fee: "3000" } }),
+  [`Freeze of entry ${P}`, `Now: token v1.0 (deployer, revision 2), author ${P}`, `Signed by ${P} with your lezreg wallet`, "Fee paid by the first signer",
+   "At most 200000 gas, at most 3000 in fees", "Sent to http://127.0.0.1:3062", "This can't be undone: a frozen entry never changes again."]);
+const reg = changeLines({ what: "RegisterDeployer", entry: P, signers: [P, Q], sequencer: "https://testnet.example", summary: {
+  values: { name: "token", version: "1.2.0", description: "", tags: ["defi"], author_label: "Acme", author: Q, image_id: "44".repeat(32),
+            idl: { cid: "zb2r", sha256: "11".repeat(32), size: 16 }, source: { repo: "https://github.com/a/b", commit: "ab".repeat(20), docker_root: "." },
+            build: { binary: "token", manifest_path: "m/Cargo.toml", image_digest: "fa".repeat(32), image_tag: "r0.1.91.1", risc0_build: "3.0.5", host_risc0_rust: "1.91.1", lock_sha256: "33".repeat(32), features: [] } },
+  payer: Q, spends_real_funds: true, max_gas: 400000 } });
+check("register card names every value", ["name: token", "version: 1.2.0", "description: (empty)", "tags: defi", `author: ${Q}`, `image id: ${"44".repeat(32)}`,
+  `idl: CID zb2r, sha256 ${"11".repeat(32)}, 16 bytes`, `source: https://github.com/a/b @ ${"ab".repeat(20)} in .`].every((l) => reg.includes(l)), true);
+check("register card: payer, real funds, now", [reg.includes(`Fee paid by ${Q}`), reg.includes("This spends real funds on https://testnet.example"), reg.includes("Now: no entry (this creates it)")], [true, true, true]);
+check("update card shows new values", changeLines({ what: "Update (revision 3)", entry: P, signers: [P], sequencer: "s", summary: { values: { revision: 3, version: "2.0", image_id: "55".repeat(32) } } }).slice(1, 4),
+  ["version: 2.0", `image id: ${"55".repeat(32)}`, "revision: 3"]);
+check("requestTitle says the name is the app's own", requestTitle({ from: "evil\u202Eui", change: { what: "Freeze" } }),
+  'An app that calls itself "evilui" (name chosen by the app, unverified) asks to sign: Freeze');
+// Chain text can't reorder or hide what follows (C).
+check("clean drops bidi, zero-width, controls", clean("1.0\u202E(unproven)\u200B\u2066x\u2069\n"), "1.0(unproven)x");
+check("label text is cleaned", labelText({ kind: "deployer", name: "tok\u202Een", version: "1", author_short: "a", verified: false }, P), "token v1 by a");
+// Every Text in the QML shows plain text: no markup from the chain renders as a fake mark,
+// a link or a fetched image (M6 review C). A Text without it fails here.
+for (const f of ["qml/Main.qml", "qml/RegistryLabel.qml"]) {
+  const src = readFileSync(new URL(f, import.meta.url), "utf8");
+  const texts = [...src.matchAll(/(?<![A-Za-z.])Text\s*\{/g)];
+  const plain = [...src.matchAll(/(?<![A-Za-z])Text\s*\{\s*textFormat:\s*Text\.PlainText/g)].length;
+  check(`${f}: every Text is plain text`, plain, texts.length);
+  check(`${f}: no rich text anywhere`, /RichText|StyledText|MarkdownText|AutoText|Text\.AutoText/.test(src.replace(/textFormat:\s*Text\.PlainText/g, "")), false);
+}
 
 console.log(failures ? `${failures} FAILED` : "all ok");
 process.exit(failures ? 1 : 0);

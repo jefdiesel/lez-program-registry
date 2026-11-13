@@ -1,6 +1,13 @@
 // The registry browser's own logic, kept out of Main.qml so `node registry_browser/logic.test.mjs`
 // can check it (a QML engine is not needed). Inputs are the program_registry module's answers.
 
+/** Text from the chain or from an app, safe to show: no control characters, no bidirectional
+ * overrides or isolates, no zero-width characters (they can reverse "(unproven)" or hide text).
+ * Every Text in this app is also plain text (no markup). */
+export function clean(s) {
+  return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+}
+
 /** "6YWH…VayN": an account id short enough for one line. */
 export function shortId(id) {
   const s = String(id || "");
@@ -71,7 +78,7 @@ export function idlSummary(v) {
 export function labelText(v, programId) {
   if (!v) return shortId(programId);
   if (v.kind === "deployer" || v.kind === "community") {
-    let t = `${v.name} v${v.version}`;
+    let t = `${clean(v.name)} v${clean(v.version)}`;
     t += v.kind === "deployer" ? ` by ${v.author_short || shortId(v.author)}` : " · community";
     if (v.verified) t += " ✓";
     if (v.stale) t += " · stale";
@@ -88,15 +95,35 @@ export function when(ms) {
   return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 
-/** Lines for the confirm sheet of a prepared change. */
+/** A value a change writes, as one line of text. */
+function valueText(key, v) {
+  if (v === null || v === undefined) return "";
+  if (key === "idl" || key === "archive") return `CID ${clean(v.cid)}, sha256 ${clean(v.sha256)}, ${v.size} bytes`;
+  if (key === "source") return `${clean(v.repo) || "(no repo)"} @ ${clean(v.commit)} in ${clean(v.docker_root)}${v.archive ? `; archive ${valueText("archive", v.archive)}` : ""}`;
+  if (key === "build") return `binary ${clean(v.binary)} from ${clean(v.manifest_path)}; builder image ${clean(v.image_digest)} (${clean(v.image_tag)}), risc0-build ${clean(v.risc0_build)}, rust ${clean(v.host_risc0_rust)}, Cargo.lock ${clean(v.lock_sha256)}${(v.features || []).length ? `, features ${v.features.map(clean).join(" ")}` : ""}`;
+  if (Array.isArray(v)) return v.map(clean).join(", ") || "(none)";
+  if (typeof v === "object") return clean(JSON.stringify(v));
+  return clean(v) === "" ? "(empty)" : clean(v);
+}
+
+const VALUE_ORDER = ["name", "version", "description", "tags", "author_label", "author", "new_author", "program", "image_id", "idl", "source", "build", "revision", "frozen"];
+
+/** Lines for the confirm sheet of a prepared change: everything that will be signed, from the
+ * module's own decoding of it (summary.values), with full ids. */
 export function changeLines(change) {
   if (!change) return [];
   const s = change.summary || {};
-  const lines = [`${change.what} of entry ${shortId(change.entry)}`];
-  if (/^Update/.test(change.what) && Array.isArray(s.fields) && s.fields.length) lines.push(`Changes: ${s.fields.join(", ")}`);
-  lines.push(`Signed by ${(change.signers || []).map(shortId).join(" and ")} with your lezreg wallet`);
-  if (s.payer) lines.push(`Fee paid by ${shortId(s.payer)}`);
-  lines.push(`Sent to ${change.sequencer}`);
+  const lines = [`${clean(change.what)} of entry ${clean(change.entry)}`];
+  if (s.current) lines.push(`Now: ${clean(s.current.name)} v${clean(s.current.version)} (${clean(s.current.kind)}, revision ${s.current.revision}), author ${clean(s.current.author)}`);
+  else if (/^Register/.test(change.what || "")) lines.push("Now: no entry (this creates it)");
+  const values = s.values || {};
+  for (const k of VALUE_ORDER.concat(Object.keys(values).filter((k) => !VALUE_ORDER.includes(k))))
+    if (k in values && !(k === "frozen")) lines.push(`${k.replace(/_/g, " ")}: ${valueText(k, values[k])}`);
+  lines.push(`Signed by ${(change.signers || []).map(clean).join(" and ")} with your lezreg wallet`);
+  lines.push(s.payer ? `Fee paid by ${clean(s.payer)}` : "Fee paid by the first signer");
+  if (s.max_gas) lines.push(`At most ${s.max_gas} gas${s.max_fee ? `, at most ${clean(s.max_fee)} in fees` : ""}`);
+  if (s.spends_real_funds) lines.push(`This spends real funds on ${clean(change.sequencer)}`);
+  else lines.push(`Sent to ${clean(change.sequencer)}`);
   if (s.irreversible) lines.push("This can't be undone: a frozen entry never changes again.");
   return lines;
 }
@@ -104,7 +131,7 @@ export function changeLines(change) {
 /** A submitted change's state in words. */
 export function jobText(job) {
   if (!job) return "";
-  if (job.state === "running") return `${job.what}: sending…`;
+  if (job.state === "running") return `${clean(job.what)}: sending…`;
   if (job.state === "applied") return `${job.what}: applied${job.receipt && job.receipt.block ? " in block " + job.receipt.block : ""}`;
   return `${job.what}: failed${job.code ? " (" + job.code + ")" : ""}: ${job.error || "no reason given"}`;
 }
@@ -112,5 +139,5 @@ export function jobText(job) {
 /** The heading of another app's waiting request. */
 export function requestTitle(q) {
   if (!q || !q.change) return "";
-  return `${q.from || "An app"} asks to sign: ${q.change.what}`;
+  return `An app that calls itself "${clean(q.from) || "?"}" (name chosen by the app, unverified) asks to sign: ${clean(q.change.what)}`;
 }
