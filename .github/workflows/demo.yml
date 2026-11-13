@@ -47,7 +47,8 @@ jobs:
 
       - name: The pinned LEZ commit (read from e2e.yml, as demo.sh reads it)
         id: lez
-        run: echo "commit=$(sed -n 's/^  LEZ_COMMIT: *"\{0,1\}\([^"# ]*\).*/\1/p' .github/workflows/e2e.yml | head -1)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "commit=$(sed -n 's/^  LEZ_COMMIT: *"\{0,1\}\([^"# ]*\).*/\1/p' .github/workflows/e2e.yml | head -1)" >> "$GITHUB_OUTPUT"
       - name: Restore e2e.yml's standalone sequencer build (restore only)
         id: seq
         uses: actions/cache/restore@v4
