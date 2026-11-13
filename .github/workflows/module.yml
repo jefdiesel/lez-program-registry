@@ -63,7 +63,7 @@ jobs:
       - name: Module unit tests (write vectors, signing bridge) and the browser's logic
         run: |
           nix build "github:logos-co/logos-module-builder/$BUILDER_REV#rust-sdk-src" -o module/logos-rust-sdk-src
-          (cd module/rust-lib && cargo test --locked)
+          (cd module/rust-lib && XDG_CONFIG_HOME="$RUNNER_TEMP/unit-config" cargo test --locked)
           node registry_browser/logic.test.mjs
 
       # ---- a chain with the registry, as e2e.yml makes it ----
