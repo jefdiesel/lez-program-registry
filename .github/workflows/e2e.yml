@@ -150,7 +150,7 @@ jobs:
             "$RPC" "$REG" "$REG" http://127.0.0.1:8090/api/storage/v1 | tee example.out
           grep -q "^lez_program_registry " example.out
           grep -q "fresh: the program runs the image the entry claims" example.out
-          grep -qE "IDL: [0-9]+ instructions" example.out
+          grep -qE "IDL: spel-v1 [^,]+, 6 calls: register_deployer," example.out
 
       - name: IDL across nodes, pinning, degradation
         env:
