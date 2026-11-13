@@ -125,6 +125,16 @@ create a deployer entry being rejected."
       own key.
   - Engine tests `t02` (unauthorised and duplicate entries), `t03` (composed-transaction attacks),
     `t04`, `t09` and `t13` (PDA-owned headers).
+  - **What "deployer" means here:** the 0.4 loader records no deployer. "The account that deployed
+    the program" is taken to be whoever holds the authorization the loader requires to deploy or
+    upgrade `X` (its header key, or the owning program for a PDA header), which is DESIGN §12 Q3,
+    not yet confirmed by Logos.
+  - **What the registry cannot check on chain:** it cannot read the loader's header, so it cannot
+    check that a program exists at `X` or that the claimed image is the one running there.
+    - A `RegisterDeployer` proves only that `X`'s key signed. Only a `DeployAndRegister` entry
+      (`born_with_deploy`) proves co-creation on chain.
+    - Missing programs (NO-PROGRAM) and stale images are flagged by the clients, from the same
+      `getAccount` read (demo `X.c` to `X.e2`).
   - "Source verification should be used to confirm the claim": the entry's claimed `image_id` is
     compared with the live header on every read (fresh or stale, demo `X.c`/`X.d`), and
     `lezreg verify` rebuilds the source (criterion 7).
@@ -304,7 +314,16 @@ remains fully functional with it disabled. Any analytics must be strictly opt-in
 **13.** "Document cycle count usage for each on-chain operation (register, update)."
 
 - **Status: not yet.**
-  - Cycle counts measured with the LEZ executor exist in DESIGN §2.7 ("Measured in M1"):
+  - **Measured on LEZ rc3** by lezreg's pre-send simulation (the LEZ executor), in the recorded
+    `docs/demo.log` (each write prints "simulated N cycles, gas limit, fee, bytes"):
+    - `RegisterDeployer`: 173,982 and 174,451 cycles (1,575 and 1,440 bytes);
+    - `RegisterThirdParty`: 240,222 and 239,816 cycles (about 1.5–1.6 KB);
+    - `Update`: 90,190–94,023 cycles (about 0.8–0.9 KB);
+    - `TransferAuthor`: 99,821 cycles;
+    - `Freeze`: 45,700 cycles;
+    - `DeployAndRegister` of the 555 KB registry guest: 705,486 cycles (dry run, step `X.a`). rc3
+      meters the loader, so this now grows with program size.
+  - Earlier numbers measured on rc1 are in DESIGN §2.7 ("Measured in M1"):
     - `RegisterDeployer`: 168k;
     - `DeployAndRegister`: 183k;
     - `RegisterThirdParty`: 227–234k;
@@ -312,8 +331,6 @@ remains fully functional with it disabled. Any analytics must be strictly opt-in
     - `TransferAuthor`: about 97k;
     - `Freeze`: about 43k.
   - The demo prints the simulated cycles of its own register and update (row `P1`).
-  - Those DESIGN numbers were measured on LEZ rc1. rc3 meters the loader, so deploys now cost
-    gas roughly in proportion to the program's size. They have not been re-measured on rc3.
   - They were **not** measured with `cycle_bench`, which is the tool the spec names.
   - The `tools/cycle-bench` fork and `docs/CYCLES.md` planned in DESIGN §8.4 do not exist, and no
     CI cycle-regression gate exists either.
@@ -360,9 +377,9 @@ included in CI; CI is green on the default branch."
     LEZ tag and starts a fresh chain and Logos Storage v0.5.3 nodes. It then deploys from
     `artifacts/`, runs the SDK example, the IDL steps, the adoption tools and `verify` (expecting
     Match), and the GitHub Action.
-  - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green at `ca7c8bf` (LEZ rc3), which
-    is `main`: runs 43438987382, 43438992792, 43438996678 and 43439000790 on the `rc3` branch,
-    2026-11-13. They were also green on the last rc1 `main` commit, `968e7c9`.
+  - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green on `main` at `74a0010` (LEZ
+    rc3 plus the IDL-format work), 2026-11-13: runs 43450763487, 43450763482, 43450763645 and
+    43450763571. These are the only four workflows in `.github/workflows/`.
   - The Rust e2e test `sdk/rust/tests/e2e.rs` skips in CI unless `LEZREG_E2E_RPC` is set. The
     e2e coverage in CI is the workflow, not that test.
 
@@ -420,9 +437,10 @@ Logos Core Module."
     alone, without trusting a metadata service.
   - The lists are on chain because the spec forbids depending on a centralised indexer, and the
     sequencer has no accounts-by-program query.
-- **Gas cost:**
-  - a registration is about 170–235k cycles and 1.4–2.9 KB of transaction (DESIGN §2.7);
-  - an update is about 90k cycles.
+- **Gas cost, measured on LEZ rc3 (`docs/demo.log`; criterion 13 has the full list):**
+  - a deployer registration is about 174k cycles and 1.4–1.6 KB of transaction;
+  - a third-party registration is about 240k cycles;
+  - an update is about 90–94k cycles.
   - Records do not grow with history, because the lists use fixed-size heads and write-once
     links.
 
