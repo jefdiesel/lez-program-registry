@@ -12,7 +12,7 @@ checked against the code. DESIGN describes the plan, and some of it is not built
 **Status words used below:**
 - **met**: works and is tested here, and needs no testnet.
 - **met on a local rc sequencer, pending testnet 0.4**: works end to end against a LEZ
-  `v0.4.0-rc1` standalone sequencer (CI and `scripts/demo.sh`), but has not run on testnet 0.4,
+  `v0.4.0-rc3` standalone sequencer (CI and `scripts/demo.sh`), but has not run on testnet 0.4,
   which has not launched.
 - **partly met**: some of the criterion works; the rest is listed.
 - **not yet**: not done.
@@ -32,7 +32,7 @@ live on Logos Storage; the chain holds their CID, sha256 and size. Entries recor
 tuple, and `lezreg verify` rebuilds it in Docker and compares the image id with the claimed one
 and with the live one.
 
-Everything has run end to end on a local LEZ `v0.4.0-rc1` standalone sequencer: in CI on every
+Everything has run end to end on a local LEZ `v0.4.0-rc3` standalone sequencer: in CI on every
 push to `main`, and through `scripts/demo.sh`. Nothing has run on testnet 0.4 yet, because it has
 not launched. None of the adoption criteria are met yet.
 
@@ -195,7 +195,7 @@ that program as 'locally verified' for themselves."
     - records a local mark with `--mark`. `lezreg verified` lists the marks, and the module's
       `program_label.verified` reports them.
   - **CI evidence:**
-    - `e2e.yml`, step "lezreg verify REG ... says Match", green on `968e7c9` (run 41908642672).
+    - `e2e.yml`, step "lezreg verify REG ... says Match", green on `main` (LEZ rc3; see criterion 18 for the runs).
     - `verify.yml`: `lezreg build` reproduces `artifacts/`.
     - `repro.yml`: a stock Docker build on two runners gives byte-identical output.
   - **Limits:**
@@ -210,7 +210,8 @@ testnet 0.4."
 - **Status: not yet.** Testnet 0.4 has not launched. `lezreg`'s `testnet` network is a placeholder
   that refuses to run (demo `X.i`). `scripts/demo.sh --testnet --rpc … --registry …` is the
   read-only walk to run on launch day; until then it stops at once with a message. The repo is
-  pinned to LEZ `v0.4.0-rc1`; moving to `v0.4.0-rc3` is in progress on another branch.
+  pinned to LEZ `v0.4.0-rc3` (`bafd07be`), read by `scripts/demo.sh` from `e2e.yml` and
+  `Cargo.toml`.
 
 ### Usability
 
@@ -309,6 +310,8 @@ remains fully functional with it disabled. Any analytics must be strictly opt-in
     - `TransferAuthor`: about 97k;
     - `Freeze`: about 43k.
   - The demo prints the simulated cycles of its own register and update (row `P1`).
+  - Those DESIGN numbers were measured on LEZ rc1. rc3 meters the loader, so deploys now cost
+    gas roughly in proportion to the program's size. They have not been re-measured on rc3.
   - They were **not** measured with `cycle_bench`, which is the tool the spec names.
   - The `tools/cycle-bench` fork and `docs/CYCLES.md` planned in DESIGN §8.4 do not exist, and no
     CI cycle-regression gate exists either.
@@ -355,8 +358,9 @@ included in CI; CI is green on the default branch."
     LEZ tag and starts a fresh chain and Logos Storage v0.5.3 nodes. It then deploys from
     `artifacts/`, runs the SDK example, the IDL steps, the adoption tools and `verify` (expecting
     Match), and the GitHub Action.
-  - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green on `main` at `968e7c9`
-    (2026-11-04).
+  - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green at `ca7c8bf` (LEZ rc3), which
+    is `main`: runs 43438987382, 43438992792, 43438996678 and 43439000790 on the `rc3` branch,
+    2026-11-13. They were also green on the last rc1 `main` commit, `968e7c9`.
   - The Rust e2e test `sdk/rust/tests/e2e.rs` skips in CI unless `LEZREG_E2E_RPC` is set. The
     e2e coverage in CI is the workflow, not that test.
 
@@ -467,8 +471,8 @@ The facts, without a conclusion:
   - publish the registry program id in the README;
   - run `scripts/demo.sh --testnet`;
   - add a scheduled read-only testnet job (DESIGN §8.3 `testnet.yml`, which does not exist).
-- **LEZ version:** the repo is on `v0.4.0-rc1`; `v0.4.0-rc3` is out and the move is in progress on
-  another branch.
+- **LEZ version:** the repo is on `v0.4.0-rc3`. Whatever testnet 0.4 launches with may need
+  another re-pin.
 - **Adoption evidence:** all seven adoption bullets.
 - **SPEL 0.4:** see above (TBD).
 - **Performance:**
