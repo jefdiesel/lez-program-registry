@@ -175,16 +175,7 @@ pub fn run_checks(net: &Net, storage_api: &str) -> Vec<Check> {
         .map(PathBuf::from)
         .filter(|p| p.is_file())
         .or_else(|| which("r0vm"));
-    v.push(match r0vm {
-        Some(p) => check("r0vm", Level::Ok, p.display().to_string()),
-        // Not fatal: public writes simulate in-process (CI deploys and registers without it).
-        // Only local proving of private changes runs the prover binary.
-        None => check(
-            "r0vm",
-            Level::Warn,
-            "not on PATH and RISC0_SERVER_PATH unset: needed only to prove private changes locally (rzup install r0vm)",
-        ),
-    });
+    v.push(r0vm_check(r0vm));
     v.push(match wallet::utils::fetch_persistent_storage_path() {
         Ok(p) if p.exists() => check("wallet", Level::Ok, p.display().to_string()),
         Ok(p) => check(
@@ -234,6 +225,19 @@ pub fn run_checks(net: &Net, storage_api: &str) -> Vec<Check> {
     v
 }
 
+/// Every write is simulated before it is sent, and lezreg's LEZ engine (built without `prove`)
+/// runs that simulation in the external `r0vm`. A warning, not a failure: reads never need it.
+fn r0vm_check(found: Option<PathBuf>) -> Check {
+    match found {
+        Some(p) => check("r0vm", Level::Ok, p.display().to_string()),
+        None => check(
+            "r0vm",
+            Level::Warn,
+            "not on PATH and RISC0_SERVER_PATH unset: every write (register, update, publish, adopt, deploy) is simulated with r0vm 3.0.5 and stops without it; reads work (rzup install cargo-risczero 3.0.5, or install.sh --with-r0vm)",
+        ),
+    }
+}
+
 /// Prints the checks; returns whether none failed.
 pub fn report(out: &mut Out, checks: &[Check]) -> bool {
     let mut j: Vec<Value> = Vec::new();
@@ -263,6 +267,15 @@ mod tests {
         assert_eq!(skew_level(-90_000), Level::Ok);
         assert_eq!(skew_level(300_000), Level::Warn);
         assert_eq!(skew_level(-700_000), Level::Fail);
+    }
+
+    #[test]
+    fn missing_r0vm_says_writes_need_it() {
+        let c = r0vm_check(None);
+        assert_eq!(c.level, Level::Warn);
+        assert!(c.detail.contains("every write"), "{}", c.detail);
+        assert!(!c.detail.contains("private"), "{}", c.detail);
+        assert_eq!(r0vm_check(Some("/x/r0vm".into())).level, Level::Ok);
     }
 
     #[test]
