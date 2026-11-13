@@ -86,27 +86,72 @@ Options:
 
 ## Install
 
-Build from source. You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ
-v0.4.0-rc3) and the RISC Zero toolchain, installed as `.github/workflows/ci.yml` does it:
-`lezreg` links the registry program crate, which simulates transactions locally. The read-only
-SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
+One line, no sudo. It downloads the `lezreg` build for your machine from this repo's latest
+GitHub release, checks its SHA-256 against the release's `SHA256SUMS`, and puts it in
+`~/.lezreg/bin` (or `$LEZREG_HOME/bin`):
 
 ```sh
-curl -L https://risczero.com/install | bash && rzup install cargo-risczero 3.0.5 && rzup install rust
+curl -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh -s -- --with-r0vm --with-storage
+```
+
+- Builds exist for Linux x86_64 and aarch64 (glibc 2.35 or newer: Ubuntu 22.04, Debian 12,
+  Fedora 36 and later) and macOS arm64 and x86_64. Windows: use WSL. Anything else: build from
+  source (below).
+- The installer does not edit your shell files. It prints the `export PATH=...` line to add.
+- `--with-r0vm` also fetches RISC Zero's `r0vm` 3.0.5 from RISC Zero's own GitHub release,
+  checked against a pinned SHA-256. **Every write needs it** (see below). Prebuilt `r0vm`
+  3.0.5 exists only for macOS arm64 and Linux x86_64; elsewhere the installer prints how to
+  build it (`cargo install --locked risc0-r0vm --version 3.0.5`).
+- `--with-storage` also fetches the Logos Storage v0.5.3 node from its official release,
+  checked the same way, as `logos-storage`. `lezreg storage up` starts it, to upload your IDL.
+- Other options: `--version 0.1.0` for a given release, `--dry-run` to print what it would
+  download and install, `--help`. It sends nothing about you anywhere; the only requests are
+  the downloads.
+- Run `lezreg doctor` afterwards to see what this machine still lacks.
+
+**By hand, with your own checks.** Download `lezreg-<version>-<os>-<arch>.tar.gz` and
+`SHA256SUMS` from the [releases page](https://github.com/jefdiesel/lez-program-registry/releases),
+then:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing      # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
+gh attestation verify lezreg-0.1.0-linux-x86_64.tar.gz -R jefdiesel/lez-program-registry
+tar -xzf lezreg-0.1.0-linux-x86_64.tar.gz && install lezreg-0.1.0-linux-x86_64/lezreg ~/.local/bin/
+```
+
+`gh attestation verify` checks GitHub's signed build provenance: that this exact file was built
+by this repo's `release` workflow, from which commit, in which run. `install.sh` and
+`SHA256SUMS` are attested too.
+
+**Writes need `r0vm` at run time.** Every write is simulated locally with the risc0 executor
+`r0vm` 3.0.5 before it is sent. `lezreg` finds it on PATH, or set `RISC0_SERVER_PATH` to the
+binary. Without it a write stops with "simulation needs the risc0 executor `r0vm`" and nothing
+is sent. Reads (`show`, `list`, `search`, `idl get`) never need it. RISC Zero's installer works
+too: `curl -L https://risczero.com/install | bash && rzup install cargo-risczero 3.0.5`.
+
+**Registering needs a Logos Storage node** for the IDL upload: `lezreg storage up` (with
+`logos-storage` on PATH, or `--bin`), or `LEZREG_STORAGE_API` pointing at a node you run.
+
+**Linux and smart cards.** The Linux builds carry a small stand-in for `libpcsclite`, so they
+start without it. The built-in wallet's Keycard commands load the system's `libpcsclite.so.1`
+when they run, so install your distro's PC/SC package only if you use a Keycard.
+
+### Build from source
+
+You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ v0.4.0-rc3). On Linux also
+the PC/SC headers, pkg-config and clang (`sudo apt install libpcsclite-dev pkg-config clang`).
+Building `lezreg` needs no RISC Zero toolchain: the LEZ crates embed their programs from LEZ's
+committed artifacts. You need RISC Zero's toolchain only to build the registry guest itself
+(`.github/workflows/ci.yml` installs it), and `r0vm` at run time as above. The read-only SDK
+(`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
+
+```sh
 git clone https://github.com/jefdiesel/lez-program-registry
 cd lez-program-registry
-cargo build --release -p lezreg
+cargo build --release --locked -p lezreg
 install target/release/lezreg ~/.local/bin/    # or anywhere on PATH
 lezreg --help
 ```
-
-**Writes need `r0vm` at run time, not only to build.** Every write is simulated locally with
-the risc0 executor `r0vm` (rzup links it into `~/.cargo/bin`), so keep that directory on PATH
-or set `RISC0_SERVER_PATH` to the binary. Without it a write stops with "simulation needs the
-risc0 executor `r0vm`" before anything is sent. Reads never need it.
-
-There are no release binaries yet. A CLI release workflow for macOS arm64, Linux amd64 and
-arm64, and Windows is planned (DESIGN §7.4); those binaries will need `r0vm` too.
 
 ### A local sequencer and the registry ELF
 

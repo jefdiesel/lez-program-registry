@@ -1,0 +1,288 @@
+# Release binaries of the `lezreg` CLI (DESIGN §7.4) and the one-line installer.
+#
+# On a tag `vX.Y.Z`, or by hand (Actions → release → Run workflow, version X.Y.Z):
+#   1. build `lezreg` in release mode for Linux x86_64 and aarch64 and macOS arm64 and x86_64,
+#      each on the oldest runner image that still exists, so the Linux builds need only glibc
+#      2.35 (Ubuntu 22.04, Debian 12 and newer);
+#   2. pack each as lezreg-X.Y.Z-<os>-<arch>.tar.gz with the licence files, and attest its
+#      build provenance (`gh attestation verify <file> -R jefdiesel/lez-program-registry`);
+#   3. install each Linux build with scripts/install.sh in bare containers (Debian stable,
+#      Ubuntu 22.04, Fedora) and run `lezreg --version` and `lezreg doctor`;
+#   4. write SHA256SUMS and attach everything, install.sh included, to a DRAFT release for tag
+#      vX.Y.Z. Publishing the draft is left to a person. A rerun replaces the draft's files; a
+#      published release is never touched.
+#
+# What the build does not need: the RISC Zero toolchain. lezreg builds no guest (the LEZ crates
+# embed their programs from LEZ's committed artifacts/), so rzup is not installed here.
+# What the binary needs at run time: r0vm 3.0.5 for writes (lee is built without `prove`, so
+# simulation runs in r0vm) and a Logos Storage node to upload an IDL. install.sh explains both
+# and fetches them on request (--with-r0vm, --with-storage).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+    # TEMPORARY, remove before merging: workflow_dispatch only works once this file is on the
+    # default branch, so the first runs come from pushes to this branch (version = Cargo.toml).
+    branches: [release-ci]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, X.Y.Z without the v (must equal the workspace version in Cargo.toml)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+  # Belt and braces: nothing in lezreg's tree calls risc0_build, but if anything ever did, it
+  # must not start a guest build here.
+  RISC0_SKIP_BUILD: "1"
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Version from the tag or the input, checked against Cargo.toml
+        id: v
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          cargo_v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v=${GITHUB_REF_NAME#v}; elif [ -n "$INPUT" ]; then v=${INPUT#v}; else v=$cargo_v; fi
+          echo "release $v, Cargo.toml $cargo_v"
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "bad version '$v'"; exit 1; }
+          [ "$v" = "$cargo_v" ] || { echo "the release version must equal [workspace.package] version in Cargo.toml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: shellcheck scripts/install.sh
+        run: shellcheck -s sh scripts/install.sh
+
+  build:
+    needs: version
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-22.04 }
+          - { target: linux-aarch64, runner: ubuntu-22.04-arm }
+          - { target: macos-arm64, runner: macos-15 }
+          - { target: macos-x86_64, runner: macos-15-intel }
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The LEZ wallet links Keycard support through the `pcsc` crate, i.e. libpcsclite. Linked
+      # the usual way the binary would not start without libpcsclite.so.1, which most servers,
+      # containers and many desktops lack (and lezreg never uses a card). So link a small static
+      # stand-in that dlopens the system library on first use (scripts/release/pcsc-dlopen.c).
+      - name: "Linux: PC/SC headers and the static stand-in for libpcsclite"
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
+          d="$RUNNER_TEMP/pcsc" && mkdir -p "$d"
+          cc -O2 -fPIC -Wall -Wextra -Werror -c scripts/release/pcsc-dlopen.c -o "$d/pcsc-dlopen.o"
+          ar rcs "$d/libpcsclite.a" "$d/pcsc-dlopen.o"
+          echo "PCSC_LIB_DIR=$d" >> "$GITHUB_ENV"
+          echo "PCSC_LIB_NAME=static=pcsclite" >> "$GITHUB_ENV"
+
+      - name: Toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install 2>/dev/null || rustup show
+          rustc --version && cargo --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-${{ matrix.target }}
+          cache-on-failure: true
+
+      - name: Fetch dependencies (locked)
+        run: cargo fetch --locked
+
+      - name: Build lezreg (release, offline, locked)
+        run: cargo build --release --frozen -p lezreg
+
+      - name: Check the binary (version, dynamic libraries, symbol versions)
+        shell: bash
+        run: |
+          B=target/release/lezreg
+          ls -l "$B"
+          file "$B"
+          "$B" --version
+          test "$("$B" --version)" = "lezreg $VERSION"
+          if [ "$RUNNER_OS" = Linux ]; then
+            ldd "$B"
+            if ldd "$B" | grep -q pcsclite; then echo "libpcsclite is still linked dynamically"; exit 1; fi
+            echo "highest GLIBC symbol:   $(objdump -T "$B" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+            echo "highest GLIBCXX symbol: $(objdump -T "$B" | grep -o 'GLIBCXX_[0-9.]*' | sort -uV | tail -1)"
+          else
+            otool -L "$B"
+            otool -l "$B" | grep -A4 -E 'LC_BUILD_VERSION|LC_VERSION_MIN' | grep -E 'minos|version' | head -2
+            codesign -v --verbose=2 "$B"
+          fi
+
+      - name: Pack
+        shell: bash
+        run: |
+          n="lezreg-$VERSION-${{ matrix.target }}"
+          mkdir -p "dist/$n"
+          cp target/release/lezreg LICENSE-MIT LICENSE-APACHE "dist/$n/"
+          tar -C dist -czf "dist/$n.tar.gz" "$n"
+          rm -rf "dist/$n"
+          (cd dist && { sha256sum "$n.tar.gz" 2>/dev/null || shasum -a 256 "$n.tar.gz"; })
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/lezreg-*.tar.gz
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lezreg-${{ matrix.target }}
+          path: dist/lezreg-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  # Install each Linux build with install.sh in a bare distro container (no libpcsclite, no
+  # Rust, nothing of ours) and run it. The tarball is served from a local directory through
+  # LEZREG_BASE_URL=file://..., which is the same download-and-verify path the real URL takes.
+  test-linux:
+    needs: [version, build]
+    name: install ${{ matrix.target }} in ${{ matrix.image }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-24.04, image: "debian:stable" }
+          - { target: linux-x86_64, runner: ubuntu-24.04, image: "ubuntu:22.04" }
+          - { target: linux-x86_64, runner: ubuntu-24.04, image: "fedora:latest" }
+          - { target: linux-aarch64, runner: ubuntu-24.04-arm, image: "debian:stable" }
+          - { target: linux-aarch64, runner: ubuntu-24.04-arm, image: "ubuntu:22.04" }
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Tools a user would have (curl, tar, unzip); no PC/SC, no Rust
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends curl ca-certificates unzip
+          else
+            dnf install -y -q tar gzip unzip   # curl (curl-minimal) is in the image
+          fi
+          if ls /usr/lib*/libpcsclite.so.1 /usr/lib/*/libpcsclite.so.1 2>/dev/null; then echo "libpcsclite is present: the test would prove nothing"; exit 1; fi
+          echo "no libpcsclite on this image (as intended)"
+          grep PRETTY_NAME /etc/os-release
+          ldd --version | head -1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lezreg-${{ matrix.target }}
+          path: rel
+      - name: SHA256SUMS for the local release directory
+        run: cd rel && sha256sum lezreg-*.tar.gz | tee SHA256SUMS
+      - name: install.sh --dry-run
+        run: sh scripts/install.sh --dry-run --with-r0vm --with-storage
+      - name: A tampered SHA256SUMS is refused and installs nothing
+        run: |
+          mkdir bad && cp rel/*.tar.gz bad/
+          sed 's/^./0/' rel/SHA256SUMS > bad/SHA256SUMS
+          if LEZREG_HOME="$PWD/h-bad" LEZREG_BASE_URL="file://$PWD/bad" sh scripts/install.sh; then
+            echo "a bad checksum was accepted"; exit 1
+          fi
+          test ! -e h-bad/bin/lezreg
+      - name: Install, piped as `curl ... | sh` would (with r0vm and Storage)
+        run: |
+          export LEZREG_HOME="$PWD/h" LEZREG_BASE_URL="file://$PWD/rel"
+          cat scripts/install.sh | sh -s -- --with-r0vm --with-storage
+      - name: lezreg --version, doctor, r0vm, logos-storage
+        run: |
+          export PATH="$PWD/h/bin:$PATH" HOME="$PWD/home" LEE_WALLET_HOME_DIR="$PWD/home/wallet"
+          mkdir -p "$HOME"
+          ls -l h/bin
+          lezreg --version
+          test "$(lezreg --version)" = "lezreg $VERSION"
+          ldd h/bin/lezreg
+          # No sequencer runs here, so doctor reports the sequencer as FAIL and exits non-zero.
+          if lezreg doctor; then echo "(doctor passed)"; else echo "(doctor exit $?: expected, no sequencer here)"; fi
+          lezreg --help | head -3
+          if [ -x h/bin/r0vm ]; then h/bin/r0vm --version; fi
+          if [ -x h/bin/logos-storage ]; then h/bin/logos-storage --version || h/bin/logos-storage --help | head -3; fi
+
+  release:
+    needs: [version, build, test-linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: lezreg-*
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          cp scripts/install.sh dist/
+          cd dist && sha256sum lezreg-*.tar.gz install.sh > SHA256SUMS && cat SHA256SUMS && ls -l
+      - name: Attest install.sh and SHA256SUMS
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/install.sh
+            dist/SHA256SUMS
+      - name: Draft release v${{ env.VERSION }} (create, or replace the files of an existing draft)
+        run: |
+          tag="v$VERSION"
+          cat > notes.md <<EOF
+          Prebuilt \`lezreg\` $VERSION for Linux (x86_64, aarch64; glibc 2.35 or newer) and macOS (arm64, x86_64).
+
+          Install (no sudo; installs to ~/.lezreg/bin):
+
+              curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
+
+          Writes also need RISC Zero's \`r0vm\` 3.0.5, and IDL upload needs a Logos Storage node: add \`-s -- --with-r0vm --with-storage\` after \`sh\`, or see the README.
+
+          Check a download by hand: \`sha256sum -c SHA256SUMS --ignore-missing\` and
+          \`gh attestation verify <file> -R $GITHUB_REPOSITORY\`.
+
+          Built by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA.
+          EOF
+          sed -i 's/^          //' notes.md
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$tag\") | \"\(.id) \(.draft)\"" | head -1)
+          if [ -z "$existing" ]; then
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "lezreg $VERSION" --notes-file notes.md dist/*
+          elif [ "${existing#* }" = true ]; then
+            id=${existing%% *}
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f target_commitish="$GITHUB_SHA" -F body=@notes.md >/dev/null
+            gh release upload "$tag" --clobber dist/*
+          else
+            echo "release $tag is already published: not touching it"; exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | {draft, prerelease, html_url, target_commitish, assets: [.assets[].name]}"
