@@ -36,6 +36,14 @@ Item {
     property var change: null          // a prepared change on the confirm sheet
     property var job: null             // the last submitted change
     property var requests: []          // changes other apps submitted, waiting for approval
+    property bool remoteOk: false      // the person ticked "this spends real funds on <sequencer>"
+    // Sign / Approve buttons rest for a moment after a card appears or changes, so a click meant
+    // for something else can't land on them as the layout shifts.
+    property bool armed: false
+    readonly property bool remote: !!(config && config.sequencer && config.sequencer.indexOf("https://") === 0)
+    onChangeChanged: { armed = false; armTimer.restart() }
+    onRequestsChanged: { armed = false; armTimer.restart() }
+    Timer { id: armTimer; interval: 1500; onTriggered: root.armed = true }
     property string notice: ""
 
     readonly property bool bridgeReady: typeof logos !== "undefined" && !!logos && !!logos.callModuleAsync
@@ -121,6 +129,14 @@ Item {
     function prepare(method, fields) {
         notice = ""
         var input = Object.assign({ entry: selected.address }, fields)
+        // A sequencer that is not on this machine spends real funds: only when the person said so.
+        if (remote) {
+            if (!remoteOk) {
+                notice = "This sequencer (" + config.sequencer + ") is not on this machine: changes there spend real funds. Tick the box first."
+                return
+            }
+            input.allow_remote = true
+        }
         ask(method, [JSON.stringify(input)], function(v) { change = v }, function(e, code) { notice = e + (code ? " (" + code + ")" : "") })
     }
 
@@ -171,7 +187,7 @@ Item {
         border.width: strong && enabledNow ? 0 : 1
         border.color: grave ? root.alarm : root.line
         opacity: enabledNow ? 1 : 0.55
-        Text {
+        Text { textFormat: Text.PlainText;
             id: actionText
             anchors.centerIn: parent
             text: action.label
@@ -214,7 +230,7 @@ Item {
             selectByMouse: true
             onAccepted: field.accepted()
         }
-        Text {
+        Text { textFormat: Text.PlainText;
             anchors.fill: input
             anchors.leftMargin: 10
             verticalAlignment: Text.AlignVCenter
@@ -234,7 +250,7 @@ Item {
         implicitHeight: 22
         radius: 11
         color: badge.proven ? Qt.rgba(root.good.r, root.good.g, root.good.b, 0.16) : Qt.rgba(root.brass.r, root.brass.g, root.brass.b, 0.16)
-        Text {
+        Text { textFormat: Text.PlainText;
             id: badgeText
             anchors.centerIn: parent
             text: parent.badge.text
@@ -252,8 +268,8 @@ Item {
         property color tone: root.ink
         Layout.fillWidth: true
         spacing: 12
-        Text { text: parent.key; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13); Layout.preferredWidth: 120; Layout.alignment: Qt.AlignTop }
-        Text { text: parent.value; color: parent.tone; font.family: parent.monospace ? root.mono : root.sans; font.pixelSize: root.px(13); wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
+        Text { textFormat: Text.PlainText; text: parent.key; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13); Layout.preferredWidth: 120; Layout.alignment: Qt.AlignTop }
+        Text { textFormat: Text.PlainText; text: Logic.clean(parent.value); color: parent.tone; font.family: parent.monospace ? root.mono : root.sans; font.pixelSize: root.px(13); wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
     }
 
     // ── Screen ──────────────────────────────────────────────────────────
@@ -267,8 +283,8 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
-            Text { text: "Program Registry"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(24); font.weight: Font.Bold }
-            Text {
+            Text { textFormat: Text.PlainText; text: "Program Registry"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(24); font.weight: Font.Bold }
+            Text { textFormat: Text.PlainText;
                 Layout.fillWidth: true
                 text: root.config && root.config.registry ? "registry " + Logic.shortId(root.config.registry) + " on " + root.config.sequencer : ""
                 color: root.dim; font.family: root.sans; font.pixelSize: root.px(13); elide: Text.ElideRight
@@ -285,9 +301,9 @@ Item {
             ColumnLayout {
                 id: settingsCol
                 anchors.fill: parent; anchors.margins: 12; spacing: 8
-                Text { text: "Sequencer (https://, or http:// on this machine)"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
+                Text { textFormat: Text.PlainText; text: "Sequencer (https://, or http:// on this machine)"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
                 Field { id: sequencerField; Layout.fillWidth: true; placeholder: "http://127.0.0.1:3062"; monospace: true }
-                Text { text: "Registry program id"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
+                Text { textFormat: Text.PlainText; text: "Registry program id"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
                 Field { id: registryField; Layout.fillWidth: true; placeholder: "base58 program id"; monospace: true }
                 Action { label: "Save"; strong: true; onPressed: root.saveConfig() }
             }
@@ -312,28 +328,28 @@ Item {
                 ColumnLayout {
                     id: reqCol
                     anchors.fill: parent; anchors.margins: 10; spacing: 4
-                    Text {
+                    Text { textFormat: Text.PlainText;
                         Layout.fillWidth: true
                         text: Logic.requestTitle(modelData)
                         color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(14); font.weight: Font.DemiBold
                     }
                     Repeater {
                         model: Logic.changeLines(modelData.change)
-                        Text { required property var modelData; Layout.fillWidth: true; text: modelData; color: root.dim; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
+                        Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: root.dim; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
                     }
                     RowLayout {
                         spacing: 8
-                        Action { label: "Approve and sign"; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
+                        Action { label: "Approve and sign"; enabledNow: root.armed; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
                         Action { label: "Refuse"; onPressed: root.answerRequest(modelData.request, false) }
                     }
                 }
             }
         }
 
-        Text {
+        Text { textFormat: Text.PlainText;
             visible: root.notice !== ""
             Layout.fillWidth: true
-            text: root.notice; color: root.brass; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
+            text: Logic.clean(root.notice); color: root.brass; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
         }
 
         RowLayout {
@@ -348,8 +364,8 @@ Item {
                 radius: 8; color: root.card; border.color: root.line
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 10; spacing: 6
-                    Text {
-                        text: root.loading ? "Reading the registry…" : root.problem !== "" ? root.problem
+                    Text { textFormat: Text.PlainText;
+                        text: root.loading ? "Reading the registry…" : root.problem !== "" ? Logic.clean(root.problem)
                               : (root.query !== "" ? root.items.length + " matching “" + root.query + "”" : root.items.length + " of " + root.total + " entries, newest first")
                         color: root.problem !== "" ? root.alarm : root.dim
                         wrapMode: Text.Wrap; Layout.fillWidth: true
@@ -373,14 +389,14 @@ Item {
                                 anchors.fill: parent; anchors.margins: 8; spacing: 2
                                 RowLayout {
                                     spacing: 8
-                                    Text {
-                                        text: modelData.entry ? modelData.entry.name + "  v" + modelData.entry.version : modelData.link.name
+                                    Text { textFormat: Text.PlainText;
+                                        text: Logic.clean(modelData.entry ? modelData.entry.name + "  v" + modelData.entry.version : modelData.link.name)
                                         color: root.ink; font.family: root.sans; font.pixelSize: root.px(15); font.weight: Font.DemiBold
                                     }
                                     KindBadge { kind: parent.parent.parent.kind }
-                                    Text { visible: !!(modelData.entry && modelData.entry.frozen); text: "frozen"; color: root.dim; font.pixelSize: root.px(12); font.family: root.sans }
+                                    Text { textFormat: Text.PlainText; visible: !!(modelData.entry && modelData.entry.frozen); text: "frozen"; color: root.dim; font.pixelSize: root.px(12); font.family: root.sans }
                                 }
-                                Text {
+                                Text { textFormat: Text.PlainText;
                                     text: "program " + Logic.shortId(modelData.link.program) + "  ·  #" + modelData.seq
                                     color: root.dim; font.family: root.mono; font.pixelSize: root.px(12)
                                 }
@@ -397,7 +413,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 8; color: root.card; border.color: root.line
-                Text {
+                Text { textFormat: Text.PlainText;
                     visible: !root.selected
                     anchors.centerIn: parent
                     text: "Pick an entry to see what the registry says about it."
@@ -418,28 +434,28 @@ Item {
 
                         RowLayout {
                             spacing: 10
-                            Text { text: detail.e ? detail.e.name : ""; color: root.ink; font.family: root.sans; font.pixelSize: root.px(22); font.weight: Font.Bold }
-                            Text { text: detail.e ? "v" + detail.e.version : ""; color: root.dim; font.family: root.sans; font.pixelSize: root.px(18) }
+                            Text { textFormat: Text.PlainText; text: detail.e ? Logic.clean(detail.e.name) : ""; color: root.ink; font.family: root.sans; font.pixelSize: root.px(22); font.weight: Font.Bold }
+                            Text { textFormat: Text.PlainText; text: detail.e ? "v" + Logic.clean(detail.e.version) : ""; color: root.dim; font.family: root.sans; font.pixelSize: root.px(18) }
                             KindBadge { kind: detail.kind }
-                            Text {
+                            Text { textFormat: Text.PlainText;
                                 visible: !!(root.label && root.label.verified)
                                 text: "✓ verified here"
                                 color: root.good; font.family: root.sans; font.pixelSize: root.px(13); font.weight: Font.DemiBold
                             }
                         }
-                        Text {
+                        Text { textFormat: Text.PlainText;
                             Layout.fillWidth: true
                             text: Logic.kindBadge(detail.kind).note
                             color: root.dim; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(12)
                         }
-                        Text {
+                        Text { textFormat: Text.PlainText;
                             Layout.fillWidth: true
                             visible: !!(detail.e && detail.e.description)
-                            text: detail.e ? detail.e.description : ""
+                            text: detail.e ? Logic.clean(detail.e.description) : ""
                             color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(14)
                         }
                         // Is the entry still about the code that runs?
-                        Text {
+                        Text { textFormat: Text.PlainText;
                             readonly property var f: Logic.freshnessText(root.resolved ? root.resolved.freshness : null)
                             visible: f.text !== ""
                             text: f.text
@@ -481,13 +497,13 @@ Item {
                             ColumnLayout {
                                 id: idlCol
                                 anchors.fill: parent; anchors.margins: 8; spacing: 4
-                                Text {
+                                Text { textFormat: Text.PlainText;
                                     Layout.fillWidth: true
                                     text: root.idl ? parent.parent.s.text : "Fetching the IDL from Logos Storage…"
                                     color: parent.parent.s.ok ? root.ink : root.dim
                                     wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
                                 }
-                                Text {
+                                Text { textFormat: Text.PlainText;
                                     Layout.fillWidth: true
                                     visible: parent.parent.s.instructions.length > 0
                                     text: parent.parent.s.instructions.join("  ·  ")
@@ -496,8 +512,26 @@ Item {
                             }
                         }
 
+                        // Spending on a sequencer that is not on this machine needs an explicit yes.
+                        Rectangle {
+                            visible: root.remote
+                            Layout.fillWidth: true
+                            implicitHeight: remoteRow.implicitHeight + 12
+                            radius: 6; color: "transparent"; border.color: root.remoteOk ? root.alarm : root.line
+                            RowLayout {
+                                id: remoteRow
+                                anchors.fill: parent; anchors.margins: 6; spacing: 8
+                                Rectangle {
+                                    width: 18; height: 18; radius: 4; border.color: root.ink; color: root.remoteOk ? root.alarm : "transparent"
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.remoteOk = !root.remoteOk }
+                                }
+                                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.ink; font.family: root.sans; font.pixelSize: root.px(13)
+                                       text: "Changes here spend real funds on " + Logic.clean(root.config ? root.config.sequencer : "") }
+                            }
+                        }
+
                         // Author tools: prepared by the module, signed by your lezreg wallet.
-                        Text { text: "If your lezreg wallet is this entry's author"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(15); font.weight: Font.DemiBold; Layout.topMargin: 8 }
+                        Text { textFormat: Text.PlainText; text: "If your lezreg wallet is this entry's author"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(15); font.weight: Font.DemiBold; Layout.topMargin: 8 }
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
@@ -522,16 +556,16 @@ Item {
                                 anchors.fill: parent; anchors.margins: 10; spacing: 4
                                 Repeater {
                                     model: Logic.changeLines(root.change)
-                                    Text { required property var modelData; Layout.fillWidth: true; text: modelData; color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
+                                    Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
                                 }
                                 RowLayout {
                                     spacing: 8
-                                    Action { label: "Sign and send"; strong: true; grave: !!(root.change && root.change.summary && root.change.summary.irreversible); onPressed: root.submitChange() }
+                                    Action { label: "Sign and send"; enabledNow: root.armed; strong: true; grave: !!(root.change && root.change.summary && root.change.summary.irreversible); onPressed: root.submitChange() }
                                     Action { label: "Cancel"; onPressed: root.change = null }
                                 }
                             }
                         }
-                        Text {
+                        Text { textFormat: Text.PlainText;
                             visible: !!root.job
                             Layout.fillWidth: true
                             text: Logic.jobText(root.job)
@@ -542,7 +576,7 @@ Item {
                         RowLayout {
                             spacing: 8
                             Layout.topMargin: 8
-                            Text { text: "As other apps show it:"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12) }
+                            Text { textFormat: Text.PlainText; text: "As other apps show it:"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12) }
                             RegistryLabel {
                                 bridge: root.bridgeReady ? logos : null
                                 programId: detail.e ? detail.e.program : ""
