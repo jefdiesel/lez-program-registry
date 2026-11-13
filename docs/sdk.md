@@ -153,7 +153,7 @@ var label = JSON.parse(logos.callModule("program_registry", "program_label", ["<
 // Everything, and the IDL:
 var resolved = JSON.parse(logos.callModule("program_registry", "resolve_program", ["<program id>"]))
 var idl = JSON.parse(logos.callModule("program_registry", "get_idl", ["<program id>"]))
-// idl.value: { status: "ok", idl: {...} } or { status: "unavailable: …", idl: null }
+// idl.value: { status: "ok" | "unknown-format" | "unavailable" | …, reason, format, calls, idl }
 ```
 
 The module is pinned to an SDK release, so its `get_idl` may not report the format yet; read it
