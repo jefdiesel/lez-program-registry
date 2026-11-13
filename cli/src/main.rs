@@ -10,6 +10,7 @@ mod app_cmd;
 mod args;
 mod config;
 mod doctor;
+mod module_cmd;
 mod out;
 mod project;
 mod publish;
@@ -372,6 +373,15 @@ enum Command {
     Network {
         #[command(subcommand)]
         cmd: NetworkCmd,
+    },
+    /// The signing bridge for the `program_registry` Logos module (DESIGN §7.3): `module send`
+    /// reads a change the module prepared (JSON on stdin), checks it is exactly the registry
+    /// transaction lezreg would build, then simulates, signs with this wallet, sends and
+    /// confirms it.
+    #[command(hide = true)]
+    Module {
+        #[command(subcommand)]
+        cmd: module_cmd::ModuleCmd,
     },
     /// The LEZ wallet's own commands: accounts, balances, transfers. `lezreg wallet help`.
     #[command(disable_help_flag = true)]
@@ -1266,6 +1276,23 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             let at = target_address(&net, &target, &w)?;
             let author = author.as_deref().map(parse_account).transpose()?;
             let receipt = w.freeze(at, author, &send_opts(&opts)?).await?;
+            render::receipt(out, &receipt);
+        }
+        Command::Module {
+            cmd: module_cmd::ModuleCmd::Send { opts },
+        } => {
+            let change = module_cmd::read_change(&net)?;
+            let mut w = writer(&net, &opts).await?;
+            let receipt = w
+                .send_prepared(
+                    change.root,
+                    &change.message,
+                    &change.accounts,
+                    &change.signers,
+                    change.entry,
+                    &send_opts(&opts)?,
+                )
+                .await?;
             render::receipt(out, &receipt);
         }
     }
