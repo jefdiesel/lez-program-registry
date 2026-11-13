@@ -36,7 +36,7 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M3: IDLs on Logos Storage | **done:** `idl push`, `--idl-cid push` inside register/update, `idl get` (hash-checked fetch ladder), `pin`, `pin-all`, `storage up` |
 | M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets the committed image (`5ffbf8f5…` on rc3) again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
 | M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
-| M6: Basecamp core module `program_registry` | **done:** `resolve_program`, `program_label`, `get_idl`, list and search, and the app checks below; built with `mkLogosModule` and published to the module catalog [`jefdiesel/logos-modules`](https://github.com/jefdiesel/logos-modules) (forked from `logos-modules-release-base`, released with `logos-modules-release-action`) for macOS and Linux. Names Wallet's approval sheet uses it. Writes go through the SDK and CLI |
+| M6: Basecamp core module `program_registry` + `registry_browser` | **done:** reads (`resolve_program`, `program_label`, `get_idl`, list and search, the app checks below) and writes (`prepare_register`, `prepare_register_third_party`, `prepare_update`, `prepare_transfer`, `prepare_freeze`, then `submit`, signed by your `lezreg` wallet through `lezreg module send`; `change_settled` event); built with `mkLogosModule` and published to the module catalog [`jefdiesel/logos-modules`](https://github.com/jefdiesel/logos-modules) (forked from `logos-modules-release-base`, released with `logos-modules-release-action`) for macOS and Linux. The [`registry_browser`](registry_browser/) UI module (list, search, entry detail, IDL status, verify mark, update/freeze) and the drop-in [`RegistryLabel.qml`](registry_browser/qml/RegistryLabel.qml); integration guide [`docs/INTEGRATE.md`](docs/INTEGRATE.md); `module.yml` CI. Names Wallet's approval sheet uses the module. Not yet: signing through the `lez_core` wallet module (no usable release) |
 | M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
 | Apps by LNS name ([`docs/APPS.md`](docs/APPS.md)) | **done:** Basecamp apps checked against the LNS name that publishes them, so a copy can't pass as the real app; publishers can stay anonymous and apps unlisted. `lezreg app show/verify/record`, the module's `verify_app`, `verify_package`, `publisher_apps`. No change to the deployed program. Tested on a real chain (logos-names `wallet-e2e.sh` step 7) |
 | M8: adoption tools | **done** (e2e green on 6f0dc66): `init --detect`, `publish` (deploy+register, register or update, idempotent), `publish --from-release`, `adopt`, `stats`, `doctor`, `release prepare`, and the GitHub Action ([`action/`](action/action.yml), `verify` and `prepare` modes). Run end to end on a local rc1 chain; `e2e.yml` now runs the same flow and the Action. Not yet: `idl gen`/`idl check`, source-archive upload, the Action's opt-in `publish` mode |
@@ -443,7 +443,9 @@ const { kind, format, calls, idl } = await fetchIdl(deployer, { storageApi: "htt
 ```
 
 **Basecamp apps:** depend on the `program_registry` core module and call
-`program_label(program_id)` for a wallet prompt's one-line label (see [`module/`](module/)).
+`program_label(program_id)` for a wallet prompt's one-line label, or drop in
+[`RegistryLabel.qml`](registry_browser/qml/RegistryLabel.qml). **[`docs/INTEGRATE.md`](docs/INTEGRATE.md)**
+is the short guide: QML, `logosctl`, JS, Rust, and writing entries through the module.
 
 Errors are typed (`lezreg_sdk::Error`): `Transport`, `Rpc`, `BadRecord`, `MissingLink`, `NoEntry`,
 `NotDeployed`, `Invalid`, `NoKey`, `NotAuthor`, `Frozen`, `Refused` (simulation), `Funds`,
