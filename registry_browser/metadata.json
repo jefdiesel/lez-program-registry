@@ -1,0 +1,29 @@
+{
+  "name": "registry_browser",
+  "display_name": "Program Registry",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "developer",
+  "description": "Browse and search the LEZ Program Registry: who deployed a program, whether it still runs the registered code, its IDL; update or freeze your own entries",
+  "view": "qml/Main.qml",
+  "icon": "src/icons/icon.png",
+  "dependencies": [
+    {
+      "name": "program_registry",
+      "version": ">=0.3.0"
+    }
+  ],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}

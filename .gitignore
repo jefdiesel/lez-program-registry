@@ -12,3 +12,4 @@ _deps/
 /module/rust-lib/target/
 /module/rust-lib/generated/
 /.claude/
+/registry_browser/result*
