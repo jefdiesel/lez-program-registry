@@ -165,6 +165,74 @@ impl Built {
     }
 }
 
+/// The most gas a change of each kind may declare when the module sends it: about twice what
+/// each needs on LEZ rc3 (measured: RegisterDeployer 174k cycles, RegisterThirdParty 231k).
+/// `lezreg module send` refuses a change whose simulated limit is above it, so a confirm card's
+/// "at most" fee holds.
+pub const fn max_gas(ix: &Instruction) -> u64 {
+    match ix {
+        Instruction::RegisterDeployer { .. } => 400_000,
+        Instruction::RegisterThirdParty { .. } => 500_000,
+        Instruction::Update { .. } => 300_000,
+        Instruction::TransferAuthor { .. } => 300_000,
+        Instruction::Freeze { .. } => 200_000,
+    }
+}
+
+fn content_json(c: &ContentRef) -> Value {
+    json!({"cid": cid::to_string(&c.cid), "sha256": hex::encode(c.sha256), "size": c.size, "peer_hint": c.peer_hint.as_ref().map(hex::encode)})
+}
+
+fn source_json(s: &SourceRef) -> Value {
+    json!({"repo": s.repo, "commit": hex::encode(&s.commit), "docker_root": s.docker_root, "archive": s.archive.as_ref().map(content_json)})
+}
+
+fn build_json(b: &BuildConfig) -> Value {
+    json!({"builder": b.builder, "image_digest": hex::encode(b.image_digest), "image_tag": b.image_tag, "risc0_build": b.risc0_build,
+           "host_risc0_rust": b.host_risc0_rust, "manifest_path": b.manifest_path, "binary": b.binary, "features": b.features,
+           "lock_sha256": hex::encode(b.lock_sha256),
+           "docker_env": b.docker_env.iter().map(|e| json!({"key": e.key, "value": e.value})).collect::<Vec<_>>()})
+}
+
+impl Instruction {
+    /// Everything this instruction writes, decoded from the instruction itself (never from what
+    /// a caller said it would write): what a confirm card shows. Absent fields don't change.
+    pub fn values(&self) -> Value {
+        match self {
+            Self::RegisterDeployer { name, version, author_label, description, tags, idl, source, build, image_id, author_id, .. } => json!({
+                "name": name, "version": version, "author_label": author_label, "description": description, "tags": tags,
+                "idl": content_json(idl), "source": source_json(source), "build": build_json(build),
+                "image_id": hex::encode(image_id), "author": AccountId(*author_id).to_base58(),
+            }),
+            Self::RegisterThirdParty { program, name, version, author_label, description, tags, idl, source, build, image_id, .. } => json!({
+                "program": AccountId(*program).to_base58(), "name": name, "version": version, "author_label": author_label,
+                "description": description, "tags": tags, "idl": content_json(idl), "source": source_json(source),
+                "build": build_json(build), "image_id": hex::encode(image_id),
+            }),
+            Self::Update { revision, version, description, tags, author_label, idl, source, build, image_id, .. } => {
+                let mut v = serde_json::Map::new();
+                v.insert("revision".into(), json!(revision));
+                let mut put = |k: &str, x: Option<Value>| {
+                    if let Some(x) = x {
+                        v.insert(k.into(), x);
+                    }
+                };
+                put("version", version.as_ref().map(|x| json!(x)));
+                put("description", description.as_ref().map(|x| json!(x)));
+                put("tags", tags.as_ref().map(|x| json!(x)));
+                put("author_label", author_label.as_ref().map(|x| json!(x)));
+                put("idl", idl.as_ref().map(content_json));
+                put("source", source.as_ref().map(source_json));
+                put("build", build.as_ref().map(build_json));
+                put("image_id", image_id.as_ref().map(hex::encode).map(|x| json!(x)));
+                Value::Object(v)
+            }
+            Self::TransferAuthor { new_author_id, .. } => json!({"new_author": AccountId(*new_author_id).to_base58()}),
+            Self::Freeze { .. } => json!({"frozen": true}),
+        }
+    }
+}
+
 // ---- input parsing: the same JSON shapes the read methods return (sdk/rust/src/json.rs) ----
 
 pub fn account(v: &Value, what: &str) -> Res<AccountId> {
@@ -548,6 +616,25 @@ mod tests {
 
     fn want_len(c: &Value) -> usize {
         c["accounts"].as_array().unwrap().len()
+    }
+
+    /// A card shows what is signed: the values come from the instruction, not the input.
+    #[test]
+    fn values_are_decoded_from_the_instruction() {
+        let all = vectors();
+        let reg = id(&all["registry"]);
+        let c = &all["cases"][0];
+        let built = register(&reg, &c["input"], 1, None).unwrap();
+        let v = built.ix.values();
+        assert_eq!((v["name"].as_str(), v["version"].as_str()), (Some("token"), Some("1.2.0")));
+        assert_eq!(v["image_id"], "44".repeat(32));
+        assert_eq!(v["build"]["binary"], "token");
+        assert_eq!(v["author"], c["input"]["author"]);
+        let a = AccountId::new([8; 32]);
+        let stored = Stored { revision: 3, author: a, registrant: a, frozen: false };
+        let u = update(&reg, &json!({"program": AccountId::new([7; 32]).to_base58(), "version": "2.0.0"}), 1, &stored).unwrap();
+        assert_eq!(u.ix.values(), json!({"revision": 4, "version": "2.0.0"}));
+        assert!(max_gas(&u.ix) >= 200_000 && max_gas(&built.ix) >= 300_000);
     }
 
     #[test]
