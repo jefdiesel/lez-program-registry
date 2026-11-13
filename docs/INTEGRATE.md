@@ -173,7 +173,8 @@ logos.callModuleAsync("program_registry", "prepare_freeze", [JSON.stringify({ pr
     if (!r.success) return show(r.error + " (" + r.code + ")")      // codes: frozen, not_author, no_entry, …
     confirmSheet(r.value.summary, function () {                      // show the person what will be signed
         logos.callModuleAsync("program_registry", "submit", [JSON.stringify(r.value)], function (j) {
-            follow(JSON.parse(j).value.job)                          // submit_status(job) until applied/failed
+            var v = JSON.parse(j).value                              // {job} for a trusted app, {request} otherwise
+            follow(v.job || v.request)                               // submit_status(id) until applied/failed/denied
         }, 10000)
     })
 }, 20000)
@@ -200,7 +201,7 @@ client token it presents, so it is trusted; the gate is about other apps inside 
 
 **Not yet:** signing through the Logos wallet module `lez_core` (`"signer": "lez_core"` answers
 `lez_core_unavailable`): its generic public send exists on its main branch since 2026-11-13 but
-has no release for Basecamp 0.3.x, and it does not simulate or size gas (DESIGN §7.3).
+has no release for Basecamp 0.3.x and is pinned to LEZ rc1, whose wallet sends with a fixed gas limit and no simulation (DESIGN §7.3).
 
 ## How this was tested
 
