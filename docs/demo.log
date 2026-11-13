@@ -10,9 +10,11 @@
 # - Storage: the logos-storage v0.5.3 darwin-arm64 release, downloaded and sha256-checked by the script.
 # - Environment specific to that machine:
 #   - builds ran behind a shared build lock (DEMO_BUILD_WRAP), with CARGO_BUILD_JOBS=4;
-#   - RISC0_SERVER_PATH pointed at an r0vm binary that is deliberately disabled for normal use there
-#     (it once crashed the machine while proving), with RISC0_DEV_MODE=1 and RAYON_NUM_THREADS=4.
-#     Nothing in this run proves: lezreg only executes (simulates) public transactions.
+#   - r0vm was supplied through RISC0_SERVER_PATH (it is not on PATH there), with RISC0_DEV_MODE=1
+#     and RAYON_NUM_THREADS=4. Nothing in this run proves: lezreg only executes (simulates)
+#     public transactions.
+# - The P1 row's "cycle_bench numbers are not done" predates docs/CYCLES.md and is superseded by
+#   it; the script on the branch now points at docs/CYCLES.md there.
 # - Run with --keep, so that `scripts/demo.sh --testnet` could then be exercised against the same
 #   chain (docs/demo-testnet-mode.log).
 LEZ Program Registry: LP-0023 demo (local mode), 2026-11-13 16:31:52Z

@@ -1,6 +1,6 @@
 # Solution: LP-0023 — LEZ Program Registry (self-assessment)
 
-**Submitted by:** jefdiesel
+**Submitted by:** jefdiesel (the submitter confirms this line and the Terms line at the end)
 
 This is the FURPS self-assessment for the LP-0023 entry, in the shape of the λPrize solution
 template (`solutions/LP-0000.md`). Every checkbox of the
@@ -231,7 +231,7 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 
 - **Status: partly met.**
   - Rust SDK: all three (register, resolve, search).
-  - JS SDK: resolve and search only.
+  - JS SDK: resolve, list and search by name only (no search by author, no writes).
   - Logos Core module: resolve, list and search by name only. It has no write methods, so
     another Logos module **cannot register through it**.
 - **Evidence:**
@@ -378,8 +378,9 @@ included in CI; CI is green on the default branch."
   - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green on `main` at `74a0010` (LEZ
     rc3 plus the IDL-format work), 2026-11-13: runs 43450763487, 43450763482, 43450763645 and
     43450763571. These are the only four workflows in `.github/workflows/`.
-  - On `5e3dac5` (docs/CYCLES.md, now `main`), the `cycles` branch's `ci` run was green
-    (43470269730). The four `main` runs were still in progress when this file was written.
+  - On `5e3dac5` (docs/CYCLES.md, now `main`), `ci` is green (43473019998). `e2e`, `verify` and
+    `repro` were still running when this file was written (43473020169, 43473020152,
+    43473020395).
   - The Rust e2e test `sdk/rust/tests/e2e.rs` skips in CI unless `LEZREG_E2E_RPC` is set. The
     e2e coverage in CI is the workflow, not that test.
 
