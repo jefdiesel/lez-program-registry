@@ -636,9 +636,9 @@ EOF
   record R2 INFO "not machine-checked by this script; see docs/FURPS.md (Reliability) for the evidence"
 
   criterion "P1  Performance (information only)" "document cycle_bench cycle counts for register and update"
-  note "simulated cycles from lezreg's own pre-send simulation in this run (NOT cycle_bench):"
+  note "simulated cycles from lezreg's own pre-send simulation in this run; docs/CYCLES.md has every operation measured with cycle_bench's method:"
   note "  register (third-party entry, F3.a): ${REG_CYCLES:-?} cycles; update (F4.a): ${UPD_CYCLES:-?} cycles"
-  record P1 INFO "simulation cycles shown above; cycle_bench numbers are not done (docs/FURPS.md)"
+  record P1 INFO "simulation cycles shown above; the per-operation numbers are in docs/CYCLES.md"
 
   # ------------------------------------------------------------------------------------------
   criterion "X   Further checks (beyond the spec's list)"

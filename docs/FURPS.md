@@ -72,8 +72,7 @@ Storage; on-chain storage is limited to metadata and pointers, mindful of gas co
     `spel generate-idl` v0.7.0 (kept untouched in `idl/lez_program_registry.spel.json`), plus an
     `x-lez04` extension. `scripts/idl.sh --check` regenerates it, and the `idl` job of
     `.github/workflows/ci.yml` runs that check with spel pinned by commit.
-  - Gas: the measured cycles and transaction sizes per instruction are in DESIGN §2.7 ("Measured
-    in M1"). The demo prints the simulated cycles of its own register and update (row `P1`).
+  - Gas: the measured cycles, gas and fee of every instruction are in `docs/CYCLES.md` (LEZ rc3).
   - On chain, the IDL is uploaded to Storage by `chain/deploy.sh --idl-cid push`. Demo `F1.c`
     shows that `(REG, REG)` points at a Storage CID. Demo `F1.d` fetches it by that pointer,
     checks the hash, and finds it equal to the committed SPEL IDL.
@@ -313,27 +312,24 @@ remains fully functional with it disabled. Any analytics must be strictly opt-in
 
 **13.** "Document cycle count usage for each on-chain operation (register, update)."
 
-- **Status: not yet.**
-  - **Measured on LEZ rc3** by lezreg's pre-send simulation (the LEZ executor), in the recorded
-    `docs/demo.log` (each write prints "simulated N cycles, gas limit, fee, bytes"):
-    - `RegisterDeployer`: 173,982 and 174,451 cycles (1,575 and 1,440 bytes);
-    - `RegisterThirdParty`: 240,222 and 239,816 cycles (about 1.5–1.6 KB);
-    - `Update`: 90,190–94,023 cycles (about 0.8–0.9 KB);
+- **Status: met.**
+- **Evidence:**
+  - [`docs/CYCLES.md`](CYCLES.md) has the measured cycles, gas and fee of every registry operation
+    on LEZ rc3. It covers `RegisterDeployer`, `RegisterThirdParty`, `Update`, `TransferAuthor`,
+    `Freeze`, `DeployAndRegister` at four program sizes, and the loader's `WriteSegment`,
+    `CreateHeader` and `UpdateHeader`.
+    - The numbers are taken with LEZ `cycle_bench`'s method (`tools/engine-test/src/bench.rs`).
+    - They are reproduced with LEZ's own `cycle_bench`, using the patch in `tools/cycle-bench/`.
+  - CI pins them: `tools/engine-test/tests/cycles.rs` asserts the documented numbers exactly, and
+    runs in the "Engine tests" step of `ci.yml`.
+  - The recorded demo run agrees with CYCLES.md's ranges, measured independently by lezreg's
+    pre-send simulation (`docs/demo.log`):
+    - `RegisterDeployer`: 173,982 and 174,451 cycles;
+    - `RegisterThirdParty`: 240,222 and 239,816 cycles;
+    - `Update`: 90,190–94,023 cycles;
     - `TransferAuthor`: 99,821 cycles;
-    - `Freeze`: 45,700 cycles;
-    - `DeployAndRegister` of the 555 KB registry guest: 705,486 cycles (dry run, step `X.a`). rc3
-      meters the loader, so this now grows with program size.
-  - Earlier numbers measured on rc1 are in DESIGN §2.7 ("Measured in M1"):
-    - `RegisterDeployer`: 168k;
-    - `DeployAndRegister`: 183k;
-    - `RegisterThirdParty`: 227–234k;
-    - `Update`: 88–93k;
-    - `TransferAuthor`: about 97k;
-    - `Freeze`: about 43k.
-  - The demo prints the simulated cycles of its own register and update (row `P1`).
-  - They were **not** measured with `cycle_bench`, which is the tool the spec names.
-  - The `tools/cycle-bench` fork and `docs/CYCLES.md` planned in DESIGN §8.4 do not exist, and no
-    CI cycle-regression gate exists either.
+    - `Freeze`: 45,700 cycles.
+  - Not measured: proving cycles and proving time. Public transactions are not proven.
 
 ### Supportability
 
@@ -380,6 +376,8 @@ included in CI; CI is green on the default branch."
   - All four workflows (`ci`, `repro`, `verify`, `e2e`) are green on `main` at `74a0010` (LEZ
     rc3 plus the IDL-format work), 2026-11-13: runs 43450763487, 43450763482, 43450763645 and
     43450763571. These are the only four workflows in `.github/workflows/`.
+  - On `5e3dac5` (docs/CYCLES.md, now `main`), the `cycles` branch's `ci` run was green
+    (43470269730). The four `main` runs were still in progress when this file was written.
   - The Rust e2e test `sdk/rust/tests/e2e.rs` skips in CI unless `LEZREG_E2E_RPC` is set. The
     e2e coverage in CI is the workflow, not that test.
 
@@ -437,7 +435,7 @@ Logos Core Module."
     alone, without trusting a metadata service.
   - The lists are on chain because the spec forbids depending on a centralised indexer, and the
     sequencer has no accounts-by-program query.
-- **Gas cost, measured on LEZ rc3 (`docs/demo.log`; criterion 13 has the full list):**
+- **Gas cost, measured on LEZ rc3 (`docs/CYCLES.md` has every operation, including deploys):**
   - a deployer registration is about 174k cycles and 1.4–1.6 KB of transaction;
   - a third-party registration is about 240k cycles;
   - an update is about 90–94k cycles.
@@ -495,9 +493,6 @@ The facts, without a conclusion:
   another re-pin.
 - **Adoption evidence:** all seven adoption bullets.
 - **SPEL 0.4:** see above (TBD).
-- **Performance:**
-  - `cycle_bench` numbers for register and update;
-  - the `tools/cycle-bench` fork and `docs/CYCLES.md`.
 - **Source hosting:**
   - make the reproducible source archive and upload it to Storage;
   - make `verify` able to rebuild from it.
