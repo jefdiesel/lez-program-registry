@@ -6,7 +6,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     sync::{
         Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -62,6 +62,21 @@ impl<T: Rpc + ?Sized> Rpc for &T {
 /// How many reads go in one JSON-RPC batch.
 pub const BATCH: usize = 100;
 
+/// How many single calls run at once when an endpoint refuses batches.
+pub const SINGLE_CONCURRENCY: usize = 4;
+
+/// HTTP statuses with which a filter in front of a sequencer refuses a batch (a body or batch
+/// cap, a method allowlist, a front end that serves single calls only). Anything else that is not
+/// a success, a 5xx above all, is an error, never a reason to retry one by one.
+const BATCH_REFUSED_STATUSES: [u16; 4] = [400, 403, 405, 413];
+
+/// What became of one JSON-RPC batch.
+enum BatchOutcome {
+    Done(Vec<Value>),
+    /// The endpoint refused the batch as such; the same calls may go one by one.
+    Refused(String),
+}
+
 /// JSON-RPC over HTTP to a LEZ sequencer. Talks to the sequencer the user chose and nothing
 /// else: redirects are refused, and `HTTP(S)_PROXY`/`ALL_PROXY` are ignored unless
 /// `LEZREG_USE_PROXY=1` is set (a proxy the user did not pick for lezreg is someone else
@@ -70,6 +85,8 @@ pub struct HttpRpc {
     url: String,
     agent: ureq::Agent,
     calls: AtomicUsize,
+    /// Set once this endpoint has refused a batch: later reads go one by one at once.
+    batches_refused: AtomicBool,
 }
 
 impl HttpRpc {
@@ -84,11 +101,15 @@ impl HttpRpc {
             .timeout_global(Some(Duration::from_secs(20)))
             .max_redirects(0)
             .proxy(proxy)
+            // Statuses are read here: a refused batch (400/403/405/413) is told apart from an
+            // error.
+            .http_status_as_error(false)
             .build();
         Self {
             url: url.to_owned(),
             agent: config.into(),
             calls: AtomicUsize::new(0),
+            batches_refused: AtomicBool::new(false),
         }
     }
 
@@ -103,24 +124,47 @@ impl HttpRpc {
         self.calls.load(Ordering::Relaxed)
     }
 
-    fn post(&self, body: &Value) -> Result<Value> {
-        self.calls.fetch_add(1, Ordering::Relaxed);
-        let transport = |message: String| Error::Transport {
+    /// Whether this endpoint has refused a batch during this session.
+    #[must_use]
+    pub fn batches_refused(&self) -> bool {
+        self.batches_refused.load(Ordering::Relaxed)
+    }
+
+    fn transport(&self, message: String) -> Error {
+        Error::Transport {
             url: self.url.clone(),
             message,
-        };
+        }
+    }
+
+    /// POSTs `body`; the HTTP status and the body text. Errors only when nothing usable came back.
+    fn post_raw(&self, body: &Value) -> Result<(u16, String)> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         let mut response = self
             .agent
             .post(&self.url)
             .header("Content-Type", "application/json")
             .send(body.to_string())
-            .map_err(|e| transport(e.to_string()))?;
+            .map_err(|e| self.transport(e.to_string()))?;
+        let status = response.status().as_u16();
         let text = response
             .body_mut()
             .read_to_string()
-            .map_err(|e| transport(e.to_string()))?;
-        serde_json::from_str(&text)
-            .map_err(|_| transport(format!("not JSON: {}", truncate(&text, 200))))
+            .map_err(|e| self.transport(e.to_string()))?;
+        Ok((status, text))
+    }
+
+    fn parse(&self, text: &str) -> Result<Value> {
+        serde_json::from_str(text)
+            .map_err(|_| self.transport(format!("not JSON: {}", truncate(text, 200))))
+    }
+
+    fn post(&self, body: &Value) -> Result<Value> {
+        let (status, text) = self.post_raw(body)?;
+        if !(200..300).contains(&status) {
+            return Err(self.transport(format!("HTTP {status}: {}", truncate(&text, 200))));
+        }
+        self.parse(&text)
     }
 
     /// One JSON-RPC call.
@@ -130,25 +174,44 @@ impl HttpRpc {
         result_of(method, &reply)
     }
 
-    /// Several calls of one method in a JSON-RPC batch; the results in order.
+    /// Several calls of one method in a JSON-RPC batch; the results in order. An endpoint that
+    /// refuses batches gives an [`Error::Rpc`] (see [`Rpc::get_actor_states`] for the fallback).
     pub fn batch(&self, method: &str, params: &[Value]) -> Result<Vec<Value>> {
+        match self.try_batch(method, params)? {
+            BatchOutcome::Done(results) => Ok(results),
+            BatchOutcome::Refused(message) => Err(Error::Rpc {
+                method: method.into(),
+                message: format!("batch refused: {message}"),
+            }),
+        }
+    }
+
+    fn try_batch(&self, method: &str, params: &[Value]) -> Result<BatchOutcome> {
         if params.is_empty() {
-            return Ok(Vec::new());
+            return Ok(BatchOutcome::Done(Vec::new()));
         }
         let body: Vec<Value> = params
             .iter()
             .enumerate()
             .map(|(i, p)| json!({"jsonrpc": "2.0", "id": i, "method": method, "params": p}))
             .collect();
-        let reply = self.post(&Value::Array(body))?;
+        let (status, text) = self.post_raw(&Value::Array(body))?;
+        if BATCH_REFUSED_STATUSES.contains(&status) {
+            return Ok(BatchOutcome::Refused(format!(
+                "HTTP {status}: {}",
+                truncate(&text, 200)
+            )));
+        }
+        if !(200..300).contains(&status) {
+            return Err(self.transport(format!("HTTP {status}: {}", truncate(&text, 200))));
+        }
+        let reply = self.parse(&text)?;
         let Value::Array(replies) = reply else {
             // A sequencer without batch support answers with one error object.
-            return Err(result_of(method, &reply)
-                .err()
-                .unwrap_or_else(|| Error::Rpc {
-                    method: method.into(),
-                    message: "batch answered with one object".into(),
-                }));
+            return Ok(BatchOutcome::Refused(match reply.get("error") {
+                Some(error) => error.to_string(),
+                None => "batch answered with one object".into(),
+            }));
         };
         let mut out = vec![None; params.len()];
         for r in &replies {
@@ -172,7 +235,43 @@ impl HttpRpc {
                     message: "batch reply missing an item".into(),
                 })
             })
-            .collect()
+            .collect::<Result<Vec<Value>>>()
+            .map(BatchOutcome::Done)
+    }
+
+    /// The same reads one by one, [`SINGLE_CONCURRENCY`] at a time, in order.
+    fn actor_states_one_by_one(&self, actors: &[(AccountId, AccountId)]) -> Result<Vec<Vec<u8>>> {
+        let mut out = Vec::with_capacity(actors.len());
+        for group in actors.chunks(SINGLE_CONCURRENCY) {
+            let results: Vec<Result<Vec<u8>>> = std::thread::scope(|scope| {
+                let handles: Vec<_> = group
+                    .iter()
+                    .map(|(a, p)| scope.spawn(move || self.get_actor_state(a, p)))
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| {
+                        h.join().unwrap_or_else(|_| {
+                            Err(self.transport("a read thread panicked".into()))
+                        })
+                    })
+                    .collect()
+            });
+            for r in results {
+                out.push(r?);
+            }
+        }
+        Ok(out)
+    }
+
+    fn note_batches_refused(&self, why: &str) {
+        if !self.batches_refused.swap(true, Ordering::Relaxed) {
+            eprintln!(
+                "note: {} refuses JSON-RPC batches ({}); reading one call at a time, so listing is slower on this endpoint",
+                self.url,
+                truncate(why, 120)
+            );
+        }
     }
 }
 
@@ -248,12 +347,19 @@ impl Rpc for HttpRpc {
         Ok(found.map(|a| a.state(program).to_vec()).unwrap_or_default())
     }
 
+    /// In JSON-RPC batches of [`BATCH`]. An endpoint that refuses a batch (HTTP 400, 403, 405
+    /// or 413, or one JSON-RPC error object in place of the batch reply) gets the same calls one
+    /// by one, and every later read of this session too; a network error or a 5xx is an error.
     fn get_actor_states(&self, actors: &[(AccountId, AccountId)]) -> Result<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(actors.len());
         for chunk in actors.chunks(BATCH) {
+            if self.batches_refused() {
+                out.extend(self.actor_states_one_by_one(chunk)?);
+                continue;
+            }
             let params: Vec<Value> = chunk.iter().map(|(a, p)| actor_param(a, p)).collect();
-            match self.batch("getAccountView", &params) {
-                Ok(results) => {
+            match self.try_batch("getAccountView", &params)? {
+                BatchOutcome::Done(results) => {
                     for ((_, p), v) in chunk.iter().zip(results) {
                         out.push(
                             parse_account(&v)?
@@ -262,13 +368,10 @@ impl Rpc for HttpRpc {
                         );
                     }
                 }
-                // No batch support: one at a time.
-                Err(Error::Rpc { .. }) => {
-                    for (a, p) in chunk {
-                        out.push(self.get_actor_state(a, p)?);
-                    }
+                BatchOutcome::Refused(why) => {
+                    self.note_batches_refused(&why);
+                    out.extend(self.actor_states_one_by_one(chunk)?);
                 }
-                Err(e) => return Err(e),
             }
         }
         Ok(out)
