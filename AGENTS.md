@@ -80,7 +80,7 @@ of program (`docs/CYCLES.md`).
 
 - `doctor` and `show` against the live address: run 2026-11-13 with lezreg 0.1.0 (rc3).
 - `init --detect`, `publish` and `adopt`: run on every push by `.github/workflows/e2e.yml`
-  against a local sequencer. `--dry-run` is exercised there and in `scripts/demo.sh` for a deploy.
+  against a local sequencer. `--dry-run` is exercised by `scripts/demo.sh` (also in CI), for a deploy.
   `adopt --dry-run` against the live address with an outside account has not been run by the
   authors.
 - Building `lezreg` from a clean clone: CI (`ci.yml`, `demo.yml`) on Linux; macOS arm64 by hand.
