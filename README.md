@@ -87,27 +87,118 @@ Options:
 
 ## Install
 
-Build from source. You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ
-v0.4.0-rc3) and the RISC Zero toolchain, installed as `.github/workflows/ci.yml` does it:
-`lezreg` links the registry program crate, which simulates transactions locally. The read-only
-SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor risc0.
+One line, no sudo (it refuses to run as root unless you pass `--allow-root`). It downloads the
+`lezreg` build for your machine from this repo's latest GitHub release over HTTPS, checks its
+SHA-256 against the release's `SHA256SUMS`, and puts it in `~/.lezreg/bin` (or
+`$LEZREG_HOME/bin`):
 
 ```sh
-curl -L https://risczero.com/install | bash && rzup install cargo-risczero 3.0.5 && rzup install rust
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jefdiesel/lez-program-registry/releases/latest/download/install.sh | sh -s -- --with-r0vm --with-storage
+```
+
+- Builds exist for Linux x86_64 and aarch64 and macOS arm64 (macOS 12 or newer).
+  - Linux needs glibc 2.34 or newer, and on aarch64 also libstdc++ from GCC 11 or newer. musl
+    distributions (Alpine) are not supported; the installer says so.
+    Nothing else: no libpcsclite, no Rust. Ubuntu 22.04, Debian 13 and Fedora 45 are tested
+    in bare containers by the release workflow. Debian 12 and RHEL 9 meet the same minimum
+    but are not tested.
+  - Windows: use WSL.
+  - Intel Macs are not supported, even from source: the LEZ crates link
+    logos-blockchain-circuits, which ships no macOS x86_64 library.
+- The installer does not edit your shell files. It prints the `export PATH=...` line to add.
+- `--with-r0vm` also fetches RISC Zero's `r0vm` 3.0.5 from RISC Zero's own GitHub release,
+  checked against a pinned SHA-256. **Every write needs it** (see below). Prebuilt `r0vm`
+  3.0.5 exists only for macOS arm64 and Linux x86_64; elsewhere the installer prints how to
+  build it (`cargo install --locked risc0-r0vm --version 3.0.5`).
+- `--with-storage` also fetches the Logos Storage v0.5.3 node from its official release,
+  checked the same way, as `logos-storage`. `lezreg storage up` starts it, to upload your IDL.
+  Its Linux builds need glibc 2.38 (Ubuntu 24.04, Debian 13 or newer). On older Linux the
+  installer skips it and says so; use a Storage node on another machine
+  (`LEZREG_STORAGE_API`).
+- Other options: `--version 0.1.0` for a given release, `--dry-run` to print what it would
+  download and install, `--help`.
+- It sends nothing about you. Like any download, GitHub and the hosts it redirects to see your
+  IP address and your curl or wget user agent.
+- **What the checksum proves.** The SHA-256 check catches a damaged or cut-off download. It is
+  not a signature: `SHA256SUMS` comes from the same release as the files. Your trust in the
+  one-liner rests on GitHub's TLS and on whoever can write to this repository. To check where a
+  file was built, use the attestation (below).
+- Run `lezreg doctor` afterwards to see what this machine still lacks.
+
+**By hand, with your own checks.** Download `lezreg-<version>-<os>-<arch>.tar.gz` and
+`SHA256SUMS` from the [releases page](https://github.com/jefdiesel/lez-program-registry/releases),
+then:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing      # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
+gh attestation verify lezreg-0.1.0-linux-x86_64.tar.gz -R jefdiesel/lez-program-registry \
+  --signer-workflow jefdiesel/lez-program-registry/.github/workflows/release.yml \
+  --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
+tar -xzf lezreg-0.1.0-linux-x86_64.tar.gz && install lezreg-0.1.0-linux-x86_64/lezreg ~/.local/bin/
+```
+
+Use the version you downloaded in the file name and in `--source-ref refs/tags/v<version>`.
+
+**What the attestation proves.** `gh attestation verify` checks GitHub's signed build
+provenance. With those flags it passes only if this exact file was built by this repo's
+`release.yml`, from the tag `v<version>`, on a GitHub-hosted runner. The output names the
+commit and the run. `install.sh` and `SHA256SUMS` are attested the same way. Releases are made
+only from tags: a run started by hand builds and tests but attests nothing.
+
+**What it does not prove:**
+- that the source at that tag is benign;
+- that the build inputs were clean: the GitHub runner image, the Rust toolchain, the crates in
+  `Cargo.lock`, and the prebuilt logos-blockchain-circuits library (checked against a pinned
+  SHA-256, but built by its own project);
+- anything beyond this repository: the trust root is whoever has write access to
+  `jefdiesel/lez-program-registry`. They can push a tag and the workflow will build and attest
+  it.
+
+**Writes need `r0vm` at run time.** Every write is simulated locally with the risc0 executor
+`r0vm` 3.0.5 before it is sent. Without it a write stops with "simulation needs the risc0
+executor `r0vm`" and nothing is sent. Reads (`show`, `list`, `search`, `idl get`) never need it.
+
+`lezreg` looks for `r0vm` where risc0 does, in this order:
+1. `RISC0_SERVER_PATH`, if set to the binary;
+2. rzup's install directory, `~/.risc0/extensions/v3.0.5-cargo-risczero-<platform>/r0vm`
+   (under `$RISC0_HOME` if that is set);
+3. `PATH`. The installer's `--with-r0vm` puts it in `~/.lezreg/bin`.
+
+RISC Zero's own installer works too:
+`curl -L https://risczero.com/install | bash && ~/.risc0/bin/rzup install cargo-risczero 3.0.5`.
+It puts `r0vm` only in the directory of step 2, which `lezreg` and `lezreg doctor` check.
+- On Linux there is no `~/.cargo/bin/r0vm` link afterwards.
+- On macOS a `~/.cargo/bin/r0vm` link exists only if rzup made one, e.g. after
+  `rzup install r0vm`. Either way it is found.
+
+**Registering needs a Logos Storage node** for the IDL upload: `lezreg storage up` (with
+`logos-storage` on PATH, or `--bin`), or `LEZREG_STORAGE_API` pointing at a node you run.
+
+**Linux and smart cards.** The Linux builds don't link `libpcsclite`. They carry a small
+stand-in ([`scripts/release/pcsc-dlopen.c`](scripts/release/pcsc-dlopen.c)), so they start
+on systems without it. The built-in wallet's Keycard commands load the system's
+`libpcsclite.so.1` when they run. Install your distro's PC/SC package only if you use a
+Keycard.
+
+### Build from source
+
+You need Rust (`rust-toolchain.toml` pins 1.98.1, the same as LEZ v0.4.0-rc3). On Linux also
+the PC/SC headers, pkg-config and clang (`sudo apt install libpcsclite-dev pkg-config clang`).
+Building `lezreg` needs no RISC Zero toolchain: the LEZ crates embed their programs from LEZ's
+committed artifacts. The build does download logos-blockchain-circuits' prebuilt static
+libraries from its GitHub release, or uses `LBC_ROOT_DIR` if set. Those exist only for Linux
+x86_64 and aarch64, macOS arm64 and Windows. You need RISC Zero's toolchain only to build the
+registry guest itself (`.github/workflows/ci.yml` installs it), and `r0vm` at run time as
+above. The read-only SDK (`lezreg-sdk` with `default-features = false`) needs neither LEZ nor
+risc0.
+
+```sh
 git clone https://github.com/jefdiesel/lez-program-registry
 cd lez-program-registry
-cargo build --release -p lezreg
+cargo build --release --locked -p lezreg
 install target/release/lezreg ~/.local/bin/    # or anywhere on PATH
 lezreg --help
 ```
-
-**Writes need `r0vm` at run time, not only to build.** Every write is simulated locally with
-the risc0 executor `r0vm` (rzup links it into `~/.cargo/bin`), so keep that directory on PATH
-or set `RISC0_SERVER_PATH` to the binary. Without it a write stops with "simulation needs the
-risc0 executor `r0vm`" before anything is sent. Reads never need it.
-
-There are no release binaries yet. A CLI release workflow for macOS arm64, Linux amd64 and
-arm64, and Windows is planned (DESIGN §7.4); those binaries will need `r0vm` too.
 
 ### A local sequencer and the registry ELF
 

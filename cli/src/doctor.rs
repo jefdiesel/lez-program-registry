@@ -3,7 +3,11 @@
 //! `build`/`verify`) and the clock. Nothing is sent anywhere but the user's own sequencer and
 //! Storage node.
 
-use std::{path::PathBuf, process::Command, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 
 use lezreg_sdk::{HttpRpc, Rpc as _, StorageClient, storage::Timeouts, tx::tid};
 use serde_json::{Value, json};
@@ -171,20 +175,7 @@ pub fn run_checks(net: &Net, storage_api: &str) -> Vec<Check> {
             ),
         )),
     }
-    let r0vm = std::env::var_os("RISC0_SERVER_PATH")
-        .map(PathBuf::from)
-        .filter(|p| p.is_file())
-        .or_else(|| which("r0vm"));
-    v.push(match r0vm {
-        Some(p) => check("r0vm", Level::Ok, p.display().to_string()),
-        // Not fatal: public writes simulate in-process (CI deploys and registers without it).
-        // Only local proving of private changes runs the prover binary.
-        None => check(
-            "r0vm",
-            Level::Warn,
-            "not on PATH and RISC0_SERVER_PATH unset: needed only to prove private changes locally (rzup install r0vm)",
-        ),
-    });
+    v.push(r0vm_check(find_r0vm()));
     v.push(match wallet::utils::fetch_persistent_storage_path() {
         Ok(p) if p.exists() => check("wallet", Level::Ok, p.display().to_string()),
         Ok(p) => check(
@@ -234,6 +225,74 @@ pub fn run_checks(net: &Net, storage_api: &str) -> Vec<Check> {
     v
 }
 
+/// Every write is simulated before it is sent, and lezreg's LEZ engine (built without `prove`)
+/// runs that simulation in the external `r0vm`. A warning, not a failure: reads never need it.
+fn r0vm_check(found: Option<PathBuf>) -> Check {
+    match found {
+        Some(p) => check("r0vm", Level::Ok, p.display().to_string()),
+        None => check(
+            "r0vm",
+            Level::Warn,
+            format!(
+                "not on PATH and RISC0_SERVER_PATH unset: every write (register, update, publish, adopt, deploy) is simulated with r0vm 3.0.5 and stops without it; reads work ({})",
+                r0vm_hint()
+            ),
+        ),
+    }
+}
+
+/// Finds r0vm where risc0-zkvm 3.0.5's `get_r0vm_path` does, in its order: RISC0_SERVER_PATH;
+/// then rzup's install directory for this client version, `$RISC0_HOME` (default `~/.risc0`)
+/// `/extensions/v3.0.5-cargo-risczero-<platform>/r0vm`, then the `v3.0.0-` one; then PATH. On
+/// Linux, `rzup install cargo-risczero 3.0.5` leaves r0vm only in that directory, with no
+/// `~/.cargo/bin` link, and risc0 still runs it from there.
+fn find_r0vm() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("RISC0_SERVER_PATH")
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+    {
+        return Some(p);
+    }
+    let risc0_home = std::env::var_os("RISC0_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".risc0")));
+    risc0_home
+        .and_then(|h| rzup_r0vm(&h.join("extensions")))
+        .or_else(|| which("r0vm"))
+}
+
+/// r0vm in rzup's extensions directory: 3.0.5 first, then 3.0.0 (risc0 retries with the patch
+/// stripped).
+fn rzup_r0vm(extensions: &Path) -> Option<PathBuf> {
+    for prefix in ["v3.0.5-cargo-risczero-", "v3.0.0-cargo-risczero-"] {
+        let mut found: Vec<PathBuf> = std::fs::read_dir(extensions)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
+            .map(|e| e.path().join("r0vm"))
+            .filter(|p| p.is_file())
+            .collect();
+        found.sort();
+        if let Some(p) = found.pop() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Where to get r0vm 3.0.5 on this platform. RISC Zero publishes prebuilt builds only for macOS
+/// arm64 and Linux x86_64, so install.sh --with-r0vm and rzup can only fetch it there.
+const fn r0vm_hint() -> &'static str {
+    if cfg!(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )) {
+        "rzup install cargo-risczero 3.0.5, or install.sh --with-r0vm"
+    } else {
+        "no prebuilt r0vm 3.0.5 for this platform: cargo install --locked risc0-r0vm --version 3.0.5"
+    }
+}
+
 /// Prints the checks; returns whether none failed.
 pub fn report(out: &mut Out, checks: &[Check]) -> bool {
     let mut j: Vec<Value> = Vec::new();
@@ -263,6 +322,46 @@ mod tests {
         assert_eq!(skew_level(-90_000), Level::Ok);
         assert_eq!(skew_level(300_000), Level::Warn);
         assert_eq!(skew_level(-700_000), Level::Fail);
+    }
+
+    #[test]
+    fn r0vm_in_rzup_extensions_is_found() {
+        let ext = std::env::temp_dir().join(format!("lezreg-doctor-rzup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ext);
+        let put = |dir: &str| {
+            std::fs::create_dir_all(ext.join(dir)).unwrap();
+            std::fs::write(ext.join(dir).join("r0vm"), b"").unwrap();
+        };
+        assert_eq!(rzup_r0vm(&ext), None, "no directory yet");
+        put("v3.1.0-cargo-risczero-x86_64-unknown-linux-gnu");
+        assert_eq!(rzup_r0vm(&ext), None, "another version is not ours");
+        put("v3.0.0-cargo-risczero-x86_64-unknown-linux-gnu");
+        assert_eq!(
+            rzup_r0vm(&ext),
+            Some(ext.join("v3.0.0-cargo-risczero-x86_64-unknown-linux-gnu/r0vm"))
+        );
+        put("v3.0.5-cargo-risczero-x86_64-unknown-linux-gnu");
+        assert_eq!(
+            rzup_r0vm(&ext),
+            Some(ext.join("v3.0.5-cargo-risczero-x86_64-unknown-linux-gnu/r0vm")),
+            "3.0.5 wins over 3.0.0"
+        );
+        std::fs::remove_dir_all(&ext).unwrap();
+    }
+
+    #[test]
+    fn missing_r0vm_says_writes_need_it() {
+        let c = r0vm_check(None);
+        assert_eq!(c.level, Level::Warn);
+        assert!(c.detail.contains("every write"), "{}", c.detail);
+        assert!(!c.detail.contains("private"), "{}", c.detail);
+        // The installer's --with-r0vm only where RISC Zero publishes a prebuilt r0vm.
+        let prebuilt = cfg!(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "linux", target_arch = "x86_64")
+        ));
+        assert_eq!(c.detail.contains("--with-r0vm"), prebuilt, "{}", c.detail);
+        assert_eq!(r0vm_check(Some("/x/r0vm".into())).level, Level::Ok);
     }
 
     #[test]
