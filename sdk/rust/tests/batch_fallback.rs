@@ -51,7 +51,9 @@ fn view(account_b58: &str) -> Value {
 }
 
 fn answer(call: &Value) -> Value {
-    let account = call["params"][0]["account_id"].as_str().expect("account_id");
+    let account = call["params"][0]["account_id"]
+        .as_str()
+        .expect("account_id");
     json!({"jsonrpc": "2.0", "id": call["id"], "result": view(account)})
 }
 
@@ -136,7 +138,11 @@ fn batches_are_used_when_served() {
 
 #[test]
 fn refused_batches_fall_back_to_single_calls_and_are_remembered() {
-    for mode in [Batches::Refuse400, Batches::Refuse413, Batches::RefuseObject] {
+    for mode in [
+        Batches::Refuse400,
+        Batches::Refuse413,
+        Batches::RefuseObject,
+    ] {
         let m = mock(mode);
         let rpc = HttpRpc::new(&m.url);
         assert_eq!(rpc.get_actor_states(&actors(9)).unwrap(), expected(9));
