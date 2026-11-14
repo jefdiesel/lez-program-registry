@@ -2,7 +2,7 @@
 // by sdk/rust/tests/js_vectors.rs), plus a mocked sequencer and Storage node.
 import { readFileSync } from "node:fs";
 import {
-  Registry, addr, accountId, decodeEntry, decodeHead, decodeLink, decodeRelease, fetchIdl,
+  LOADER, Registry, addr, accountId, decodeEntry, decodeHead, decodeLink, decodeRelease, fetchIdl,
   fromBase58, fromHex, hex, idlFormat, parseIdl, sha256, toBase58,
 } from "./lezreg.js";
 
@@ -30,6 +30,8 @@ const id = (b) => new Uint8Array(32).fill(b);
 
 check("sha256", hex(await sha256(new TextEncoder().encode("abc"))), v["sha256:abc"]);
 check("base58 round trip", toBase58(fromBase58(v.registry)), v.registry);
+// The loader is 32 bytes of 0xFE (lee_core PROGRAM_LOADER_ACCOUNT_ID; Rust SDK read::LOADER).
+check("loader id", LOADER, toBase58(new Uint8Array(32).fill(0xfe)));
 check("global head", toBase58(await addr.globalHead(reg)), v.addresses.global_head);
 check("name head", toBase58(await addr.nameHead(reg, "alice")), v.addresses["name_head:alice"]);
 check("author head", toBase58(await addr.authorHead(reg, id(8))), v.addresses["author_head:08"]);
@@ -61,7 +63,7 @@ const fakeFetch = async (url, init) => {
   if (init?.method === "POST") {
     const { method, params } = JSON.parse(init.body);
     if (method === "getAccount" && params[0] === program)
-      return { json: async () => ({ result: { nonce: 0, data: { actor_states: { [v.registry]: [...entryBytes], "11111111111111111111111111111111": [...header] } } } }) };
+      return { json: async () => ({ result: { nonce: 0, data: { actor_states: { [v.registry]: [...entryBytes], [LOADER]: [...header] } } } }) };
     return { json: async () => ({ result: null }) };
   }
   return { ok: true, arrayBuffer: async () => idlBytes.buffer };
