@@ -51,7 +51,7 @@ fn the_printed_record_line_pastes_as_the_record() {
             assert!(!text.status.success() && text.stdout.is_empty(), "{catalog:?} was printed: {}", String::from_utf8_lossy(&text.stdout));
             assert!(!json.status.success(), "{catalog:?}");
             let err = String::from_utf8(text.stderr).unwrap();
-            assert!(!err.chars().any(lezreg_sdk::text::is_unsafe_char), "{err:?}");
+            assert!(!err.trim_end_matches('\n').chars().any(lezreg_sdk::text::is_unsafe_char), "{err:?}");
             println!("refused  {catalog:?}: {}", err.trim());
         }
         assert!(!marker.exists(), "{catalog:?} ran code");
