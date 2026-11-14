@@ -80,20 +80,11 @@ Item {
     function loadConfig() {
         ask("config_get", [], function(v) {
             config = v
-            sequencerField.text = v.sequencer || ""
-            registryField.text = v.registry || ""
             if (v.registry) loadList(false)
-            else { settingsOpen = true; problem = "Set the sequencer and the registry's program id to start." }
+            else { settingsOpen = true; problem = "No registry is set: see Settings." }
         }, function(e) { problem = e })
     }
 
-    function saveConfig() {
-        ask("config_set", [JSON.stringify({ sequencer: sequencerField.text.trim(), registry: registryField.text.trim() })], function(v) {
-            config = v
-            settingsOpen = false
-            loadList(false)
-        }, function(e) { notice = e })
-    }
 
     function loadList(more) {
         loading = true
@@ -143,6 +134,7 @@ Item {
     function submitChange() {
         var c = change
         change = null
+        remoteOk = false   // "spends real funds" is asked again for every change
         ask("submit", [JSON.stringify(c)], function(v) { job = v; pollJob() }, function(e, code) { notice = e + (code ? " (" + code + ")" : "") })
     }
 
@@ -159,7 +151,12 @@ Item {
 
     // Other apps can't sign through the registry: their changes wait here for the person.
     function loadRequests() {
-        ask("pending_requests", [], function(v) { requests = v }, function(e) {})
+        ask("pending_requests", [], function(v) {
+            // Oldest first; and only a real change re-arms the buttons (a poll that returns the same
+            // list must not disable Approve under the cursor).
+            var sorted = (v || []).slice().sort(function(a, b) { return a.at - b.at })
+            if (JSON.stringify(sorted) !== JSON.stringify(requests)) requests = sorted
+        }, function(e) {})
     }
     function answerRequest(id, approve) {
         ask(approve ? "approve_request" : "deny_request", [id], function(v) {
@@ -301,11 +298,10 @@ Item {
             ColumnLayout {
                 id: settingsCol
                 anchors.fill: parent; anchors.margins: 12; spacing: 8
-                Text { textFormat: Text.PlainText; text: "Sequencer (https://, or http:// on this machine)"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
-                Field { id: sequencerField; Layout.fillWidth: true; placeholder: "http://127.0.0.1:3062"; monospace: true }
-                Text { textFormat: Text.PlainText; text: "Registry program id"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13) }
-                Field { id: registryField; Layout.fillWidth: true; placeholder: "base58 program id"; monospace: true }
-                Action { label: "Save"; strong: true; onPressed: root.saveConfig() }
+                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.ink; font.family: root.sans; font.pixelSize: root.px(13)
+                       text: "Sequencer: " + Logic.clean(root.config ? root.config.sequencer : "") + "\nRegistry: " + Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)") }
+                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12)
+                       text: "The sequencer and the registry decide what every app is told and where changes are signed, so only the host sets them: logosctl call program_registry config_set, or ~/.config/lez-registry/module.json." }
             }
         }
 
@@ -317,7 +313,21 @@ Item {
             Action { label: "All"; visible: root.query !== ""; onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
         }
 
-        // Requests from other apps.
+        // Requests from other apps: in their own scroll area, so long ones can't push the
+        // browser (and its buttons) off the screen.
+        Flickable {
+            id: reqFlick
+            visible: root.requests.length > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(reqColumn.implicitHeight, 280)
+            clip: true
+            contentWidth: width
+            contentHeight: reqColumn.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            ColumnLayout {
+                id: reqColumn
+                width: reqFlick.width
+                spacing: 8
         Repeater {
             model: root.requests
             Rectangle {
@@ -343,6 +353,8 @@ Item {
                         Action { label: "Refuse"; onPressed: root.answerRequest(modelData.request, false) }
                     }
                 }
+            }
+        }
             }
         }
 

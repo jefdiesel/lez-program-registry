@@ -107,8 +107,21 @@ pub fn refuse_locked_wallet() -> Result<()> {
 pub fn read_change(net: &Net) -> Result<Change> {
     let mut text = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).context("cannot read the change on stdin")?;
-    let registry = lezreg_sdk::tx::lid(&net.registry()?);
-    parse_change(&text, &net.rpc()?, &registry)
+    let reg = net.registry()?;
+    let rpc = net.rpc()?;
+    // The pair must be one the user saved in lezreg itself, not just what the change (and so the
+    // module, or an app that set its sequencer) names: the registry's image is read from that
+    // sequencer, so a sequencer the user never chose could vouch for any code.
+    if crate::config::saved_network_for(&rpc, &reg)?.is_none() {
+        bail!(
+            "the change is for sequencer {rpc} and registry {}, which is not a network saved in lezreg: nothing was signed (unknown_network). \
+             If you trust them, save them first: lezreg network set <name> --rpc {rpc} --registry {}",
+            reg.to_base58(),
+            reg.to_base58()
+        );
+    }
+    let registry = lezreg_sdk::tx::lid(&reg);
+    parse_change(&text, &rpc, &registry)
 }
 
 #[cfg(test)]

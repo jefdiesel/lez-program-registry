@@ -66,8 +66,9 @@ function registryLabel(programId, done) {
 **Everything at once:** `resolve_program(programId)` gives the deployer entry, the live program
 header and `freshness` (`fresh`, `stale`, `no-program`), plus how many community entries exist.
 
-The module needs its network once (a settings screen, or the registry browser's):
-`config_set('{"sequencer": "https://…", "registry": "<registry program id>"}')`.
+The module's sequencer and registry are set once by the host, never by an app:
+`logosctl call program_registry config_set '{"sequencer": "https://…", "registry": "<registry program id>"}'`,
+or `~/.config/lez-registry/module.json`.
 
 The registry browser ([`registry_browser/`](../registry_browser/)) is a complete example: list,
 search, entry detail with the deployer/community badge, IDL status with its degradation, the local
@@ -172,7 +173,12 @@ the module from the instruction it encoded and from the chain, never from your i
 (everything the change writes: name, version, description, tags, label, IDL, source and build
 pointers, image id, author or new author), `current` (the entry as it is now), the full ids of
 the entry and of every signer, the `payer`, `spends_real_funds` (when `allow_remote` is set),
-`max_gas` and `max_fee` (`lezreg` refuses to send a change that would need more gas). Show it.
+`max_gas` and `max_fee` (`lezreg` refuses to send a change that would need more gas). Show it,
+and put where it spends, whether it can be undone and what it can cost before the long values.
+**`values` are raw chain strings and your input as encoded:** clean them before you show them
+(drop controls, bidi and zero-width characters, and turn line or paragraph separators such as
+U+2028 into a visible mark, as `registry_browser/qml/logic.mjs` `clean()` does), or a value can
+draw fake lines on your card.
 
 ```qml
 logos.callModuleAsync("program_registry", "prepare_freeze", [JSON.stringify({ program: id })], function (reply) {
@@ -208,6 +214,10 @@ point the module at another one. Before signing, `lezreg module send`:
   `lez_program_registry`, and it then receives changes your accounts signed (one attempt to
   move a signer's funds that way was refused by the rc3 engine, which is not a proof; see
   DESIGN §10). Every other `lezreg` write checks the same;
+- signs only for a sequencer and registry you saved in lezreg yourself
+  (`lezreg network set <name> --rpc <url> --registry <id>`; otherwise `unknown_network`): the
+  image check reads the registry from that sequencer, so a sequencer you never chose could vouch
+  for any code;
 - refuses an encrypted wallet with no `LEE_WALLET_PASSWORD` (`wallet_locked`): it has no
   terminal to ask on. Putting the password in Basecamp's environment gives it to every module
   Basecamp starts; signing from a terminal is safer.
@@ -216,8 +226,8 @@ point the module at another one. Before signing, `lezreg module send`:
 Only the Program Registry app (`registry_browser`) and the host (Basecamp itself, or
 `logosctl`, which reaches the module as the host whatever client token it presents) may change
 its settings (`config_set`; others get `code: "not_allowed"`), see other apps' requests, or have
-a change signed straight away. `cli`, `basecamp_data` and `registry_images` are the host's
-alone. Any other app's `submit` signs nothing: it answers `{request, state:
+a change signed straight away. `sequencer`, `registry`, `cli`, `basecamp_data` and
+`registry_images` are the host's alone, not even the browser's. Any other app's `submit` signs nothing: it answers `{request, state:
 "awaiting_approval"}`, and the person approves or refuses it in the Program Registry app before
 the change expires (`pending_requests`, `approve_request`, `deny_request`); the card says the
 app's name is the app's own, unverified. Reads and `prepare_*` stay open to every app.
@@ -225,10 +235,19 @@ app's name is the app's own, unverified. Reads and `prepare_*` stay open to ever
 **What that trust rests on.** The gate trusts a package *name*, and a package chooses its own
 name. Installing a package that calls itself `registry_browser` with a higher version replaces
 the real one (the package manager checks a package's files against the hashes in its own
-manifest, not against a publisher; packages are unsigned today), and from then on it can change
-the module's sequencer and registry and sign without a request. So install the Program Registry
+manifest, not against a publisher; packages are unsigned today), and from then on it can sign without a request:
+update, transfer or freeze any entry your lezreg wallet authors, and register entries with your
+wallet's accounts, on the sequencer and registry the host set and lezreg has saved. It can't
+point the module or lezreg at another sequencer or registry, or at registry code lezreg doesn't
+trust. So install the Program Registry
 app only from a catalog you trust, until the module checks `registry_browser`'s publisher
 through its LNS app record (docs/APPS.md; the root-recomputing app checks are in progress).
+
+**Registry upgrades.** Both the module and lezreg sign only for registry code they know. When
+the real registry is upgraded to a new image, all signing stops (`unknown_registry`) until you pin
+the new image (`lezreg network set <name> --registry-image <hex>`, and the host's
+`config_set({"registry_images": [...]})`) or update lezreg and the module to a release that knows
+it. That is the price of not trusting a registry id alone.
 
 **Restarts.** Prepared changes, waiting requests and jobs live in the module's memory: a restart
 of the module (or of Basecamp) forgets them. A `lezreg` already started keeps running, and its

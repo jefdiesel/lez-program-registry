@@ -68,6 +68,19 @@ fn load() -> Result<Value> {
     }
 }
 
+/// The name of a network saved in the config file with exactly this RPC and registry, if any.
+/// `lezreg module send` signs only for such a pair: the module (or an app that set its
+/// sequencer) can't send it to a sequencer and registry the user never chose in lezreg.
+pub fn saved_network_for(rpc: &str, registry: &AccountId) -> Result<Option<String>> {
+    let file = load()?;
+    let want = rpc.trim_end_matches('/');
+    Ok(file.as_object().into_iter().flatten().find_map(|(name, v)| {
+        let r = v.get("rpc").and_then(Value::as_str)?.trim_end_matches('/');
+        let g = v.get("registry").and_then(Value::as_str).and_then(|g| parse_registry(g).ok())?;
+        (r == want && g == *registry).then(|| name.clone())
+    }))
+}
+
 pub fn parse_image(s: &str) -> Result<[u8; 32]> {
     let v = hex::decode(s.trim().strip_prefix("0x").unwrap_or(s.trim())).map_err(|_| anyhow!("registry image '{s}' is not hex"))?;
     v.try_into().map_err(|_| anyhow!("a registry image is 32 bytes (64 hex characters)"))

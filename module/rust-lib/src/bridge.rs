@@ -105,7 +105,9 @@ pub fn cli_version(cli: &Path) -> Res<String> {
 /// What a failed send's output says, as a code.
 fn code_of(text: &str) -> &'static str {
     let t = text.to_ascii_lowercase();
-    if t.contains("wallet_locked") || t.contains("is encrypted") {
+    if t.contains("unknown_network") || t.contains("not a network saved in lezreg") {
+        "unknown_network"
+    } else if t.contains("wallet_locked") || t.contains("is encrypted") {
         "wallet_locked"
     } else if t.contains("not a lez program registry image") || t.contains("registry image") {
         "unknown_registry"
@@ -259,6 +261,7 @@ mod tests {
         assert_eq!(code_of("the lezreg wallet at /x is encrypted, and `lezreg module send` has no terminal (wallet_locked)"), "wallet_locked");
         assert_eq!(code_of("X runs image ab, which is not a LEZ Program Registry image lezreg trusts"), "unknown_registry");
         assert_eq!(code_of("this change needs a gas limit of 9, above the 5 it was prepared with"), "over_gas_cap");
+        assert_eq!(code_of("… which is not a network saved in lezreg: nothing was signed (unknown_network)"), "unknown_network");
     }
 
     /// A stand-in `lezreg` that answers like `lezreg --json module send` does.

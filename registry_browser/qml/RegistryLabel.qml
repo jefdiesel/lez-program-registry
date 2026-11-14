@@ -53,7 +53,7 @@ Item {
     // Chain text without characters that reorder or hide what follows (bidi overrides and
     // isolates, zero-width, controls). Every Text here is also plain text: no markup.
     function clean(s) {
-        return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+        return String(s === undefined || s === null ? "" : s).replace(/\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]/g, "\u23CE").replace(/[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uDB40[\uDC00-\uDC7F]/g, "")
     }
 
     function words() {

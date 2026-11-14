@@ -1,11 +1,13 @@
 // The registry browser's own logic, kept out of Main.qml so `node registry_browser/logic.test.mjs`
 // can check it (a QML engine is not needed). Inputs are the program_registry module's answers.
 
-/** Text from the chain or from an app, safe to show: no control characters, no bidirectional
- * overrides or isolates, no zero-width characters (they can reverse "(unproven)" or hide text).
+/** Text from the chain or from an app, safe to show as ONE line: every line or paragraph break
+ * (\n, \r, U+2028, U+2029, …) becomes a visible "⏎", so a value can't add lines of its own to a
+ * card; controls, bidirectional overrides and isolates, zero-width and other invisible
+ * characters (soft hyphen, U+180E, U+2060–2064, U+206A–206F, U+FFF9–FFFB, tags) are dropped.
  * Every Text in this app is also plain text (no markup). */
 export function clean(s) {
-  return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+  return String(s === undefined || s === null ? "" : s).replace(/\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]/g, "\u23CE").replace(/[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uDB40[\uDC00-\uDC7F]/g, "");
 }
 
 /** "6YWH…VayN": an account id short enough for one line. */
@@ -95,13 +97,18 @@ export function when(ms) {
   return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 
+/** An array, or an array-like a QML model hands over (it fails Array.isArray), as an array. */
+function list(x) {
+  return Array.isArray(x) ? x : x && typeof x === "object" && typeof x.length === "number" ? Array.prototype.slice.call(x) : [];
+}
+
 /** A value a change writes, as one line of text. */
 function valueText(key, v) {
   if (v === null || v === undefined) return "";
-  if (key === "idl" || key === "archive") return `CID ${clean(v.cid)}, sha256 ${clean(v.sha256)}, ${v.size} bytes`;
+  if (key === "idl" || key === "archive") return `CID ${clean(v.cid)}, sha256 ${clean(v.sha256)}, ${v.size} bytes${v.peer_hint ? `, peer ${clean(v.peer_hint)}` : ""}`;
   if (key === "source") return `${clean(v.repo) || "(no repo)"} @ ${clean(v.commit)} in ${clean(v.docker_root)}${v.archive ? `; archive ${valueText("archive", v.archive)}` : ""}`;
-  if (key === "build") return `binary ${clean(v.binary)} from ${clean(v.manifest_path)}; builder image ${clean(v.image_digest)} (${clean(v.image_tag)}), risc0-build ${clean(v.risc0_build)}, rust ${clean(v.host_risc0_rust)}, Cargo.lock ${clean(v.lock_sha256)}${(v.features || []).length ? `, features ${v.features.map(clean).join(" ")}` : ""}`;
-  if (Array.isArray(v)) return v.map(clean).join(", ") || "(none)";
+  if (key === "build") return `binary ${clean(v.binary)} from ${clean(v.manifest_path)}; builder image ${clean(v.image_digest)} (${clean(v.image_tag)}), risc0-build ${clean(v.risc0_build)}, rust ${clean(v.host_risc0_rust)}, Cargo.lock ${clean(v.lock_sha256)}${list(v.features).length ? `, features ${list(v.features).map(clean).join(" ")}` : ""}${list(v.docker_env).length ? `, build environment ${list(v.docker_env).map((e) => `${clean(e.key)}=${clean(e.value)}`).join(" ")}` : ", no build environment"}`;
+  if (Array.isArray(v) || (typeof v === "object" && typeof v.length === "number")) return list(v).map(clean).join(", ") || "(none)";
   if (typeof v === "object") return clean(JSON.stringify(v));
   return clean(v) === "" ? "(empty)" : clean(v);
 }
@@ -113,18 +120,19 @@ const VALUE_ORDER = ["name", "version", "description", "tags", "author_label", "
 export function changeLines(change) {
   if (!change) return [];
   const s = change.summary || {};
+  // What matters most comes first, before any long value: where it spends, whether it can be
+  // undone, what it can cost, who pays and signs.
   const lines = [`${clean(change.what)} of entry ${clean(change.entry)}`];
+  lines.push(s.spends_real_funds ? `This spends real funds on ${clean(change.sequencer)}` : `Sent to ${clean(change.sequencer)}`);
+  if (s.irreversible) lines.push("This can't be undone: a frozen entry never changes again.");
+  if (s.max_gas) lines.push(`At most ${s.max_gas} gas${s.max_fee ? `, at most ${clean(s.max_fee)} in fees` : ""}`);
+  lines.push(s.payer ? `Fee paid by ${clean(s.payer)}` : "Fee paid by the first signer");
+  lines.push(`Signed by ${list(change.signers).map(clean).join(" and ")} with your lezreg wallet`);
   if (s.current) lines.push(`Now: ${clean(s.current.name)} v${clean(s.current.version)} (${clean(s.current.kind)}, revision ${s.current.revision}), author ${clean(s.current.author)}`);
   else if (/^Register/.test(change.what || "")) lines.push("Now: no entry (this creates it)");
   const values = s.values || {};
   for (const k of VALUE_ORDER.concat(Object.keys(values).filter((k) => !VALUE_ORDER.includes(k))))
-    if (k in values && !(k === "frozen")) lines.push(`${k.replace(/_/g, " ")}: ${valueText(k, values[k])}`);
-  lines.push(`Signed by ${(change.signers || []).map(clean).join(" and ")} with your lezreg wallet`);
-  lines.push(s.payer ? `Fee paid by ${clean(s.payer)}` : "Fee paid by the first signer");
-  if (s.max_gas) lines.push(`At most ${s.max_gas} gas${s.max_fee ? `, at most ${clean(s.max_fee)} in fees` : ""}`);
-  if (s.spends_real_funds) lines.push(`This spends real funds on ${clean(change.sequencer)}`);
-  else lines.push(`Sent to ${clean(change.sequencer)}`);
-  if (s.irreversible) lines.push("This can't be undone: a frozen entry never changes again.");
+    if (k in values && k !== "frozen") lines.push(`${k.replace(/_/g, " ")}: ${valueText(k, values[k])}`);
   return lines;
 }
 
@@ -132,8 +140,9 @@ export function changeLines(change) {
 export function jobText(job) {
   if (!job) return "";
   if (job.state === "running") return `${clean(job.what)}: sending…`;
-  if (job.state === "applied") return `${job.what}: applied${job.receipt && job.receipt.block ? " in block " + job.receipt.block : ""}`;
-  return `${job.what}: failed${job.code ? " (" + job.code + ")" : ""}: ${job.error || "no reason given"}`;
+  if (job.state === "applied") return `${clean(job.what)}: applied${job.receipt && job.receipt.block ? " in block " + job.receipt.block : ""}`;
+  if (job.state === "awaiting_approval" || job.state === "denied" || job.state === "expired") return `request ${clean(job.state)}`;
+  return `${clean(job.what)}: failed${job.code ? " (" + clean(job.code) + ")" : ""}: ${clean(job.error) || "no reason given"}`;
 }
 
 /** The heading of another app's waiting request. */

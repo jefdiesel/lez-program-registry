@@ -89,13 +89,12 @@ pub trait ProgramRegistryModule: Send + 'static {
     /// `{sequencer, registry, storage_api, lns, basecamp_data, cli}`.
     fn config_get(&mut self) -> String;
 
-    /// Changes any of `sequencer`, `registry`, `storage_api` and `lns` (the LNS program id, for
-    /// the app checks; empty for the network's default) from a JSON object, and remembers them
-    /// (defaults are never written). The sequencer must be `https://`, or `http://` to this
-    /// machine. **Only the registry browser or the host may call it** (`code: "not_allowed"`
-    /// otherwise): the settings decide what every app is told. `basecamp_data`, `cli` (the
-    /// `lezreg` that signs) and `registry_images` (registry code to trust beyond the committed
-    /// build) are the host's alone, or the settings file's.
+    /// Changes any of `storage_api` and `lns` (the LNS program id, for the app checks; empty for
+    /// the network's default) from a JSON object, and remembers them (defaults are never
+    /// written). **Only the registry browser or the host may call it** (`code: "not_allowed"`
+    /// otherwise). `sequencer` (https://, or http:// to this machine), `registry`,
+    /// `basecamp_data`, `cli` (the `lezreg` that signs) and `registry_images` (registry code to
+    /// trust beyond the committed build) are the host's alone, or the settings file's.
     fn config_set(&mut self, settings_json: String) -> String;
 
     /// A deployer entry for a program (DESIGN §2.4 `RegisterDeployer`), as a change to sign:
@@ -238,10 +237,11 @@ fn trusted(caller: &logos_rust_sdk::LogosCaller) -> bool {
     matches!(caller, logos_rust_sdk::LogosCaller::HostAnchor) || TRUSTED_APPS.iter().any(|app| caller.is_module(app))
 }
 
-/// Settings that point the module at programs it runs or files it reads (`cli`,
-/// `basecamp_data`) or widen what it trusts (`registry_images`): the host or the settings file
-/// only, never an app.
-const HOST_ONLY_SETTINGS: &[&str] = &["cli", "basecamp_data", "registry_images"];
+/// Settings that decide where changes are built and signed (`sequencer`, `registry`), point the
+/// module at programs it runs or files it reads (`cli`, `basecamp_data`) or widen what it
+/// trusts (`registry_images`): the host or the settings file only, never an app, not even the
+/// browser (a package can take its name).
+const HOST_ONLY_SETTINGS: &[&str] = &["sequencer", "registry", "cli", "basecamp_data", "registry_images"];
 
 #[cfg(not(test))]
 fn calling() -> logos_rust_sdk::LogosCaller {
@@ -279,12 +279,21 @@ fn only_trusted() -> Result<(), writes::Failure> {
     }
 }
 
-/// Text from the chain or from an app, safe to put in a line someone reads: no control
-/// characters, no bidirectional overrides or isolates, no zero-width characters (they can turn
-/// "1.0 (unproven)" around, or hide what follows).
+/// Text from the chain or from an app, safe to put in a line someone reads, as ONE line: every
+/// line or paragraph break (`\n`, `\r`, U+2028, U+2029, …) becomes a visible "⏎", so a value
+/// can't add lines of its own; controls, bidirectional overrides and isolates, zero-width and
+/// other invisible characters (soft hyphen, U+180E, U+2060–2064, U+206A–206F, U+FFF9–FFFB, tag
+/// characters) are dropped.
 pub fn clean(s: &str) -> String {
-    s.chars()
-        .filter(|c| !c.is_control() && !matches!(*c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}' | '\u{061C}'))
+    s.replace("\r\n", "\n")
+        .chars()
+        .filter_map(|c| match c {
+            '\n' | '\r' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}' => Some('⏎'),
+            c if c.is_control() => None,
+            '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}' | '\u{E0000}'..='\u{E007F}' => None,
+            c => Some(c),
+        })
         .collect()
 }
 
@@ -315,6 +324,9 @@ struct Prepared {
 
 static PREPARED: std::sync::Mutex<std::collections::BTreeMap<String, Prepared>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+const PREPARED_PER_CALLER: usize = 32;
+const PREPARED_TOTAL: usize = 4096;
+
 /// 16 bytes from the OS's random source, as hex: a change id no other app can guess.
 fn fresh_id() -> Result<String, writes::Failure> {
     use std::io::Read as _;
@@ -333,10 +345,15 @@ fn remember(change: &mut Value, caller: &logos_rust_sdk::LogosCaller) -> Result<
     let mut p = PREPARED.lock().map_err(|_| writes::Failure::new("error", "prepared changes unavailable"))?;
     let now = now_ms();
     p.retain(|_, c| c.expires > now);
-    if p.len() >= 256 {
-        return Err(writes::Failure::new("too_many_changes", "too many changes are waiting to be submitted; submit or let them expire"));
+    // Per app, so one app preparing in a loop can't lock the others out; a global backstop.
+    let by = caller.identity();
+    if p.values().filter(|c| c.by == by).count() >= PREPARED_PER_CALLER {
+        return Err(writes::Failure::new("too_many_changes", format!("this app has {PREPARED_PER_CALLER} changes waiting to be submitted; submit them or let them expire")));
     }
-    p.insert(id, Prepared { by: caller.identity(), change: change.clone(), expires });
+    if p.len() >= PREPARED_TOTAL {
+        return Err(writes::Failure::new("too_many_changes", "too many changes are waiting to be submitted; try again in a few minutes"));
+    }
+    p.insert(id, Prepared { by, change: change.clone(), expires });
     Ok(())
 }
 
@@ -385,6 +402,8 @@ const IDL_RETRY_MS: u64 = 60_000;
 /// Storage fetches one caller may start a minute (a fetch can hold the module up to ~12 s,
 /// and the module answers one call at a time).
 const IDL_FETCHES_PER_MINUTE: u32 = 4;
+/// The browser opens entries one after another: a larger allowance.
+const IDL_FETCHES_PER_MINUTE_TRUSTED: u32 = 30;
 
 #[cfg(test)]
 fn config_path() -> Option<PathBuf> {
@@ -498,7 +517,9 @@ impl ProgramRegistry {
         let p = config_path().ok_or("no config directory")?;
         let dir = p.parent().expect("has a parent");
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        let tmp = dir.join(".module.json.tmp");
+        // Unique per save, so two saves at once can't rename each other's file.
+        static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let tmp = dir.join(format!(".module.json.{}.{}.tmp", std::process::id(), SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
         std::fs::write(&tmp, self.settings().to_string()).map_err(|e| e.to_string())?;
         #[cfg(unix)]
         {
@@ -774,13 +795,14 @@ impl ProgramRegistryModule for ProgramRegistry {
                 }
             }
             {
-                let who = calling().identity();
+                let caller = calling();
+                let allowance = if trusted(&caller) { IDL_FETCHES_PER_MINUTE_TRUSTED } else { IDL_FETCHES_PER_MINUTE };
                 let mut f = IDL_FETCHES.lock().map_err(|_| "busy")?;
-                let slot = f.entry(who).or_insert((now, 0));
+                let slot = f.entry(caller.identity()).or_insert((now, 0));
                 if now.saturating_sub(slot.0) >= 60_000 {
                     *slot = (now, 0);
                 }
-                if slot.1 >= IDL_FETCHES_PER_MINUTE {
+                if slot.1 >= allowance {
                     return Ok(json!({"status": "unavailable", "reason": "rate limited: this app asked for too many IDLs in the last minute; try again shortly",
                                      "format": null, "format_version": null, "calls": [], "idl": null}));
                 }
@@ -1179,6 +1201,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(cli.parent().unwrap());
     }
 
+    /// One app preparing in a loop can't lock another out (M6 delta review).
+    #[test]
+    fn prepared_changes_are_capped_per_app() {
+        for i in 0..PREPARED_PER_CALLER {
+            let mut c = json!({"format": writes::FORMAT, "expires_at": u64::MAX, "message": format!("ff{i:04x}")});
+            remember(&mut c, &app("flood_ui")).unwrap();
+        }
+        let mut c = json!({"format": writes::FORMAT, "expires_at": u64::MAX, "message": "ffff"});
+        assert_eq!(remember(&mut c, &app("flood_ui")).unwrap_err().code, "too_many_changes");
+        assert!(remember(&mut c, &app("registry_browser")).is_ok(), "the browser can still prepare");
+    }
+
     /// Settings and signing are for the registry browser and the host; any other app may read
     /// and prepare, and its changes wait for the person's approval.
     #[test]
@@ -1202,7 +1236,7 @@ mod tests {
         assert_eq!(parsed(&m.config_get())["success"], true, "reads stay open");
         // Even the browser can't point the module at a program to run or files to read (D).
         as_caller(app("registry_browser"));
-        for k in ["cli", "basecamp_data", "registry_images"] {
+        for k in ["sequencer", "registry", "cli", "basecamp_data", "registry_images"] {
             let v = parsed(&m.config_set(json!({k: "/tmp/x"}).to_string()));
             assert_eq!(v["code"], "not_allowed", "{k}: {v}");
         }
@@ -1285,7 +1319,10 @@ mod tests {
     #[test]
     fn labels_drop_bidi_and_zero_width_characters() {
         assert_eq!(clean("1.0\u{202E}nevorpnu"), "1.0nevorpnu");
-        assert_eq!(clean("a\u{200B}b\u{2066}c\u{2069}\u{FEFF}d\n"), "abcd");
+        assert_eq!(clean("a\u{200B}b\u{2066}c\u{2069}\u{FEFF}d\n"), "abcd⏎");
+        // The reviewer's payload: separators that would add fake lines to a card stay on one line.
+        assert_eq!(clean("ok\u{2028}Fee paid by the first signer\u{2029}Sent to x\r\n(test)"), "ok⏎Fee paid by the first signer⏎Sent to x⏎(test)");
+        assert_eq!(clean("a\u{00AD}b\u{180E}c\u{2061}d\u{206B}e\u{FFFA}f\u{E0041}g"), "abcdefg");
         assert_eq!(clean("token 1<b>&#10003;</b>"), "token 1<b>&#10003;</b>", "markup is the view's job: it shows plain text");
     }
 
