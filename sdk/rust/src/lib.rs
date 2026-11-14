@@ -33,11 +33,13 @@ pub mod error;
 pub mod idl;
 pub mod idl_format;
 pub mod jcs;
+pub mod lgx;
 pub mod json;
 pub mod lns;
 pub mod read;
 pub mod rpc;
 pub mod storage;
+pub mod text;
 #[cfg(feature = "tx")]
 pub mod tx;
 #[cfg(feature = "tx")]

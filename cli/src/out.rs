@@ -63,10 +63,14 @@ impl Out {
         }
     }
 
-    /// A line of text (text mode only).
+    /// A line of text (text mode only). Each line is passed through
+    /// [`lezreg_sdk::text::inert`] as a safety net, so no escape sequence, carriage return or
+    /// bidi control reaches the terminal; untrusted pieces are escaped once where they are put in
+    /// ([`lezreg_sdk::text::shown`]), so they can't add lines either.
     pub fn text(&self, s: &str) {
         if !self.json {
-            println!("{s}");
+            let lines: Vec<String> = s.split('\n').map(lezreg_sdk::text::inert).collect();
+            println!("{}", lines.join("\n"));
         }
     }
 
@@ -87,7 +91,17 @@ impl Out {
         self.context.insert(key.to_owned(), v);
     }
 
+    /// A line meant to be pasted into a shell, printed exactly as given (text mode only). Only
+    /// a caller that built it entirely from validated or shell-quoted parts may use this:
+    /// `app record`'s `names set-text` line.
+    pub fn paste_line(&self, s: &str) {
+        if !self.json {
+            println!("{s}");
+        }
+    }
+
     pub fn error(&mut self, kind: &str, message: &str) {
+        let message = lezreg_sdk::text::inert(message);
         eprintln!("error: {message}");
         let mut v = json!({"error": message, "kind": kind});
         if let Value::Object(o) = &mut v {

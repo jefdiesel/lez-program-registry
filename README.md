@@ -17,10 +17,11 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 - Every entry joins **on-chain linked lists**: global, per name, per author, and per program
   for third-party entries. Clients list and search with plain sequencer reads, with no indexer.
 - It is also an **app store for Basecamp apps**, with no list to curate: an app's identity is
-  an LNS name, and the registry checks that an installed app is exactly the package that name
-  vouches for, so a copy can't pass as the real app. Publishers can stay anonymous (a name can
-  be held privately) and apps unlisted (a name's records are sealed, so only someone who knows
-  the name can find its apps). Packages can be fetched from Logos Storage by CID, with no web
+  an LNS name, and the registry recomputes an app's package root from its files and checks it
+  against the root that name vouches for, so a copy can't pass as the real app. Publishers can
+  stay anonymous (a name can be held privately) and apps unlisted (a name's records are sealed
+  and can't be read without the name; record addresses are visible on chain, though, and a
+  guessable name can be found by trying it, so an app under a guessable name is public). Packages can be fetched from Logos Storage by CID, with no web
   host on the path. See [Apps](#apps-verified-by-publisher) and [`docs/APPS.md`](docs/APPS.md).
 - **No server of ours is ever on the path.** The SDK and `lezreg` talk directly to the LEZ
   sequencer you choose, and later to your Logos Storage node. There are no analytics. Reads
@@ -368,18 +369,34 @@ An app published by the LNS name `forumer` names it in its `metadata.json`
 # Publisher: the entry for a release, with the package put on your Logos Storage node.
 lezreg app record forumer_ui-1.2.0.lgx --upload \
     --catalog https://raw.githubusercontent.com/<you>/<catalog>/main/logos-repo.json \
-    --program <program id the app calls> --keep <previous root>
-#   names set-text forumer app.forumer_ui '{"v":1,"root":"…","sha256":"…","cid":"zDvZ…",…}'
+    --program <program id the app calls> --keep forumer_ui-1.1.0.lgx
+#   names set-text forumer app.forumer_ui '{"v":1,"root":"…","sha256":"…","manifest":"…","version":"1.2.0","cid":"zDvZ…",…}'
 # Run the printed line: the name's holder signs the change, which is what vouches for it.
 
 # Anyone who knows the name:
 lezreg app show forumer                       # its apps, and their programs' registry status
-lezreg app verify forumer_ui-1.2.0.lgx        # verified / mismatch / not published / unclaimed
-lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, written only if sha256 and root match
+lezreg app verify forumer_ui-1.2.0.lgx        # verified (exit 0) / files_verified (exit 3) / mismatch, root_mismatch, ... (exit 1)
+lezreg app verify ~/Library/Application\ Support/Logos/LogosBasecamp/plugins/forumer_ui   # an installed copy
+lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, written only if sha256 (required) and root match
 ```
 
-A name that forwards (`nameswallet` → `names`, logos-names SPEC.md §7) is checked where it
-points. In Basecamp, the `program_registry` module does the same check
+`verify` recomputes the package root from the files (the `lgx` Merkle tree), so the genuine
+`manifest.json` next to other files is refused (`root_mismatch`), and reads a `.lgx` strictly
+enough that lgx can't read it differently (a polyglot is refused). The root does not cover
+`manifest.json`: the record's `sha256` (a `.lgx`) and `manifest` (an installed copy) do, and
+only then is the result `verified`; with neither it is `files_verified`, exit 3. `record`
+vouches only for a package in lgx's own layout (as checked: tar headers, order, end marker,
+canonical manifest lgx writes back unchanged). A differential test
+(`sdk/rust/tests/fixtures/apps/differential.py`, run on a Mac with Basecamp's own `liblgx`)
+installs each fixture and real package the way lgpm does (its validity gate, the host variant,
+`lgx_extract`, the manifest from `lgx_get_manifest_json`) onto a case-insensitive volume, and
+fails if lezreg reads a package whose installed bytes or manifest differ from what lezreg
+hashed. It covers one liblgx build and the host's variant; it doesn't cover other variants,
+other liblgx versions, or what Basecamp does after install. See
+[`docs/APPS.md`](docs/APPS.md) §2–4. Names are normalised as
+logos-names SPEC.md §2 says (`lns:Forumer` is `forumer`), and a name with a key set twice is
+refused as ambiguous. A name that forwards (`nameswallet` → `names`, logos-names SPEC.md §7) is
+checked where it points. In Basecamp, the `program_registry` module does the same check
 (`verify_app`, `verify_package`, `publisher_apps`), and Names Wallet shows it on every approval
 prompt: "forumer ✓ verified publisher", or a warning that the app may be a copy.
 
