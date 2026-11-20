@@ -1,7 +1,7 @@
 {
   "name": "program_registry",
   "display_name": "Program Registry",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": "lns:jefdiesel",
   "type": "core",
   "interface": "cdylib",
