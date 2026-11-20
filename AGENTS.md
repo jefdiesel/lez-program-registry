@@ -77,6 +77,16 @@ updates an entry that is already registered. Costs on rc3: registering a deploye
 spends about 1.5M and needs about 2.6M held; deploying and registering costs about 24 per byte
 of program (`docs/CYCLES.md`).
 
+## The Basecamp packages
+
+`module/` is the `program_registry` core module and `registry_browser/` its app (QML). Since
+0.3.1 / 0.1.1 the module reads the live registry above with no setup: its defaults come from the
+built-in network profile `module/rust-lib/network-rc3.json` (`names-network` format). The host
+moves it with `logosctl call program_registry config_set '{"network_file": "<abs path>"}'` or
+single values (`sequencer`, `registry`, `lns`); `config_get` shows what is in use. Build:
+`nix build .#lgx-portable` in `module/` and in `registry_browser/` (as `module.yml` does); install
+and use: `docs/INTEGRATE.md`. Both manifests carry `"author": "lns:jefdiesel"`.
+
 ## Work on this repository
 
 - Tests: `cargo test --release -p lezreg-sdk -p lezreg`, `cargo test --release -p lezreg-engine-test`
