@@ -273,7 +273,7 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
       `pending_requests`, `approve_request`/`deny_request` and the `change_settled` event. The
       builders live in `module/rust-lib/src/writes.rs` and are pinned byte-for-byte to the
       program by `module/rust-lib/testdata/write-vectors.json` (`sdk/rust/tests/module_vectors.rs:205`,
-      unit tests at `module/rust-lib/src/lib.rs:1109,1174,1206,1219,1270,1288`).
+      unit tests in `module/rust-lib/src/lib.rs`, `mod tests`).
       `.github/workflows/module.yml:181-206` loads the module in logosctl on a local rc3 chain
       and registers/updates/freezes an entry through it, with an on-chain assertion — met on a
       local rc sequencer, pending testnet 0.4. Its app checks use the current SDK API
@@ -571,6 +571,8 @@ The facts, without a conclusion:
     register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module
     has no write methods;
   - release 0.3.0 (with the write methods) to the catalog, which serves 0.1.0;
+  - pin the module's SDK to a commit that reads version-7 (deeded) LNS names; its app checks
+    use the older SDK until then;
   - load the module in the real Basecamp (so far only logosctl, in CI and by hand) and add the
     lez_core signer once a usable release exists.
 - **Storage:** an IDL fetch across the public Storage network through relays only.

@@ -260,6 +260,10 @@ possible: the manifest's `hashes.root` is a claim, and only files prove it. The 
 these same SDK calls (`Contents::from_installed` / `from_lgx` and `Names::verify`), so its
 `files_verified` and `root_mismatch` verdicts mean what the CLI's do.
 
+The SDK reads LNS records up to version 7, so names that carry an NFT deed work in the CLI's
+`lezreg app` commands. The module is pinned to an earlier SDK commit and does not read version-7
+(deeded) names yet.
+
 A name's records can't be read without the name, but they are not secret: record addresses are
 visible on chain and a guessable name can be found by trying it, so treat an app record under a
 guessable name as public.
