@@ -540,6 +540,19 @@ lezreg verify <program> [--mark]                    # rebuild in Docker, compile
 lezreg build . --binary my_guest                    # the canonical image id before you deploy
 ```
 
+**Third-party services used by `verify` and `build`.** Both disclose these in `--help`, on stderr
+at every run, and in their JSON output:
+
+| Service | Used for | Offline input |
+| --- | --- | --- |
+| Docker Hub (`risczero/risc0-guest-builder@sha256:…`) | the builder image | `--image-tar <docker save tar>` (loaded with `docker load`) |
+| crates.io (`cargo fetch --locked`) | guest dependencies | `--vendor-tar <cargo vendor tar>` |
+| The entry's git forge (`git clone`) | `verify` only, when no archive is used | `--archive-file <git archive tar>` with `--no-forge` |
+
+`--offline` refuses any remaining network step apart from your configured sequencer and Storage
+node, and fails before doing any work if an input is missing. The registry itself (register,
+update, lookup, search, IDL) needs none of these; there is no analytics code.
+
 **IDL formats.** The registry takes an IDL in any JSON format and tells clients which one it is:
 SPEL v1 (`instructions[]`, what `spel generate-idl` v0.7.0 makes and what the registry's own IDL
 uses), SPEL v2 (`"version": "2"` with `messages[]`, from SPEL's LEZ 0.4 rewrite), or "format not

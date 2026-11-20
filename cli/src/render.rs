@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use lezreg_sdk::{
     FetchConfig, Found, Freshness, Header, HttpRpc, IdlStatus, Kind, Listed, Page, Registry,
-    Unavailable, cid, idl::fetch_idl, json as j, text::shown, tx::Receipt,
+    cid, idl::fetch_idl, json as j, text::shown, tx::Receipt,
 };
 use lezreg_types::{AccountId, Entry};
 use serde_json::json;
@@ -521,6 +521,7 @@ pub fn receipt(out: &mut Out, r: &Receipt) {
 #[cfg(test)]
 mod idl_status_tests {
     use super::*;
+    use lezreg_sdk::Unavailable;
 
     #[test]
     fn all_four_failure_statuses_render_as_plain_text() {

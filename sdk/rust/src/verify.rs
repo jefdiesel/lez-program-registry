@@ -533,3 +533,175 @@ mod tests {
         assert!(source_from_git("https://x/y", &[], ".", &w).is_err());
     }
 }
+
+// --- Offline inputs (DESIGN §7.7) -------------------------------------------
+
+/// Load a user-supplied builder image tar with `docker load` and return the
+/// image reference it reports. No registry is contacted.
+pub fn docker_load(image_tar: &Path) -> Result<String> {
+    let output = Command::new("docker")
+        .arg("load")
+        .arg("-i")
+        .arg(image_tar)
+        .output()
+        .map_err(|e| Error::Invalid(format!("docker load: cannot run: {e}")))?;
+    if !output.status.success() {
+        return Err(Error::Invalid(format!(
+            "docker load failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    text.lines()
+        .find_map(|line| line.strip_prefix("Loaded image: "))
+        .map(str::trim)
+        .map(str::to_string)
+        .ok_or_else(|| Error::Invalid("docker load did not report a loaded image".into()))
+}
+
+/// Use a user-supplied source archive (a `git archive` of the recorded commit
+/// and docker root) instead of cloning the git forge.
+pub fn source_from_tar(archive: &Path, work: &Path) -> Result<Source> {
+    let bytes = std::fs::read(archive)
+        .map_err(|e| Error::Invalid(format!("source archive: {e}")))?;
+    let archive_sha256 = lezreg_types::pda::sha256(&bytes);
+    let dir = work.join("src");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| Error::Invalid(e.to_string()))?;
+    run(
+        Command::new("tar").arg("-xf").arg(archive).arg("-C").arg(&dir),
+        "tar -xf source archive",
+    )?;
+    Ok(Source {
+        dir,
+        archive_sha256,
+    })
+}
+
+/// A Dockerfile that uses a locally loaded builder image and vendored crates,
+/// with the compile's network off. No `cargo fetch`, no `FROM` to a registry.
+pub fn dockerfile_offline(
+    b: &BuildConfig,
+    rustc_flags: &[String],
+    image_ref: &str,
+) -> Result<String> {
+    check_build_config(b)?;
+    let flags = encoded_rustflags(&b.host_risc0_rust, rustc_flags)?;
+    let common = format!("--locked --target {TARGET} --manifest-path $CARGO_MANIFEST_PATH");
+    let features = if b.features.is_empty() {
+        String::new()
+    } else {
+        format!(" --features {}", b.features.join(","))
+    };
+    let mut f = String::new();
+    f.push_str(&format!("FROM {image_ref} AS build\n"));
+    f.push_str("WORKDIR /src\nCOPY . .\n");
+    f.push_str(&format!(
+        "ENV CARGO_MANIFEST_PATH={}\n",
+        quoted(&b.manifest_path)
+    ));
+    f.push_str(&format!("ENV CARGO_ENCODED_RUSTFLAGS={}\n", quoted(&flags)));
+    f.push_str("ENV CARGO_TARGET_DIR=\"target\"\nENV RISC0_FEATURE_bigint2=\"\"\n");
+    f.push_str(
+        "ENV CC_riscv32im_risc0_zkvm_elf=\"/root/.risc0/cpp/bin/riscv32-unknown-elf-gcc\"\n",
+    );
+    f.push_str("ENV CFLAGS_riscv32im_risc0_zkvm_elf=\"-march=rv32im -nostdlib\"\n");
+    for EnvVar { key, value } in &b.docker_env {
+        f.push_str(&format!("ENV {key}={}\n", quoted(value)));
+    }
+    // `vendor/` is placed in the build context by the caller; the source
+    // replacement keeps cargo from reaching crates.io.
+    f.push_str("RUN printf '[source.crates-io]\\nreplace-with = \"vendored-sources\"\\n[source.vendored-sources]\\ndirectory = \"/src/vendor\"\\n' > .cargo/config.toml\n");
+    f.push_str(&format!(
+        "RUN --network=none cargo +risc0 build --release {common}{features}\n"
+    ));
+    f.push_str(&format!(
+        "FROM scratch AS export\nCOPY --from=build /src/target/{TARGET}/release /\n"
+    ));
+    Ok(f)
+}
+
+/// Run docker with an explicitly supplied Dockerfile (offline mode).
+pub fn docker_build_df(dir: &Path, dockerfile: &str, out_dir: &Path) -> Result<Vec<u8>> {
+    let ctx = out_dir.join("ctx-offline");
+    std::fs::create_dir_all(&ctx).map_err(|e| Error::Invalid(e.to_string()))?;
+    let df = ctx.join("Dockerfile");
+    std::fs::write(&df, dockerfile).map_err(|e| Error::Invalid(e.to_string()))?;
+    std::fs::write(ctx.join("Dockerfile.dockerignore"), DOCKERIGNORE)
+        .map_err(|e| Error::Invalid(e.to_string()))?;
+    let export = out_dir.join("export");
+    let _ = std::fs::remove_dir_all(&export);
+    run(
+        Command::new("docker")
+            .args(["buildx", "build", "--progress=plain", "-f"])
+            .arg(&df)
+            .arg("--output")
+            .arg(format!("type=local,dest={}", export.display()))
+            .arg(dir),
+        "docker buildx build (offline inputs)",
+    )?;
+    let b = guest_binary_name(dir);
+    std::fs::read(export.join(b))
+        .map_err(|e| Error::Invalid(format!("the offline build produced no ELF: {e}")))
+}
+
+/// The binary name is read from the build context's Cargo.toml by the caller
+/// in offline mode; this fallback keeps the helper self-contained for tests.
+fn guest_binary_name(dir: &Path) -> String {
+    let manifest = dir.join("Cargo.toml");
+    let text = std::fs::read_to_string(manifest).unwrap_or_default();
+    let mut in_package = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "[package]" {
+            in_package = true;
+            continue;
+        }
+        if line.starts_with('[') {
+            in_package = false;
+        }
+        if in_package {
+            if let Some(name) = line.strip_prefix("name") {
+                if let Some(name) = name.trim().strip_prefix('=') {
+                    return name.trim().trim_matches('"').trim_matches('\'').to_string();
+                }
+            }
+        }
+    }
+    "guest".to_string()
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+
+    fn config() -> BuildConfig {
+        BuildConfig {
+            schema: lezreg_types::SCHEMA,
+            builder: lezreg_types::BUILDER_RISC0_DOCKER,
+            image_digest: [0xfa; 32],
+            image_tag: "r0.1.91.1".into(),
+            risc0_build: "3.0.5".into(),
+            host_risc0_rust: "1.91.1".into(),
+            manifest_path: "methods/guest/Cargo.toml".into(),
+            binary: "lez_program_registry".into(),
+            features: vec![],
+            lock_sha256: [0; 32],
+            docker_env: vec![],
+        }
+    }
+
+    #[test]
+    fn the_offline_dockerfile_uses_only_local_inputs() {
+        let d = dockerfile_offline(&config(), &[], "local-risc0-builder:test").unwrap();
+        assert!(d.starts_with("FROM local-risc0-builder:test AS build\n"));
+        assert!(!d.contains("cargo +risc0 fetch"));
+        assert!(!d.contains("risczero/risc0-guest-builder"));
+        assert!(d.contains("vendored-sources"));
+        assert!(d.contains("RUN --network=none cargo +risc0 build --release"));
+    }
+}

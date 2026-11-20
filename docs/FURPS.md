@@ -321,23 +321,31 @@ Logos LEZ node, and Logos Storage, the registry and its tooling must not depend 
 web service to function. If one is used, it is disclosed, the user can disable it, and the registry
 remains fully functional with it disabled. Any analytics must be strictly opt-in."
 
-- **Status: partly met.** Register, update, lookup, enumeration, search and IDL resolution use
-  only the sequencer and the Storage node. `lezreg verify` and `lezreg build` cannot run without
-  third-party services, and they have no offline switches yet.
+- **Status: met for the core registry; partly met for the optional source-verification tools.**
+  Register, update, lookup, enumeration, search and IDL resolution use only the sequencer and the
+  Storage node. `verify` and `build` disclose their third-party services and can run from
+  user-supplied local inputs; the remaining limits are listed below.
 - **Evidence:**
   - There is no analytics code.
   - Reads refuse HTTP redirects (`max_redirects(0)`) and ignore `HTTP(S)_PROXY` unless
     `LEZREG_USE_PROXY=1` (`sdk/rust/src/rpc.rs`, `sdk/rust/src/storage.rs`).
   - The README records a network-isolation check (2026-11-02, macOS `sandbox-exec`): reads and
     writes worked with outbound traffic limited to loopback.
-  - **The gap:**
-    - `verify` and `build` need Docker Hub (the builder image), crates.io (`cargo fetch`) and the
-      git forge (the clone). The user can disable them only by not verifying.
-    - DESIGN §7.7's off switches (`--image-tar`, `--vendor-tar`, `--no-forge`, `--offline`) are
-      **not implemented**.
-    - The README does not list these services in one place.
-    - The GitHub Action and `publish --from-release` use GitHub. Both are optional: the CLI does
-      the same work locally.
+  - `verify` and `build` now disclose their services in `--help`, on stderr at every run, and in
+    JSON output (`services` plus `offline`/`network_denied`): Docker Hub
+    (`risczero/risc0-guest-builder`), crates.io (`cargo fetch`) and, for `verify`, the entry's git
+    forge. `verify` uses the sequencer and the user's Storage node only for chain reads.
+  - Offline mode is implemented: `--image-tar` is loaded with `docker load`, `--vendor-tar` is
+    unpacked into the build context with a cargo source replacement, and `--archive-file` with
+    `--no-forge` supplies the source tar instead of a forge clone. `--offline` refuses any other
+    network step and, when an input is missing, fails before any work with a message naming every
+    missing switch (`cli/tests/verify_offline.rs`). The generated offline Dockerfile has no
+    `cargo fetch` and no registry `FROM`; its compile runs with `--network=none`
+    (`sdk/rust/src/verify.rs` unit test). `--offline` plus `--allow-network` is refused.
+  - **Remaining limits:** the offline path still needs a local Docker daemon; it has not been run
+    here (no Docker on this Mac, and the owner's word is needed for Docker builds). The GitHub
+    Action and `publish --from-release` use GitHub. Both are optional: the CLI does the same work
+    locally. There is no analytics code.
 
 ### Performance
 
@@ -535,9 +543,10 @@ The facts, without a conclusion:
 - **Source hosting:**
   - make the reproducible source archive and upload it to Storage;
   - make `verify` able to rebuild from it.
-- **No mandatory services:**
-  - offline inputs for `verify` (a builder image tar, vendored crates, no forge);
-  - one README list of the services `verify` uses.
+- **No mandatory services:** done for `verify`/`build` inputs (`--image-tar`, `--vendor-tar`,
+  `--archive-file`, `--no-forge`, `--offline`), with disclosure in `--help`, stderr and JSON.
+  Remaining: run the offline path on a machine with Docker and record the result; add one README
+  list of the services (see `README.md`'s verify section for now).
 - **CLI degradation:** done — `show` displays metadata plus IDL status in one view and never fails
   on the IDL; `idl get` keeps its nonzero exit code. Remaining: `e2e.yml` still covers only the
   no-Storage-node case; the other three are covered by offline tests and `scripts/demo.sh`.

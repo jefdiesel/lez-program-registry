@@ -244,6 +244,10 @@ enum Command {
     /// Rebuild an entry's recorded source in Docker (network off for the compile) and compare
     /// image ids: rebuilt vs claimed vs the live program. Verdict Match, MatchStale, Mismatch or
     /// NotReproducible. Needs Docker with buildx.
+    ///
+    /// Third-party services: Docker Hub (risczero/risc0-guest-builder), crates.io (cargo fetch)
+    /// and the entry's git forge. Use --offline with --image-tar, --vendor-tar and --archive-file
+    /// to avoid all three; the registry stays usable without them.
     Verify {
         /// The program id.
         program: String,
@@ -259,6 +263,8 @@ enum Command {
         /// On Match, record a local "verified" mark (never published).
         #[arg(long)]
         mark: bool,
+        #[command(flatten)]
+        offline: verify_cmd::OfflineOpts,
     },
     /// Local verification marks: list them, or forget one (by program id).
     Verified {
@@ -268,6 +274,9 @@ enum Command {
     /// The canonical reproducible build of a local source tree, printing its image id: what
     /// `verify` will rebuild. Writes the guest ELF and the deployable `.bin`. Without
     /// --binary, the build settings come from lezreg.toml. Needs Docker with buildx.
+    ///
+    /// Third-party services: Docker Hub (risczero/risc0-guest-builder) and crates.io
+    /// (cargo fetch). Use --offline with --image-tar and --vendor-tar to avoid both.
     Build {
         /// Source root (the docker root). Default: lezreg.toml's, else the current directory.
         dir: Option<std::path::PathBuf>,
@@ -278,6 +287,8 @@ enum Command {
         build: args::BuildArgs,
         #[arg(long)]
         work: Option<std::path::PathBuf>,
+        #[command(flatten)]
+        offline: verify_cmd::OfflineOpts,
     },
     /// Write lezreg.toml for this project: name, version, IDL, repository and the canonical
     /// build tuple, detected from Cargo.toml, Cargo.lock and git (--detect). Refuses a tree
@@ -917,6 +928,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             work,
             allow_network,
             mark,
+            offline,
         } => {
             verify_cmd::verify(
                 out,
@@ -927,6 +939,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 work.as_deref(),
                 allow_network,
                 mark,
+                &offline,
             )?;
         }
         Command::Verified { forget } => verify_cmd::marks(out, forget.as_deref())?,
@@ -935,6 +948,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             config,
             build,
             work,
+            offline,
         } => {
             let (dir, b) = match &build.binary {
                 Some(binary) => (
@@ -952,7 +966,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                     (dir, b)
                 }
             };
-            verify_cmd::build(out, &dir, &b, work.as_deref())?;
+            verify_cmd::build(out, &dir, &b, work.as_deref(), &offline)?;
         }
         Command::Init { o } => {
             let (path, m, notes) = project::init(&o)?;
@@ -1495,5 +1509,48 @@ mod tests {
             .await
             .unwrap_err();
         assert!(e.to_string().contains("--yes"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn offline_without_inputs_names_every_missing_switch() {
+        let opts = verify_cmd::OfflineOpts {
+            offline: true,
+            ..Default::default()
+        };
+        let error = opts.validate().unwrap_err().to_string();
+        assert!(error.contains("--image-tar"));
+        assert!(error.contains("--vendor-tar"));
+        assert!(error.contains("Docker Hub") && error.contains("crates.io") && error.contains("forge"));
+    }
+
+    #[test]
+    fn offline_and_allow_network_are_both_parseable() {
+        // The conflict is enforced in verify_cmd::verify, not clap, because
+        // `build` has no --allow-network argument to conflict with.
+        assert!(
+            Cli::try_parse_from(["lezreg", "verify", "abc", "--offline", "--allow-network"])
+                .is_ok()
+        );
+        assert!(Cli::try_parse_from(["lezreg", "verify", "abc", "--offline"]).is_ok());
+        let help = Cli::command()
+            .find_subcommand("verify")
+            .expect("verify subcommand")
+            .get_about()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+            + &format!(
+                "{:?}",
+                Cli::command()
+                    .find_subcommand("verify")
+                    .expect("verify")
+                    .get_long_about()
+            );
+        assert!(help.contains("Docker Hub") && help.contains("crates.io"));
     }
 }
