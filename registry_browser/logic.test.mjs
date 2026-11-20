@@ -93,16 +93,16 @@ check("titleCase keeps acronyms and versions", ["lez-token", "names-evm-bridge-v
 check("titles of the live entries", live.map((i) => guideText(i.entry).title),
   ["LEZ Token", "Vest", "Logos Names", "Names EVM Bridge v7", "Names EVM Bridge v6", "Names EVM Bridge Token", "LEZ NFT", "LEZ Program Registry"]);
 check("Vest: the text before the colon is the title, the rest one sentence", guideText(byName("vest").entry),
-  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", about: byName("vest").entry.description });
+  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", about: byName("vest").entry.description, more: "Native build, not reproducible yet." });
 check("a long lead is not a title (LNS (Logos Name Service) registry: …)", guideText(byName("logos-names").entry).sentence,
   "LNS registry: private names, sealed profiles and pages, optional name NFTs.");
 check("a lead that restates the title is dropped", guideText(byName("lez_program_registry").entry).sentence,
   "On-chain registry of LEZ 0.4 programs with proven deployer entries.");
 check("asides dropped, first sentence only, \"LEZ 0.4\" not a sentence end", guideText(byName("names-evm-bridge-v7").entry).sentence,
   "Private ETH bridge, instance for Sepolia vault v7.");
-check("no description: title from the name, no sentence", guideText({ name: "my-dex", description: "" }), { title: "My DEX", sentence: "", about: "" });
+check("no description: title from the name, no sentence", guideText({ name: "my-dex", description: "" }), { title: "My DEX", sentence: "", about: "", more: "" });
 check("a long sentence is cut at a word with …", guideText({ name: "x", description: "word ".repeat(60) }).sentence.length <= 150 && guideText({ name: "x", description: "word ".repeat(60) }).sentence.endsWith("…"), true);
-check("chain text is cleaned before anything is derived", guideText({ name: "to‮ken", description: "Evil : line​ two" }), { title: "Evil", sentence: "Line two.", about: "Evil : line two" });
+check("chain text is cleaned before anything is derived", guideText({ name: "to‮ken", description: "Evil : line​ two" }), { title: "Evil", sentence: "Line two.", about: "Evil : line two", more: "" });
 check("a colon lead with markup-ish or punctuation is not a title", guideText({ name: "abc", description: "Hi, there: x" }).title, "Abc");
 check("publisher: lns label without its prefix, unproven", publisherOf(byName("vest").entry), { text: "jefdiesel", proven: false, account: false });
 check("publisher: no label is the short account (proven by the chain)", publisherOf({ author: P, author_label: "" }), { text: "6YWH…VayN", proven: true, account: true });
@@ -144,6 +144,13 @@ check("the live index now (guidebook descriptions on chain)", indexRows(now).map
    "# Bridges", "Names EVM Bridge: Bring ETH from Sepolia into LEZ privately, and send it back out once 2 of 3 signers approve.",
    "  - v6: Bring ETH from Sepolia into LEZ privately, through Sepolia vault v6.", "  - Token: The wrapped tokens the ETH bridge mints when you bring ETH into LEZ.",
    "# Tools", "LEZ Program Registry: On-chain registry of LEZ 0.4 programs with proven deployer entries."]);
+const nowBy = (n) => now.find((i) => i.entry.name === n);
+check("About is what follows the first sentence; nothing left, no About", ["vest", "lez-nft", "names-evm-bridge-v7", "lez_program_registry"].map((n) => guideOf(nowBy(n), now).more),
+  ["Built for Logos RFP-017 on LEZ 0.4; schedules can be created in batches and cancelled. Native build, not reproducible yet.",
+   "Logos's NFT program (logos-blockchain/lez-programs), deployed here on our LEZ 0.4 test network. LNS name deeds are 1-of-1 NFTs of it.",
+   "Private ETH bridge (RFP-022) for Sepolia vault v7. Guest image 0dabbd6c. Native build, not reproducible.", ""]);
+check("About keeps \"LEZ 0.4\" whole and a one-sentence description has none", [guideText({ name: "x", description: "X: runs on LEZ 0.4 only. Second one." }).more, guideText({ name: "x", description: "Just one sentence." }).more],
+  ["Second one.", ""]);
 check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
 check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
 check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),

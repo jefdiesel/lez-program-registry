@@ -196,7 +196,8 @@ function tidySentence(s, max) {
 /** An entry's title and one plain sentence. The description's text before ": " is the title when
  * it is short and plain ("Vest: privacy-preserving …" → "Vest"); a longer lead that only restates
  * the title is dropped; otherwise the title is the name in title case. The sentence is the first
- * sentence of what is left, without (asides). `about` is the whole description, cleaned. */
+ * sentence of what is left, without (asides). `about` is the whole description, cleaned; `more` is
+ * what it says after its first sentence (the guide page's About, "" when there is nothing more). */
 export function guideText(entry, fallbackName) {
   const e = entry || {};
   const name = clean(e.name || fallbackName || "");
@@ -210,7 +211,8 @@ export function guideText(entry, fallbackName) {
     if (plain) { title = lead; rest = about.slice(colon + 2); }
     else if (title && withoutAsides(lead).toLowerCase().replace(/^the\s+/, "").startsWith(title.toLowerCase())) rest = about.slice(colon + 2);
   }
-  return { title: title || "Unnamed program", sentence: tidySentence(withoutAsides(firstSentence(rest)), 150), about };
+  const more = about.slice(firstSentence(about).length).trim();
+  return { title: title || "Unnamed program", sentence: tidySentence(withoutAsides(firstSentence(rest)), 150), about, more };
 }
 
 /** Who published an entry, as people read it: the author label without its "lns:" prefix, or the
@@ -316,7 +318,7 @@ export function guideOf(item, items) {
       && (r.item.entry ? r.item.entry.author : r.item.link.registrant) === (item.entry ? item.entry.author : item.link.registrant)).map((r) => ({ address: r.item.address, label: r.variant + (r.secondary ? "" : " (newest)") })) : [];
   const p = publisherOf(item.entry || { author: item.link ? item.link.registrant : "" });
   return {
-    title: row && row.family ? titleCase(name) : t.title, sentence: t.sentence, about: t.about, publisher: p.text, proven: p.proven, account: p.account,
+    title: row && row.family ? titleCase(name) : t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account,
     family, section: sectionOf(item.entry ? item.entry.tags : []),
   };
 }

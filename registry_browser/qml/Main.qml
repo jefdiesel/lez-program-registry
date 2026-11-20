@@ -498,16 +498,17 @@ Item {
                         color: look.dim; wrapMode: Text.WrapAnywhere; font.family: look.sans; font.pixelSize: look.px(15)
                     }
 
-                    // About: the publisher's whole description, when it says more than the sentence.
+                    // About: what the description says after its first sentence (the header shows that one);
+                    // nothing more, no About.
                     ColumnLayout {
-                        visible: !!(root.guide && root.guide.about !== "" && root.guide.about !== root.guide.sentence)
+                        visible: !!(root.guide && root.guide.more !== "")
                         Layout.fillWidth: true
                         Layout.topMargin: 8
                         spacing: 8
                         SectionHeading { look: root.look; Layout.fillWidth: true; text: "About" }
                         Text { textFormat: Text.PlainText;
                             Layout.fillWidth: true
-                            text: root.guide ? root.guide.about : ""
+                            text: root.guide ? root.guide.more : ""
                             color: look.ink; wrapMode: Text.Wrap; font.family: look.sans; font.weight: Font.Medium; font.pixelSize: look.px(16); lineHeight: 1.3
                         }
                     }
