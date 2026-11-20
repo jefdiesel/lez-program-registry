@@ -18,6 +18,9 @@ jobs:
       - name: System libraries (PC/SC for the wallet's Keycard support)
         run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
       - name: Install rzup (risc0 toolchain for the guests)
+        # rzup calls the GitHub API; unauthenticated calls share the runner IP's rate limit and fail.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
@@ -43,6 +46,9 @@ jobs:
       - name: System libraries (PC/SC for the wallet's Keycard support)
         run: sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
       - name: Install rzup (the drift tests link the program crate)
+        # rzup calls the GitHub API; unauthenticated calls share the runner IP's rate limit and fail.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"

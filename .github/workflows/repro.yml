@@ -41,6 +41,9 @@ jobs:
           df -h / | tail -1
 
       - name: Install rzup and cargo-risczero
+        # rzup calls the GitHub API; unauthenticated calls share the runner IP's rate limit and fail.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
@@ -150,6 +153,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install rzup and cargo-risczero
+        # rzup calls the GitHub API; unauthenticated calls share the runner IP's rate limit and fail.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"

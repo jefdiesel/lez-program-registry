@@ -37,6 +37,9 @@ jobs:
 
       # Exactly what README "Install" / demo.sh's prerequisite check ask for on Linux.
       - name: Prerequisites from the README (PC/SC, RISC Zero toolchain)
+        # rzup calls the GitHub API; unauthenticated calls share the runner IP's rate limit and fail.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q libpcsclite-dev pkg-config
           curl -L https://risczero.com/install | bash
