@@ -17,3 +17,4 @@ _deps/
 /tools/caller-probe/rust-lib/target/
 /tools/caller-probe/rust-lib/generated/
 /tools/caller-probe/result*
+__pycache__/
