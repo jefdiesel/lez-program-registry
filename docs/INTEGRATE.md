@@ -66,9 +66,16 @@ function registryLabel(programId, done) {
 **Everything at once:** `resolve_program(programId)` gives the deployer entry, the live program
 header and `freshness` (`fresh`, `stale`, `no-program`), plus how many community entries exist.
 
-The module's sequencer and registry are set once by the host, never by an app:
-`logosctl call program_registry config_set '{"sequencer": "https://…", "registry": "<registry program id>"}'`,
-or `~/.config/lez-registry/module.json`.
+Since 0.3.1 the module works out of the box on our LEZ v0.4.0-rc3 test chain: its defaults come
+from a built-in `names-network` profile (`module/rust-lib/network-rc3.json`: sequencer
+`https://lez.nameswallet.app/`, registry `7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82`, LNS
+`6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA`). The host, never an app, can move it:
+`logosctl call program_registry config_set '{"network_file": "/abs/path/<chain_id>.json"}'` (a
+`names-network` file, format: [sdk.md](sdk.md), "Network file"; its `rpc`,
+`programs.program_registry.id` and `programs.lns_registry.id` become the defaults), or single
+values with `config_set '{"sequencer": "https://…", "registry": "<registry program id>"}'`, or
+`~/.config/lez-registry/module.json`. Only values that differ from the profile are saved, so a
+newer build's profile takes over by itself. `config_get` shows the profile in use (`network`).
 
 The registry browser ([`registry_browser/`](../registry_browser/)) is a complete example: list,
 search, entry detail with the deployer/community badge, IDL status with its degradation, the local

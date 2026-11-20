@@ -212,13 +212,13 @@ combined file. Run both with `node sdk/js/lezreg.test.mjs` and
 ## 3. From a Basecamp app: the `program_registry` module
 
 Install `program_registry` from the catalog
-(`https://raw.githubusercontent.com/jefdiesel/logos-modules/main/logos-repo.json`), point it at
-the network once, then call it like any core module. Every method answers
-`{success, value, error}`. With no saved settings, a module built from this repository (0.3.0 and
-later) starts from the embedded network file: the project's rc3 test network
-(`https://lez.nameswallet.app/`), its registry, its LNS program and the trusted registry image.
-Saved settings (`config_set`) always win, and a sequencer URL alone no longer selects an LNS
-program.
+(`https://raw.githubusercontent.com/jefdiesel/logos-modules/main/logos-repo.json`) and call it
+like any core module. Every method answers `{success, value, error}`. With no saved settings, a
+module built from this repository (0.3.0 and later) starts from the embedded network file: the
+project's rc3 test network (`https://lez.nameswallet.app/`), its registry, its LNS program and the
+trusted registry image. Saved settings (`config_set`) always win, and a sequencer URL alone no
+longer selects an LNS program. For another network the host sets it with `config_set` (below) or,
+since 0.3.1, names a names-network file: `{"network_file": "<absolute path>"}`.
 
 ```qml
 logos.callModule("program_registry", "config_set", [JSON.stringify({
@@ -245,8 +245,9 @@ uses exactly this on its approval sheet.
 
 The same module checks Basecamp **apps** against the LNS name that publishes them
 ([APPS.md](APPS.md)): `verify_app(module_name)` for an installed app, `verify_package(package_path)`
-before installing, `publisher_apps(name)` to list a name's apps. Set the LNS program once with
-`config_set({"lns": "<program id>"})`. The CLI equivalents are `lezreg app show`,
+before installing, `publisher_apps(name)` to list a name's apps. The LNS program defaults to the
+network profile's (`programs.lns_registry`); set another with `config_set({"lns": "<program id>"})`.
+The CLI equivalents are `lezreg app show`,
 `lezreg app verify`, `lezreg app record` (with `--upload`, the package goes on Logos Storage and
 its CID into the record) and `lezreg app get`, which installs a package by CID only if its
 sha256 (required) and recomputed root match what the name vouches for. In Rust,

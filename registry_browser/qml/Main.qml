@@ -299,9 +299,13 @@ Item {
                 id: settingsCol
                 anchors.fill: parent; anchors.margins: 12; spacing: 8
                 Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.ink; font.family: root.sans; font.pixelSize: root.px(13)
-                       text: "Sequencer: " + Logic.clean(root.config ? root.config.sequencer : "") + "\nRegistry: " + Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)") }
+                       text: "Sequencer: " + Logic.clean(root.config ? root.config.sequencer : "") + "\nRegistry: " + Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)")
+                             + (root.config && root.config.network && root.config.network.chain_id
+                                ? "\nNetwork profile: " + Logic.clean(root.config.network.name || "") + " · chain " + Logic.shortId(root.config.network.chain_id) + " · " + Logic.clean(root.config.network.source || "")
+                                : "")
+                             + (root.config && root.config.network && root.config.network.error ? "\nNetwork file not used: " + Logic.clean(root.config.network.error) : "") }
                 Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12)
-                       text: "The sequencer and the registry decide what every app is told and where changes are signed, so only the host sets them: logosctl call program_registry config_set, or ~/.config/lez-registry/module.json." }
+                       text: "The sequencer and the registry decide what every app is told and where changes are signed, so only the host sets them: logosctl call program_registry config_set (sequencer, registry, or network_file), or ~/.config/lez-registry/module.json. Out of the box they come from the module's built-in network profile." }
             }
         }
 

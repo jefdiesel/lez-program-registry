@@ -29,8 +29,9 @@ use lezreg_sdk::{
 };
 use serde_json::{Value, json};
 
-/// Fallback only: normal builds take their RPC and program ids from the embedded
-/// `names-network/2` profile (audit row 440).
+/// The sequencer of a module with no network profile at all (unit tests; a broken build). A
+/// normal build takes its defaults from the network profile: the built-in `network-rc3.json`
+/// (our LEZ v0.4.0-rc3 chain and its registry), or the file the host names in `network_file`.
 const DEFAULT_SEQUENCER: &str = "http://127.0.0.1:3062";
 /// Most entries a list or search call returns.
 const MAX_LIMIT: i64 = 200;
@@ -91,15 +92,21 @@ pub trait ProgramRegistryModule: Send + 'static {
     /// can read its apps: nothing lists them.
     fn publisher_apps(&mut self, name: String) -> String;
 
-    /// `{sequencer, registry, storage_api, lns, basecamp_data, cli}`.
+    /// `{sequencer, registry, storage_api, lns, basecamp_data, cli, registry_images, network}`.
+    /// `network` is the profile the defaults come from: `{name, chain_id, rpc, registry, lns,
+    /// source, file, error}` (`source` is `built-in`, `file` or `none`). Nothing here asks the
+    /// chain; compare `chain_id` with the sequencer's `getChannelId` to be sure.
     fn config_get(&mut self) -> String;
 
     /// Changes any of `storage_api` and `lns` (the LNS program id, for the app checks; empty for
     /// the network's default) from a JSON object, and remembers them (defaults are never
     /// written). **Only the registry browser or the host may call it** (`code: "not_allowed"`
-    /// otherwise). `sequencer` (https://, or http:// to this machine), `registry`,
-    /// `basecamp_data`, `cli` (the `lezreg` that signs) and `registry_images` (registry code to
-    /// trust beyond the committed build) are the host's alone, or the settings file's.
+    /// otherwise). `sequencer` (https://, or http:// to this machine), `registry` (empty for the
+    /// network's default), `network_file` (an absolute path to a `names-network` file whose
+    /// `rpc`, `programs.program_registry` and `programs.lns_registry` become the defaults; empty
+    /// for the built-in profile), `basecamp_data`, `cli` (the `lezreg` that signs) and
+    /// `registry_images` (registry code to trust beyond the committed build) are the host's
+    /// alone, or the settings file's.
     fn config_set(&mut self, settings_json: String) -> String;
 
     /// A deployer entry for a program (DESIGN §2.4 `RegisterDeployer`), as a change to sign:
@@ -178,7 +185,77 @@ pub struct RustModuleContext;
 #[cfg(test)]
 fn emit_change_settled(_job: &str, _state: &str, _detail: &str) {}
 
+/// Where the module's defaults come from: a `names-network` profile, read once.
+#[derive(Clone, Debug)]
+struct Defaults {
+    sequencer: String,
+    registry: Option<AccountId>,
+    lns: Option<AccountId>,
+    storage_api: String,
+    /// The profile itself; `None` for a module with no profile (tests).
+    file: Option<network_file::NetworkFile>,
+    /// `built-in`, `file` or `none`.
+    source: &'static str,
+    /// The file named by `network_file`, when that is where they come from.
+    path: Option<PathBuf>,
+}
+
+impl Defaults {
+    /// No profile: a local sequencer and no registry (what every build had before 0.3.1).
+    fn none() -> Self {
+        Self { sequencer: DEFAULT_SEQUENCER.to_owned(), registry: None, lns: None, storage_api: lezreg_sdk::storage::DEFAULT_API.to_owned(), file: None, source: "none", path: None }
+    }
+
+    fn from_profile(file: network_file::NetworkFile, source: &'static str, path: Option<PathBuf>) -> Self {
+        Self {
+            sequencer: file.rpc.clone(),
+            registry: file.registry,
+            lns: file.lns,
+            storage_api: file.storage_api.clone().unwrap_or_else(|| lezreg_sdk::storage::DEFAULT_API.to_owned()),
+            file: Some(file),
+            source,
+            path,
+        }
+    }
+
+    /// The built-in profile (our rc3 chain).
+    fn builtin() -> Self {
+        network_file::builtin().map_or_else(|_| Self::none(), |f| Self::from_profile(f, "built-in", None))
+    }
+
+    /// The profile in `path` (absolute), or the built-in one for `None`.
+    fn load(path: Option<&std::path::Path>) -> Result<Self, String> {
+        let Some(path) = path else { return Ok(Self::builtin()) };
+        if !path.is_absolute() {
+            return Err(format!("network_file '{}' must be an absolute path", path.display()));
+        }
+        let meta = std::fs::metadata(path).map_err(|e| format!("network_file {}: {e}", path.display()))?;
+        if meta.len() > 64 * 1024 {
+            return Err(format!("network_file {} is larger than 64 KiB", path.display()));
+        }
+        let text = std::fs::read_to_string(path).map_err(|e| format!("network_file {}: {e}", path.display()))?;
+        let file = network_file::parse(&text).map_err(|e| format!("network_file {}: {e}", path.display()))?;
+        if !usable_sequencer(&file.rpc) {
+            return Err(format!("network_file {}: rpc '{}' must be https://, or http:// to this machine", path.display(), file.rpc));
+        }
+        Ok(Self::from_profile(file, "file", Some(path.to_owned())))
+    }
+
+    fn shown(&self, error: Option<&str>) -> Value {
+        let f = self.file.as_ref();
+        json!({"name": f.map(|f| clean(&f.name)), "chain_id": f.map(|f| f.chain_id.clone()), "rpc": f.map(|f| f.rpc.clone()),
+               "registry": self.registry.map(|r| r.to_base58()), "lns": self.lns.map(|l| l.to_base58()),
+               "registry_image": f.and_then(|f| f.registry_image).map(hex::encode),
+               "source": self.source, "file": self.path.as_ref().map(|p| p.display().to_string()), "error": error})
+    }
+}
+
 pub struct ProgramRegistry {
+    /// The profile the defaults below come from; settings equal to them are not saved, so a
+    /// newer build's profile (a chain reset, a new registry) takes over by itself.
+    defaults: Defaults,
+    /// Why the `network_file` in the settings file could not be used (the built-in profile is).
+    network_error: Option<String>,
     sequencer: String,
     registry: Option<AccountId>,
     storage_api: String,
@@ -196,29 +273,46 @@ pub struct ProgramRegistry {
 
 impl ProgramRegistry {
     fn with_settings(sequencer: String, registry: Option<AccountId>, storage_api: String, lns: Option<AccountId>, basecamp_data: Option<PathBuf>) -> Self {
-        Self { sequencer, registry, storage_api, lns, basecamp_data, cli: None, registry_images: Vec::new(), names: None, checked: std::collections::HashMap::new() }
+        Self { defaults: Defaults::none(), network_error: None, sequencer, registry, storage_api, lns, basecamp_data, cli: None, registry_images: Vec::new(), names: None, checked: std::collections::HashMap::new() }
+    }
+
+    /// A module on `defaults`, nothing else set.
+    fn on(defaults: Defaults) -> Self {
+        let mut me = Self::with_settings(defaults.sequencer.clone(), defaults.registry, defaults.storage_api.clone(), defaults.lns, None);
+        me.defaults = defaults;
+        me
+    }
+
+    /// Starts from the built-in profile, then the settings file. A `network_file` that can't be
+    /// read leaves the built-in profile in place (said in `config_get`), the other settings
+    /// still apply.
+    fn from_saved(saved: Option<Value>) -> Self {
+        let mut me = Self::on(Defaults::builtin());
+        let Some(mut saved) = saved else { return me };
+        // Builds before 0.3.1 wrote every setting, the old default `http://127.0.0.1:3062` too,
+        // even when nothing was configured (no registry): that pin is not a choice, drop it.
+        if saved.get("sequencer").and_then(Value::as_str) == Some(DEFAULT_SEQUENCER) && !matches!(saved.get("registry"), Some(Value::String(r)) if !r.is_empty()) {
+            if let Some(o) = saved.as_object_mut() {
+                o.remove("sequencer");
+            }
+        }
+        if let Some(f) = saved.get("network_file").and_then(Value::as_str).filter(|f| !f.is_empty()) {
+            match Defaults::load(Some(std::path::Path::new(f))) {
+                Ok(d) => me = Self::on(d),
+                Err(e) => me.network_error = Some(e),
+            }
+        }
+        if let Some(o) = saved.as_object_mut() {
+            o.remove("network_file");
+        }
+        let _ = me.apply(&saved);
+        me
     }
 }
 
 impl Default for ProgramRegistry {
     fn default() -> Self {
-        let profile = network_file::builtin().ok();
-        let sequencer = profile.as_ref().map(|p| p.rpc.clone()).unwrap_or_else(|| DEFAULT_SEQUENCER.to_owned());
-        let storage = profile.as_ref().and_then(|p| p.storage_api.clone()).unwrap_or_else(|| lezreg_sdk::storage::DEFAULT_API.to_owned());
-        let mut me = Self::with_settings(
-            sequencer,
-            profile.as_ref().and_then(|p| p.registry),
-            storage,
-            profile.as_ref().and_then(|p| p.lns),
-            None,
-        );
-        if let Some(image) = profile.as_ref().and_then(|p| p.registry_image) {
-            me.registry_images.push(image);
-        }
-        if let Some(saved) = config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
-            let _ = me.apply(&saved);
-        }
-        me
+        Self::from_saved(config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()))
     }
 }
 
@@ -258,7 +352,7 @@ fn trusted(caller: &logos_rust_sdk::LogosCaller) -> bool {
 /// module at programs it runs or files it reads (`cli`, `basecamp_data`) or widen what it
 /// trusts (`registry_images`): the host or the settings file only, never an app, not even the
 /// browser (a package can take its name).
-const HOST_ONLY_SETTINGS: &[&str] = &["sequencer", "registry", "cli", "basecamp_data", "registry_images"];
+const HOST_ONLY_SETTINGS: &[&str] = &["sequencer", "registry", "network_file", "cli", "basecamp_data", "registry_images"];
 
 #[cfg(not(test))]
 fn calling() -> logos_rust_sdk::LogosCaller {
@@ -464,6 +558,27 @@ fn limit_arg(limit: i64) -> usize {
 
 impl ProgramRegistry {
     fn apply(&mut self, v: &Value) -> Result<(), String> {
+        // First, so values given beside it override the new profile's.
+        if let Some(f) = v.get("network_file").and_then(Value::as_str) {
+            let next = Defaults::load((!f.is_empty()).then(|| std::path::Path::new(f)))?;
+            // Whatever was the old profile's default follows the new profile; a value set by
+            // hand stays.
+            let old = std::mem::replace(&mut self.defaults, next);
+            let new = &self.defaults;
+            if self.sequencer == old.sequencer {
+                self.sequencer.clone_from(&new.sequencer);
+            }
+            if self.registry == old.registry {
+                self.registry = new.registry;
+            }
+            if self.lns == old.lns {
+                self.lns = new.lns;
+            }
+            if self.storage_api == old.storage_api {
+                self.storage_api.clone_from(&new.storage_api);
+            }
+            self.network_error = None;
+        }
         if let Some(s) = v.get("sequencer").and_then(Value::as_str) {
             if !usable_sequencer(s) {
                 return Err(format!("sequencer '{s}' must be https://, or http:// to this machine"));
@@ -471,7 +586,7 @@ impl ProgramRegistry {
             s.clone_into(&mut self.sequencer);
         }
         if let Some(r) = v.get("registry").and_then(Value::as_str) {
-            self.registry = if r.is_empty() { None } else { Some(program_arg(r)?) };
+            self.registry = if r.is_empty() { self.defaults.registry } else { Some(program_arg(r)?) };
         }
         if let Some(s) = v.get("storage_api").and_then(Value::as_str) {
             if !usable_sequencer(s) {
@@ -480,7 +595,7 @@ impl ProgramRegistry {
             s.clone_into(&mut self.storage_api);
         }
         if let Some(l) = v.get("lns").and_then(Value::as_str) {
-            self.lns = if l.is_empty() { None } else { Some(program_arg(l)?) };
+            self.lns = if l.is_empty() { self.defaults.lns } else { Some(program_arg(l)?) };
         }
         if let Some(d) = v.get("basecamp_data").and_then(Value::as_str) {
             self.basecamp_data = if d.is_empty() { None } else { Some(PathBuf::from(d)) };
@@ -503,15 +618,32 @@ impl ProgramRegistry {
 
     /// The settings as set (defaults left out, so a default never gets pinned in the file).
     fn settings(&self) -> Value {
-        json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api,
-               "lns": self.lns.map(|l| l.to_base58()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
+        let d = &self.defaults;
+        let mut out = json!({"basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
                "cli": self.cli.as_ref().map(|d| d.display().to_string()),
-               "registry_images": self.registry_images.iter().map(hex::encode).collect::<Vec<_>>()})
+               "registry_images": self.registry_images.iter().map(hex::encode).collect::<Vec<_>>()});
+        if let Some(p) = &d.path {
+            out["network_file"] = json!(p.display().to_string());
+        }
+        if self.sequencer != d.sequencer {
+            out["sequencer"] = json!(self.sequencer);
+        }
+        if self.registry != d.registry {
+            out["registry"] = json!(self.registry.map(|r| r.to_base58()));
+        }
+        if self.lns != d.lns {
+            out["lns"] = json!(self.lns.map(|l| l.to_base58()));
+        }
+        if self.storage_api != d.storage_api {
+            out["storage_api"] = json!(self.storage_api);
+        }
+        out
     }
 
     fn shown(&self) -> Value {
         json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api,
-               "lns": self.lns.map(|l| l.to_base58()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
+               "lns": self.lns.map(|l| l.to_base58()), "lns_is_default": self.lns.is_some() && self.lns == self.defaults.lns,
+               "network": self.defaults.shown(self.network_error.as_deref()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
                "cli": self.cli.as_ref().map(|d| d.display().to_string()),
                "registry_images": KNOWN_REGISTRY_IMAGES.iter().map(|i| (*i).to_owned()).chain(self.registry_images.iter().map(hex::encode)).collect::<Vec<_>>()})
     }
@@ -587,7 +719,13 @@ impl ProgramRegistry {
         let header = reader.header(reg).map_err(|e| writes::Failure::new("transport", e.to_string()))?
             .ok_or_else(|| writes::Failure::new("unknown_registry", format!("no program is deployed at the registry id {}", reg.to_base58())))?;
         let live = hex::encode(header.image_id);
-        if KNOWN_REGISTRY_IMAGES.contains(&live.as_str()) || self.registry_images.iter().any(|i| hex::encode(i) == live) {
+        // The network profile's registry image counts too (the built-in file's, or the host's
+        // `network_file`), as `lezreg` trusts its network file's.
+        let profile_image = self.defaults.file.as_ref().and_then(|f| f.registry_image).map(hex::encode);
+        if KNOWN_REGISTRY_IMAGES.contains(&live.as_str())
+            || self.registry_images.iter().any(|i| hex::encode(i) == live)
+            || profile_image.as_deref() == Some(live.as_str())
+        {
             return Ok(());
         }
         Err(writes::Failure::new("unknown_registry", format!(
@@ -930,6 +1068,8 @@ impl ProgramRegistryModule for ProgramRegistry {
                 }
             }
             let mut next = Self::with_settings(self.sequencer.clone(), self.registry, self.storage_api.clone(), self.lns, self.basecamp_data.clone());
+            next.defaults = self.defaults.clone();
+            next.network_error.clone_from(&self.network_error);
             next.cli = self.cli.clone();
             next.registry_images = self.registry_images.clone();
             next.apply(&v).map_err(writes::Failure::input)?;
@@ -1252,7 +1392,7 @@ mod tests {
         assert_eq!(parsed(&m.config_get())["success"], true, "reads stay open");
         // Even the browser can't point the module at a program to run or files to read (D).
         as_caller(app("registry_browser"));
-        for k in ["sequencer", "registry", "cli", "basecamp_data", "registry_images"] {
+        for k in ["sequencer", "registry", "network_file", "cli", "basecamp_data", "registry_images"] {
             let v = parsed(&m.config_set(json!({k: "/tmp/x"}).to_string()));
             assert_eq!(v["code"], "not_allowed", "{k}: {v}");
         }
@@ -1321,16 +1461,79 @@ mod tests {
     }
 
     #[test]
-    fn defaults_come_from_the_network_file_and_are_not_keyed_by_url() {
-        let profile = network_file::builtin().unwrap();
-        let m = ProgramRegistry::default();
-        assert_eq!(m.shown()["sequencer"], json!(profile.rpc));
-        assert_eq!(m.shown()["lns"], json!(profile.lns.unwrap().to_base58()));
-        assert_eq!(m.shown()["registry"], json!(profile.registry.unwrap().to_base58()));
-        // An old 0.3 URL must not silently select the 0.3 LNS registry.
-        let mut m = fresh();
+    fn defaults_come_from_the_built_in_rc3_profile_and_are_never_saved() {
+        let m = ProgramRegistry::from_saved(None);
+        let shown = m.shown();
+        assert_eq!(shown["sequencer"], "https://lez.nameswallet.app/");
+        assert_eq!(shown["registry"], "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82");
+        assert_eq!(shown["lns"], "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA");
+        assert_eq!(shown["lns_is_default"], true);
+        assert_eq!(shown["network"]["source"], "built-in");
+        assert_eq!(shown["network"]["chain_id"], "2da7f7dfb6e51a28c942ea80391aa518253ec515e98d28cb4d83cc9e16ff5374");
+        let saved = m.settings();
+        for k in ["sequencer", "registry", "lns", "storage_api", "network_file"] {
+            assert!(saved.get(k).is_none(), "a default is not pinned into the settings file: {k} in {saved}");
+        }
+        // A value set by hand is saved, and an empty one goes back to the profile's.
+        let mut m = ProgramRegistry::from_saved(None);
+        assert!(m.apply(&json!({"sequencer": "http://127.0.0.1:3290", "lns": REG})).is_ok());
+        assert_eq!((m.settings()["sequencer"].as_str(), m.settings()["lns"].as_str()), (Some("http://127.0.0.1:3290"), Some(REG)));
+        assert!(m.apply(&json!({"lns": ""})).is_ok());
+        assert_eq!(m.shown()["lns"], "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA");
+        // An old 0.3 URL no longer selects the 0.3 LNS registry by itself.
         assert!(m.apply(&json!({"sequencer": "https://testnet.lez.logos.co"})).is_ok());
-        assert_eq!(m.shown()["lns"], Value::Null);
+        assert_ne!(m.shown()["lns"], "38jEfVV1RCyMzu1FGbYcCn5FqxCxKyY58VgzjruAh2gq");
+    }
+
+    #[test]
+    fn an_old_builds_pinned_local_default_does_not_hide_the_profile() {
+        // What every build before 0.3.1 wrote after any config_set, with nothing configured.
+        let old = json!({"sequencer": DEFAULT_SEQUENCER, "registry": null, "storage_api": lezreg_sdk::storage::DEFAULT_API, "lns": null,
+                         "basecamp_data": null, "cli": null, "registry_images": []});
+        let m = ProgramRegistry::from_saved(Some(old));
+        assert_eq!((m.shown()["sequencer"].as_str(), m.shown()["registry"].as_str()), (Some("https://lez.nameswallet.app/"), Some("7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82")));
+        // A local chain someone really configured stays.
+        let m = ProgramRegistry::from_saved(Some(json!({"sequencer": DEFAULT_SEQUENCER, "registry": REG})));
+        assert_eq!((m.shown()["sequencer"].as_str(), m.shown()["registry"].as_str()), (Some(DEFAULT_SEQUENCER), Some(REG)));
+    }
+
+    #[test]
+    fn a_network_file_moves_the_defaults_and_keeps_what_was_set_by_hand() {
+        let dir = std::env::temp_dir().join(format!("lezreg-module-netfile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut file: Value = serde_json::from_str(network_file::BUILTIN_RAW).unwrap();
+        file["kind"] = json!("local");
+        file["rpc"] = json!("http://127.0.0.1:3290/");
+        file["programs"]["program_registry"]["id"] = json!(REG);
+        let path = dir.join("local.json");
+        std::fs::write(&path, file.to_string()).unwrap();
+        let mut m = ProgramRegistry::from_saved(None);
+        assert!(m.apply(&json!({"storage_api": "http://127.0.0.1:8095/api/storage/v1"})).is_ok());
+        assert!(m.apply(&json!({"network_file": path.display().to_string()})).is_ok());
+        let shown = m.shown();
+        assert_eq!((shown["sequencer"].as_str(), shown["registry"].as_str()), (Some("http://127.0.0.1:3290/"), Some(REG)));
+        assert_eq!(shown["storage_api"], "http://127.0.0.1:8095/api/storage/v1", "set by hand: kept");
+        assert_eq!(shown["network"]["source"], "file");
+        assert_eq!(m.settings()["network_file"], path.display().to_string());
+        assert!(m.settings().get("sequencer").is_none(), "the file's rpc is its default, not a pin");
+        // Read back from the settings file the same way.
+        let again = ProgramRegistry::from_saved(Some(m.settings()));
+        assert_eq!(again.shown()["registry"], REG);
+        // Back to the built-in profile.
+        assert!(m.apply(&json!({"network_file": ""})).is_ok());
+        assert_eq!(m.shown()["registry"], "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82");
+        // Refused: relative paths, missing files, a remote plain-http rpc; a broken saved file
+        // leaves the built-in profile, said in config_get.
+        assert!(m.apply(&json!({"network_file": "local.json"})).is_err());
+        assert!(m.apply(&json!({"network_file": dir.join("missing.json").display().to_string()})).is_err());
+        file["rpc"] = json!("http://example.org/");
+        std::fs::write(&path, file.to_string()).unwrap();
+        assert!(m.apply(&json!({"network_file": path.display().to_string()})).is_err());
+        let broken = ProgramRegistry::from_saved(Some(json!({"network_file": path.display().to_string(), "lns": REG})));
+        assert_eq!(broken.shown()["network"]["source"], "built-in");
+        assert!(broken.shown()["network"]["error"].as_str().is_some());
+        assert_eq!(broken.shown()["lns"], REG, "the other settings still apply");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Live read of our rc3 chain's LNS (the built-in network file): jef05 carries an NFT deed,

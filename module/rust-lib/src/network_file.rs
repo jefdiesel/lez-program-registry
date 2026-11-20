@@ -1,8 +1,8 @@
-//! Minimal `names-network/2` reader for lezreg (audit row 438).
+//! Minimal `names-network/2` reader for the module (audit rows 438, 440).
 //!
 //! Parse-only: one whole file, no merging, no network fetch. Unknown keys are
-//! ignored as in v1. The module carries its own copy because the builder stages
-//! only `module/rust-lib/`.
+//! ignored as in v1. The built-in profile is `network-rc3.json` (our LEZ v0.4.0-rc3
+//! chain); the host can name another file with the `network_file` setting.
 
 use lezreg_sdk::types::AccountId;
 use serde_json::Value;
@@ -59,8 +59,13 @@ pub fn parse(text: &str) -> Result<NetworkFile, String> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    if !rpc.starts_with("https://") {
-        return Err("network file RPC must be https".into());
+    // https, or http to this machine for a `kind: local` file (spec: http only for local chains).
+    let local = file.get("kind").and_then(Value::as_str) == Some("local");
+    let loopback = ["http://127.0.0.1", "http://localhost", "http://[::1]"]
+        .iter()
+        .any(|p| rpc.strip_prefix(p).is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/'])));
+    if !(rpc.starts_with("https://") && rpc.len() > 8) && !(local && loopback) {
+        return Err("network file RPC must be https (http only to this machine, for kind \"local\")".into());
     }
     let programs = file.get("programs");
     let lns = match programs.and_then(|p| p.get("lns_registry")) {
@@ -107,7 +112,7 @@ pub fn parse(text: &str) -> Result<NetworkFile, String> {
     })
 }
 
-/// The built-in rc3 profile, so `testnet` is a real network and works offline.
+/// The built-in rc3 profile, so the module works out of the box and offline.
 pub fn builtin() -> Result<NetworkFile, String> {
     parse(BUILTIN_RAW)
 }
@@ -159,5 +164,18 @@ mod tests {
         let mut bad: Value = serde_json::from_str(BUILTIN_RAW).unwrap();
         bad["format"] = Value::String("names-network/2".into());
         assert!(parse(&bad.to_string()).is_ok()); // v2 readers accept /2 for 0.4 files
+    }
+
+    #[test]
+    fn plain_http_only_to_this_machine_for_a_local_file() {
+        let mut file: Value = serde_json::from_str(BUILTIN_RAW).unwrap();
+        file["rpc"] = Value::String("http://127.0.0.1:3290/".into());
+        assert!(parse(&file.to_string()).is_err(), "our-test over http");
+        file["kind"] = Value::String("local".into());
+        assert_eq!(parse(&file.to_string()).unwrap().rpc, "http://127.0.0.1:3290/");
+        file["rpc"] = Value::String("http://127.0.0.1.evil.example/".into());
+        assert!(parse(&file.to_string()).is_err());
+        file["rpc"] = Value::String("http://example.org/".into());
+        assert!(parse(&file.to_string()).is_err());
     }
 }
