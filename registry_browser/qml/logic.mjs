@@ -360,3 +360,14 @@ export function reverseName(reply) {
   const name = v && typeof v === "object" ? v.name : typeof v === "string" ? v : "";
   return /^[a-z0-9][a-z0-9-]{0,62}$/i.test(clean(name)) ? clean(name) : "";
 }
+
+/** What to ask `search_name` for what a person typed, in order, until one finds something:
+ * registry names are lower case with "-" or "_" between words, while the index shows titles
+ * ("Names EVM Bridge"). One word is asked as it is; several are tried joined by "-", then by "_",
+ * then the longest word alone. */
+export function searchForms(typed) {
+  const words = clean(typed).toLowerCase().trim().split(/[\s\-_]+/).filter(Boolean);
+  if (words.length <= 1) return words;
+  const longest = words.slice().sort((a, b) => b.length - a.length)[0];
+  return [words.join("-"), words.join("_"), longest].filter((q, i, all) => all.indexOf(q) === i);
+}

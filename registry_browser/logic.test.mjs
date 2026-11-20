@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 // Checks the browser's own logic (qml/logic.mjs, which qml/Main.qml imports) without a QML
 // engine. Run with: node registry_browser/logic.test.mjs
 import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText,
-  titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName } from "./qml/logic.mjs";
+  titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName, searchForms } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -137,6 +137,8 @@ check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
 check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
 check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),
   reverseName(""), reverseName(JSON.stringify({ success: false, error: "no" })), reverseName(JSON.stringify({ success: true, value: { name: "<b>x</b>" } }))], ["jefdiesel", "", "", "", ""]);
+check("searchForms: one word as typed, titles as names", [searchForms("Vest"), searchForms(" Names EVM  Bridge "), searchForms("program registry"), searchForms("lez_program_registry"), searchForms("")],
+  [["vest"], ["names-evm-bridge", "names_evm_bridge", "bridge"], ["program-registry", "program_registry", "registry"], ["lez-program-registry", "lez_program_registry", "registry"], []]);
 // Every Text in the QML shows plain text: no markup from the chain renders as a fake mark,
 // a link or a fetched image (M6 review C). A Text without it fails here.
 for (const f of ["qml/Main.qml", "qml/RegistryLabel.qml", ...readdirSync(new URL("qml/kit/", import.meta.url)).filter((n) => n.endsWith(".qml")).map((n) => "qml/kit/" + n)]) {

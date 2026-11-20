@@ -95,10 +95,19 @@ Item {
         loading = true
         problem = ""
         if (query !== "") {
-            ask("search_name", [query, 50], function(v) {
-                items = v.items; next = ""; total = v.items.length; loading = false
-                if (v.truncated) notice = "The search looked at the newest " + v.scanned + " entries."
-            }, function(e) { problem = e; loading = false })
+            // Names are "names-evm-bridge"; people type titles ("Names EVM Bridge"): try each form.
+            var forms = Logic.searchForms(query)
+            var asked = query
+            var tryForm = function(n) {
+                if (n >= forms.length) { items = []; next = ""; total = 0; loading = false; return }
+                ask("search_name", [forms[n], 50], function(v) {
+                    if (root.query !== asked) return    // a newer search took over
+                    if (v.items.length === 0 && n + 1 < forms.length) { tryForm(n + 1); return }
+                    items = v.items; next = ""; total = v.items.length; loading = false
+                    if (v.truncated) notice = "The search looked at the newest " + v.scanned + " entries."
+                }, function(e) { problem = e; loading = false })
+            }
+            tryForm(0)
             return
         }
         ask("list_entries", [more ? next : "", 25], function(v) {
@@ -178,7 +187,7 @@ Item {
         ask("submit_status", [job.job], function(v) {
             job = v
             if (v.state === "running") jobTimer.start()
-            else if (v.state === "applied") open(selected, true)
+            else if (v.state === "applied" && selected) open(selected, true)
         }, function(e) { notice = e })
     }
 
@@ -255,7 +264,7 @@ Item {
             Action {
                 look: root.look
                 Layout.alignment: Qt.AlignTop
-                label: root.settingsOpen ? "Close settings" : "Network settings"
+                label: root.settingsOpen ? "Hide network settings" : "Show network settings"
                 onPressed: root.settingsOpen = !root.settingsOpen
             }
         }
@@ -325,7 +334,7 @@ Item {
                             RowLayout {
                                 spacing: 8
                                 Layout.topMargin: 8
-                                Action { look: root.look; label: "Approve and sign"; enabledNow: root.armed; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
+                                Action { look: root.look; label: "Approve and sign change"; enabledNow: root.armed; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
                                 Action { look: root.look; label: "Reject request"; onPressed: root.answerRequest(modelData.request, false) }
                             }
                         }
@@ -339,6 +348,15 @@ Item {
             Layout.preferredWidth: screen.columnWidth
             Layout.maximumWidth: screen.columnWidth
             text: Logic.clean(root.notice); color: look.alarm; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
+        }
+        // The last change sent (yours, or another app's you approved): sending, applied or failed.
+        Text { textFormat: Text.PlainText;
+            visible: !!root.job
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
+            text: Logic.jobText(root.job)
+            color: root.job && root.job.state === "failed" ? look.alarm : root.job && root.job.state === "applied" ? look.good : look.dim
+            wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
         }
 
         RowLayout {
@@ -687,13 +705,6 @@ Item {
                                         Action { look: root.look; label: "Discard change"; onPressed: root.change = null }
                                     }
                                 }
-                            }
-                            Text { textFormat: Text.PlainText;
-                                visible: !!root.job
-                                Layout.fillWidth: true
-                                text: Logic.jobText(root.job)
-                                color: root.job && root.job.state === "failed" ? look.alarm : root.job && root.job.state === "applied" ? look.good : look.dim
-                                wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
                             }
                         }
                     }
