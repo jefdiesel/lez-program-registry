@@ -7,8 +7,10 @@ walks that path three ways: Rust, JavaScript, and from a Basecamp app through th
 sequencer you choose and, for the IDL, to a Logos Storage node.
 
 You need a sequencer URL, the registry's program ID on that network, and the program ID to look
-up. On a local chain, `chain/deploy.sh` prints the registry ID. On LEZ testnet 0.4 it will be in
-the README once the testnet launches.
+up. On a local chain, `chain/deploy.sh` prints the registry ID. For the project's own rc3 test
+network, the RPC and registry ID are in the embedded network file (`sdk/rust/network-rc3.json`,
+section 1 "Network file"). On Logos LEZ testnet 0.4 it will be in the README once the testnet
+launches.
 
 ## 1. Rust
 
@@ -104,8 +106,40 @@ So an entry's IDL is in one of four states:
 - **unavailable** or **hash mismatch**: no trustworthy bytes.
 - **unparseable**: the right bytes, but not JSON (or too large or too deeply nested).
 
-The SDK lists calls but doesn't encode or decode them. The hash check and the canonical form
-used for uploads (RFC 8785) work on bytes and don't depend on the format.
+The hash check and the canonical form used for uploads (RFC 8785) work on bytes and don't depend
+on the format.
+
+**Encode and decode with an IDL.** `lezreg_sdk::idl_codec::Idl` turns typed JSON into Borsh bytes
+and back, for messages, actor state and events, from any of the three shapes: SPEL v1, SPEL v2,
+and v1 plus this registry's `x-lez04` extension (where state and event layouts live). It needs
+no Rust types of the program, so a wallet or explorer can decode any registered program's calls.
+
+```rust
+use lezreg_sdk::idl_codec::Idl;
+
+let json: serde_json::Value = serde_json::from_slice(&idl_bytes)?;
+let idl = Idl::new(&json);
+let bytes = idl.encode_message("freeze", &serde_json::json!({"entry_id": "11…", "now": 5, "via_pda_seed": null}))?;
+let (name, fields) = idl.decode_message(&bytes)?;        // ("freeze", {...})
+let state = idl.decode_named(idl.state_type().unwrap(), &account_data)?;
+```
+
+JSON follows the LEZ CLI conventions: integers up to u64 as numbers, u128/i128 as decimal
+strings, account and program ids as base58 or hex, byte arrays as hex, enums as
+`{"Variant": {…}}` or a bare `"Variant"` for a unit variant. The CLI has the same codec:
+`lezreg idl encode|decode`, `lezreg call --plan` (message bytes, actors to declare and signers,
+offline; nothing is signed or sent, and it is not a chain simulation) and
+`lezreg image-id <elf|bin> [--compare HEX]`. The registry's own interface is published twice:
+`idl/lez_program_registry.idl.json` (SPEL v1 + `x-lez04`, generated from source) and
+`idl/lez_program_registry.v2.json`, a SPEL v2 twin written by hand and tested to describe the
+same message bytes, state and event selectors (it is not generated from source).
+[`PR188.md`](PR188.md) maps these tools to the IDL rows of the prize spec rewrite.
+
+**Network file.** `lezreg_sdk::network_file` parses a `names-network/1` or `/2` file (the same
+file Names Wallet publishes): chain id, RPC, and the program ids of the registry and of LNS.
+`network_file::builtin()` is the embedded profile `lezreg --network testnet` uses, and
+`chain_matches` compares a file's chain id with the sequencer's `getChannelId`. It is parse-only:
+one whole file, no merging, no fetch.
 
 **Source verification** is a local action (`lezreg verify <program> --mark`): it rebuilds the
 recorded source with the recorded build configuration and marks the program verified on this
@@ -135,9 +169,9 @@ if (deployer) {
 const label = await reg.programLabel("<program id>");                  // { text, kind, stale, ... }
 ```
 
-### JS SDK parity with Rust (Job B12)
+### Discovery and writes in JS
 
-The JS SDK now covers the same discovery and write surfaces as `sdk/rust`:
+The JS SDK covers the same discovery surface as `sdk/rust` and builds the same write bytes:
 
 ```js
 import { Registry } from './lezreg.js';
@@ -164,21 +198,26 @@ await signAndSend(change, { rpc });
 `buildChange` supports `register`, `register_third_party` and `update`; `transfer` and `freeze`
 remain module/CLI-only. Signing is deliberately absent from the zero-dependency core: an object
 implementing `signHash`, `accountIdOfPrivateKey` and `encodePublicTransaction` must be supplied
-explicitly (see `sdk/js/signing.js`, copied from logos-sdk-js). Nothing is sent without it, and a
-dry run is still the caller's responsibility before sending.
+explicitly (see `sdk/js/signing.js`). Nothing is sent without it, and a dry run is still the
+caller's responsibility before sending. The signer path has not been run against a chain from JS;
+the bytes are checked against Rust, the sending is not.
 
 Every JS encoder is checked byte for byte against Rust: `sdk/js/vectors.json` embeds the
 `module/rust-lib/testdata/write-vectors.json` cases produced by
 `sdk/rust/tests/module_vectors.rs`, and `sdk/rust/tests/js_vectors.rs` regenerates/verifies the
 combined file. Run both with `node sdk/js/lezreg.test.mjs` and
-`~/logos/laptop-build.sh cargo test -p lezreg-sdk --test js_vectors --test module_vectors`.
+`cargo test -p lezreg-sdk --test js_vectors --test module_vectors`.
 
 ## 3. From a Basecamp app: the `program_registry` module
 
 Install `program_registry` from the catalog
 (`https://raw.githubusercontent.com/jefdiesel/logos-modules/main/logos-repo.json`), point it at
 the network once, then call it like any core module. Every method answers
-`{success, value, error}`.
+`{success, value, error}`. With no saved settings, a module built from this repository (0.3.0 and
+later) starts from the embedded network file: the project's rc3 test network
+(`https://lez.nameswallet.app/`), its registry, its LNS program and the trusted registry image.
+Saved settings (`config_set`) always win, and a sequencer URL alone no longer selects an LNS
+program.
 
 ```qml
 logos.callModule("program_registry", "config_set", [JSON.stringify({

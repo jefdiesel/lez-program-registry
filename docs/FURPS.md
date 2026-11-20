@@ -20,7 +20,7 @@ checked against the code. DESIGN describes the plan, and some of it is not built
 ## Summary
 
 The registry is an on-chain LEZ 0.4 program (`program/`), the `lezreg` CLI (`cli/`), a Rust SDK
-(`sdk/rust`), a read-only JavaScript SDK (`sdk/js`) and a Basecamp core module
+(`sdk/rust`), a JavaScript SDK (`sdk/js`: reads, plus write bytes for an injected signer) and a Basecamp core module
 (`module/`, `program_registry`). A program's **deployer entry** lives on the program's own account
 `X`, and only the authorization the loader requires to deploy or upgrade `X` can write it. A client
 therefore identifies a deployer entry from its address alone, and one `getAccount(X)` read returns
@@ -224,8 +224,13 @@ that program as 'locally verified' for themselves."
 **8.** "**Testnet 0.4**: the registry operates end-to-end against the Logos LEZ zone on Logos
 testnet 0.4."
 
-- **Status: not yet.** Testnet 0.4 has not launched. `lezreg`'s `testnet` network is a placeholder
-  that refuses to run (demo `X.i`). `scripts/demo.sh --testnet --rpc … --registry …` is the
+- **Status: not yet.** Testnet 0.4 has not launched. `lezreg`'s `testnet` network now reads an
+  embedded `names-network/2` file (`sdk/rust/network-rc3.json`), which today describes this
+  project's own rc3 test network (`lez.nameswallet.app`, `"kind": "our-test"`), not Logos's
+  testnet 0.4; on launch a new file replaces it. `lezreg network show --check-chain` compares the
+  file's chain id with the sequencer's `getChannelId` (run once by hand against the rc3 test
+  network on 2026-11-20: ok). Demo `X.i` now checks that the wallet refuses an unknown network
+  rather than falling back to a default sequencer. `scripts/demo.sh --testnet --rpc … --registry …` is the
   read-only walk to run on launch day; until then it stops at once with a message. That walk has
   been exercised once, against a local rc3 chain standing in for the testnet
   (`docs/demo-testnet-mode.log`: 9 PASS, verify skipped for lack of Docker). The repo is
@@ -239,11 +244,14 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 
 - **Status: partly met.**
   - Rust SDK: all three (register, resolve, search).
-  - JS SDK: resolve, list and search by name only (no search by author, no writes).
+  - JS SDK: resolve, list, search by name and by author, community entries (`thirdParty`),
+    IDL status with Rust's status names, and the write bytes for register, third-party register
+    and update (`sdk/js/writes.js`). It holds no keys: sending needs a signer object passed in,
+    and that path has not been run against a chain. No `transfer`/`freeze` builders in JS.
   - Logos Core module: resolve, list, search by name, **and prepare/sign writes** (register,
     third-party register, update, transfer, freeze) through `submit`; another Logos module can
     register, but its change waits for approval unless the caller is the registry browser or the
-    host. Still no search by author, and the JS SDK has no writes.
+    host. Still no search by author in the module.
 - **Evidence:**
   - Rust SDK (`sdk/rust`):
     - reads: `Registry::resolve`, `list`, `search_name`, `by_author`, `third_party`;
@@ -252,8 +260,10 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
     - The worked example `sdk/rust/examples/resolve_program.rs` runs in `e2e.yml` and in demo
       `U1.a`.
   - JS SDK (`sdk/js/lezreg.js`, no dependencies): `resolve`, `programLabel`, `list`, `byName`,
-    `fetchIdl`. It is checked against the Rust SDK with vectors (`node sdk/js/lezreg.test.mjs` in
-    `ci.yml`). The demo runs it as `U1.b` in `demo.yml`. It was skipped in the macOS run in
+    `byAuthor`, `thirdParty`, `fetchIdl` (with `statusKind`), `pendingIdl`; `sdk/js/writes.js`
+    `buildChange` for `register`, `register_third_party` and `update`. It is checked against the
+    Rust SDK with vectors (`node sdk/js/lezreg.test.mjs` in `ci.yml`); `sdk/js/vectors.json`
+    embeds the module's write vectors, kept current by `sdk/rust/tests/js_vectors.rs`. The demo runs it as `U1.b` in `demo.yml`. It was skipped in the macOS run in
     `docs/demo.log`, because that machine has no node.
   - Module `program_registry` (`module/`): `resolve_program`, `program_label`, `get_idl`,
     `list_entries`, `search_name`, `third_party_entries`, `verify_app`, `verify_package`,
@@ -265,26 +275,29 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
       program by `module/rust-lib/testdata/write-vectors.json` (`sdk/rust/tests/module_vectors.rs:205`,
       unit tests at `module/rust-lib/src/lib.rs:1109,1174,1206,1219,1270,1288`).
       `.github/workflows/module.yml:181-206` loads the module in logosctl on a local rc3 chain
-      and registers/updates/freeses an entry through it, with an on-chain assertion — met on a
+      and registers/updates/freezes an entry through it, with an on-chain assertion — met on a
       local rc sequencer, pending testnet 0.4. Its app checks use the current SDK API
       (`Contents::from_lgx` / `from_installed` and `Names::verify`), so the root is recomputed
-      from files and the `files_verified` / `root_mismatch` verdicts match the CLI (19 module
-      unit tests). No `docs/demo.log` row loads the module (`docs/demo.log:426-427` still says it
+      from files and the `files_verified` / `root_mismatch` verdicts match the CLI (module unit
+      tests in `module.yml`). No `docs/demo.log` row loads the module (`docs/demo.log:426-427` still says it
       has no write methods).
     - Its search is by name only: there is no search by author in the module.
     - The repo's module is 0.3.0 (`module/metadata.json:4`), but **the catalog still serves 0.1.0**
       (released 2026-11-04, before the app methods), so the catalog build has none of the write
       methods.
     - A CI job does load it: `.github/workflows/module.yml:166-206` (logosctl install/load and
-      reads, register/update/freeze, and the caller gate). It also ran by hand on the Mini
-      (DESIGN §11 M6).
+      reads, register/update/freeze, and the caller gate). It also ran by hand with logosctl on
+      macOS (DESIGN §11 M6).
+    - With no saved settings it starts from the embedded network file (the rc3 test network's
+      sequencer, registry, LNS program and registry image); saved settings win.
 
 **10.** "Provide a CLI covering register, update, lookup, search, and source verification."
 
 - **Status: met.** `lezreg` has `register`, `deploy`, `publish`, `adopt`, `update`, `transfer`,
-  `freeze`, `show`, `list`, `search name|author|label|tag`, `idl get|push`, `pin`, `pin-all`,
-  `verify`, `verified`, `build`, `stats` and `doctor`. Demo row `U2`, and `F7.b` for verify (which
-  needs Docker).
+  `freeze`, `show`, `list`, `search name|author|label|tag`, `idl get|push|encode|decode`,
+  `call --plan`, `image-id`, `pin`, `pin-all`, `verify`, `verified`, `build`, `stats`, `network`
+  and `doctor`; the full list is README §"All commands". Demo row `U2`, and `F7.b` for verify
+  (which needs Docker).
 
 ### Reliability
 
@@ -345,8 +358,8 @@ remains fully functional with it disabled. Any analytics must be strictly opt-in
     missing switch (`cli/tests/verify_offline.rs`). The generated offline Dockerfile has no
     `cargo fetch` and no registry `FROM`; its compile runs with `--network=none`
     (`sdk/rust/src/verify.rs` unit test). `--offline` plus `--allow-network` is refused.
-  - **Remaining limits:** the offline path still needs a local Docker daemon; it has not been run
-    here (no Docker on this Mac, and the owner's word is needed for Docker builds). The GitHub
+  - **Remaining limits:** the offline path still needs a local Docker daemon, and it has not been
+    run end to end yet (only its inputs, refusals and generated Dockerfile are tested). The GitHub
     Action and `publish --from-release` use GitHub. Both are optional: the CLI does the same work
     locally. There is no analytics code.
 
@@ -548,8 +561,8 @@ The facts, without a conclusion:
   - make `verify` able to rebuild from it.
 - **No mandatory services:** done for `verify`/`build` inputs (`--image-tar`, `--vendor-tar`,
   `--archive-file`, `--no-forge`, `--offline`), with disclosure in `--help`, stderr and JSON.
-  Remaining: run the offline path on a machine with Docker and record the result; add one README
-  list of the services (see `README.md`'s verify section for now).
+  The services are listed in one table in README §SDK. Remaining: run the offline path on a
+  machine with Docker and record the result.
 - **CLI degradation:** done — `show` displays metadata plus IDL status in one view and never fails
   on the IDL; `idl get` keeps its nonzero exit code. Remaining: `e2e.yml` still covers only the
   no-Storage-node case; the other three are covered by offline tests and `scripts/demo.sh`.
@@ -558,12 +571,19 @@ The facts, without a conclusion:
     register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module
     has no write methods;
   - release 0.3.0 (with the write methods) to the catalog, which serves 0.1.0;
-  - load the module in the real Basecamp (so far only logosctl on CI/Mini) and add the lez_core
-    signer once a usable release exists.
+  - load the module in the real Basecamp (so far only logosctl, in CI and by hand) and add the
+    lez_core signer once a usable release exists.
 - **Storage:** an IDL fetch across the public Storage network through relays only.
 - **Platforms:** Windows and Android builds; macOS in CI.
 - **Tooling** listed in DESIGN but not built: `lezreg idl gen` and `idl check`, the Action's
   `publish` mode, and two-machine signing for transfers.
+- **IDL format and tooling (prize spec rewrite, lambda-prize PR #188, open):** built: the IDL
+  codec (`lezreg idl encode|decode`, `lezreg_sdk::idl_codec`), `call --plan`, `image-id
+  [--compare]`, and a SPEL v2 twin of the registry IDL (`idl/lez_program_registry.v2.json`,
+  hand-written and tested against v1, not generated from source). Not built: generating a v2 /
+  LEZ IDL from source, simulating a third-party call against chain state, and a generic send.
+  Row by row in [`docs/PR188.md`](PR188.md).
+- **JS SDK:** `transfer`/`freeze` write builders, and a run of the injected-signer path on a chain.
 
 ## Demo run
 

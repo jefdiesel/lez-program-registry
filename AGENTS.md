@@ -1,11 +1,12 @@
 # AGENTS.md: LEZ Program Registry
 
-For coding agents (and people in a hurry). Last checked: 2026-11-13.
+For coding agents (and people in a hurry). Last checked: 2026-11-20.
 
 The registry turns a LEZ program id into a name, version, author, interface file (IDL) and a
 source pointer anyone can rebuild and compare. `lezreg` is its command line. Full docs:
 `README.md`, `docs/sdk.md` (resolve an id from Rust, JavaScript or a Basecamp module),
 `docs/APPS.md` (apps checked by LNS name), `docs/CYCLES.md` (what each operation costs).
+Every `lezreg` command, in one table: README §"All commands".
 
 ## The live registry
 
@@ -14,6 +15,7 @@ source pointer anyone can rebuild and compare. `lezreg` is its command line. Ful
 | Network | LEZ 0.4 (v0.4.0-rc3), a test network run by this project. Not Logos's public testnet. It is reset now and then; a reset wipes every entry and changes the id below. |
 | Sequencer | `https://lez.nameswallet.app/` |
 | Registry id | `7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82` |
+| Network file | embedded as `sdk/rust/network-rc3.json`: a lezreg built from this repo reaches it with `--network testnet` |
 
 ## Rules for agents
 
@@ -39,6 +41,10 @@ lz list                                   # every entry, newest first
 lz show 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82    # the registry's own entry
 lz show <PROGRAM_ID> --json               # any program: entry, status, IDL pointer, source
 ```
+
+The installer fetches the latest release, 0.1.0. It predates `--network testnet` (hence `lz`
+above), the IDL status in `show`, `idl encode|decode`, `call --plan`, `image-id` and
+`verify --offline`; for those, build from source.
 
 No prebuilt build for your machine (Intel Mac, musl)? Build it: `git clone` this repository,
 `cargo build --release -p lezreg` (Linux also needs libpcsclite-dev and pkg-config), and use
@@ -73,7 +79,12 @@ of program (`docs/CYCLES.md`).
 
 ## Work on this repository
 
-- Tests: `cargo test --release -p lezreg-sdk -p lezreg`, and `node sdk/js/lezreg.test.mjs`.
+- Tests: `cargo test --release -p lezreg-sdk -p lezreg`, `cargo test --release -p lezreg-engine-test`
+  (needs the risc0 guest toolchain; `cycles_match_docs_cycles_md` checks `docs/CYCLES.md`), and
+  `node --test` (JS SDK and the browser's logic). The module's tests run in `module.yml`. The full
+  list is README §Tests.
+- Offline IDL tools, no chain needed: `lezreg idl encode|decode --idl F`, `lezreg call --idl F
+  --message M --args JSON --plan` (sends nothing), `lezreg image-id <elf|bin> --compare <hex>`.
 - The whole walk an evaluator runs: `scripts/demo.sh` (starts its own sequencer and Storage
   nodes; `--verify` needs Docker). CI runs it in `.github/workflows/demo.yml`.
 - The on-chain program is `program/`; its reproducible build is `artifacts/` (built in CI by
@@ -91,4 +102,7 @@ of program (`docs/CYCLES.md`).
   against a local sequencer. `--dry-run` is exercised by `scripts/demo.sh` (also in CI), for a deploy.
   `adopt --dry-run` against the live address with an outside account has not been run by the
   authors.
+- `--network testnet network show --check-chain` and `show` with its IDL status line: run
+  2026-11-20 against the live address from a source build (chain check ok; IDL status
+  "unavailable" without a local Storage node, entry still shown).
 - Building `lezreg` from a clean clone: CI (`ci.yml`, `demo.yml`) on Linux; macOS arm64 by hand.

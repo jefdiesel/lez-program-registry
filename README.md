@@ -38,13 +38,19 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M4: source verification | **done:** CI rebuilds the registry with `lezreg build` (its own Dockerfile, compile offline) and gets the committed image (`5ffbf8f5…` on rc3) again. `lezreg verify` (Docker, compile offline, rebuilt vs claimed vs live), `lezreg build`, local marks (`verified`) |
 | M5: end to end in CI | **done** (`e2e.yml` green):  rc1 sequencer, Storage nodes, deploy from `artifacts/`, IDL across nodes, `verify` → Match |
 | M6: Basecamp core module `program_registry` + `registry_browser` | **done:** reads (`resolve_program`, `program_label`, `get_idl`, list and search, the app checks below) and writes (`prepare_register`, `prepare_register_third_party`, `prepare_update`, `prepare_transfer`, `prepare_freeze`, then `submit`, signed by your `lezreg` wallet through `lezreg module send`; `change_settled` event); built with `mkLogosModule`; reads published in the module catalog [`jefdiesel/logos-modules`](https://github.com/jefdiesel/logos-modules) (forked from `logos-modules-release-base`, released with `logos-modules-release-action`) for macOS and Linux, 0.3.0 with writes and `registry_browser` not released there yet. The [`registry_browser`](registry_browser/) UI module (list, search, entry detail, IDL status, verify mark, update/freeze) and the drop-in [`RegistryLabel.qml`](registry_browser/qml/RegistryLabel.qml); integration guide [`docs/INTEGRATE.md`](docs/INTEGRATE.md); `module.yml` CI. Names Wallet's approval sheet uses the module. Not yet: signing through the `lez_core` wallet module (no usable release) |
-| M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors) |
+| M7: JS SDK | **done** ([`sdk/js`](sdk/js), pinned to Rust by vectors): resolve, list, search by name and by author, community entries, IDL status, and the write bytes for register, third-party register and update (signing is an injected signer; no keys in the SDK) |
 | Apps by LNS name ([`docs/APPS.md`](docs/APPS.md)) | **done:** Basecamp apps checked against the LNS name that publishes them, so a copy can't pass as the real app; publishers can stay anonymous and apps unlisted. `lezreg app show/verify/record`, the module's `verify_app`, `verify_package`, `publisher_apps`. No change to the deployed program. Tested on a real chain (logos-names `wallet-e2e.sh` step 7) |
 | M8: adoption tools | **done** (e2e green on 6f0dc66): `init --detect`, `publish` (deploy+register, register or update, idempotent), `publish --from-release`, `adopt`, `stats`, `doctor`, `release prepare`, and the GitHub Action ([`action/`](action/action.yml), `verify` and `prepare` modes). Run end to end on a local rc1 chain; `e2e.yml` now runs the same flow and the Action. Not yet: `idl gen`/`idl check`, source-archive upload, the Action's opt-in `publish` mode |
 
-LEZ testnet 0.4 has not launched. The `testnet` network is a placeholder: it has no RPC and no
-registry id yet, and `lezreg` says so. The registry will be deployed there on launch day with
-`chain/deploy.sh`.
+Logos LEZ testnet 0.4 has not launched. Until it does, `lezreg --network testnet` reads an
+embedded `names-network/2` file that describes this project's own rc3 test network
+(`https://lez.nameswallet.app/`, registry `7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82`; it is
+reset now and then). On launch day the registry is deployed to testnet 0.4 with
+`chain/deploy.sh` and a new network file replaces the embedded one.
+
+The IDL tools for the prize spec rewrite (logos-co/lambda-prize#188) are in `lezreg idl
+encode|decode`, `lezreg call --plan` and `lezreg image-id`; [`docs/PR188.md`](docs/PR188.md) maps
+each requirement to what exists and what does not.
 
 ## Run the demo
 
@@ -213,17 +219,56 @@ the M1 exit check has run; until then build them yourself.)
 
 ## Use
 
+### All commands
+
+The one list of `lezreg` commands (`lezreg <command> --help` for the flags; every command takes
+`--json`). AGENTS.md and docs/FURPS.md point here.
+
+| Command | What it does | Needs |
+|---|---|---|
+| `show <program\|name>` | deployer entry (fresh/stale), community entries, and each entry's IDL status; `--publisher`, `--revision` | sequencer (Storage optional) |
+| `list`, `search name\|author\|label\|tag` | every entry newest first; searches | sequencer |
+| `stats` | the adoption table, from chain | sequencer |
+| `idl get\|push` | fetch an entry's IDL and check its hash; upload one | Storage node |
+| `idl encode\|decode` | message, state or event bytes from an IDL (v1, v2, `x-lez04`) | nothing |
+| `call --plan` | message bytes, actors to declare, signers; sends nothing | nothing |
+| `image-id <elf\|bin> [--compare]` | a program's image id as the loader computes it | nothing |
+| `pin`, `pin-all [--every]` | keep IDLs on your Storage node | Storage node |
+| `register`, `update`, `transfer`, `freeze` | writes (`--dry-run` first) | wallet, coins, r0vm |
+| `deploy`, `publish`, `adopt`, `init --detect` | deploy and register; the author flow from `lezreg.toml` | wallet, coins, r0vm |
+| `verify [--mark]`, `verified`, `build` | rebuild in Docker and compare image ids; `--offline` with `--image-tar`, `--vendor-tar`, `--archive-file`, `--no-forge` | Docker |
+| `release prepare` | the unsigned payload for the GitHub Action | nothing |
+| `app show\|verify\|record\|get` | Basecamp apps checked by LNS publisher ([docs/APPS.md](docs/APPS.md)) | sequencer (Storage for `get`) |
+| `network show [--check-chain]`, `network set` | networks, network files, chain check | nothing (`--check-chain`: sequencer) |
+| `doctor` | sequencer, registry, Storage, r0vm, wallet, Docker, clock | nothing |
+| `storage up` | start a Logos Storage node | the `logos-storage` binary |
+| `module send` | the signing bridge for the Basecamp module | wallet |
+| `wallet …` | the LEZ wallet's own commands, always on lezreg's sequencer | wallet |
+
+The prebuilt 0.1.0 release that the install line fetches predates `idl encode|decode`,
+`call --plan`, `image-id`, the IDL status in `show`, network files and `verify --offline`; build
+from source for those until the next release.
+
 ### Networks
 
 ```sh
 lezreg network show                                  # what is in use
 lezreg network set local --registry <REGISTRY_ID>    # chain/deploy.sh does this for you
 lezreg --network local list                          # local = http://127.0.0.1:3062
+lezreg --network testnet network show --check-chain  # the embedded network file; checks getChannelId
 lezreg --rpc http://host:port --registry <ID> list   # any sequencer, any registry
+lezreg network set mynet --network-file net.json     # one whole names-network/2 file
 ```
 
 The settings live in `~/.config/lezreg/networks.json` (override with `LEZREG_CONFIG_DIR`). You
-can also set `LEZREG_NETWORK`, `LEZREG_RPC` and `LEZREG_REGISTRY` in the environment.
+can also set `LEZREG_NETWORK`, `LEZREG_RPC`, `LEZREG_REGISTRY`, `LEZREG_LNS` and
+`LEZREG_NETWORK_FILE` in the environment.
+
+**Network files.** `testnet` comes from an embedded `names-network/2` file
+(`sdk/rust/network-rc3.json`): RPC, chain id, registry id, LNS program id and the registry's
+image. `LEZREG_NETWORK_FILE` or `network set --network-file` uses another file, always whole
+(fields are never merged from two files). `network show --check-chain` asks the sequencer for
+`getChannelId` and refuses a chain other than the file's; it runs only when you ask for it.
 
 **Writes are signed only for registry code lezreg trusts.** Before any write, lezreg reads the
 live image of the program the registry id names and refuses unless it is the committed
@@ -538,7 +583,16 @@ lezreg pin <program> ; lezreg pin-all --every 900   # keep IDLs available (a sel
 lezreg storage up --bin /path/to/logos-storage      # a Storage node for authors without one
 lezreg verify <program> [--mark]                    # rebuild in Docker, compile offline: Match / MatchStale / Mismatch
 lezreg build . --binary my_guest                    # the canonical image id before you deploy
+lezreg image-id prog.bin --compare <64 hex>         # a local ELF or .bin's image id, as the loader computes it; MATCH/MISMATCH
+lezreg idl encode --idl my.idl.json --kind message --name transfer --value '{"to":"…","amount":"5"}'   # hex Borsh
+lezreg idl decode --idl my.idl.json --kind message --data <hex>       # named fields (also --kind state|event)
+lezreg call --idl my.idl.json --message transfer --args '{…}' --plan  # bytes, actors, signers; offline, sends nothing
 ```
+
+`idl encode|decode` and `call --plan` read SPEL v1, SPEL v2 and v1 + `x-lez04` IDLs
+(`lezreg_sdk::idl_codec`). `call --plan` is an offline plan, not a simulation: it does not
+report apply/revert, cycles or the fee (a registry write's `--dry-run` does), and there is no
+generic "send this message to any program" command.
 
 **Third-party services used by `verify` and `build`.** Both disclose these in `--help`, on stderr
 at every run, and in their JSON output:
@@ -568,9 +622,16 @@ import { Registry, fetchIdl } from "./lezreg.js";
 const reg = new Registry({ rpc: "http://127.0.0.1:3062", registry: "<registry id>" });
 const label = await reg.programLabel("<program id>");   // { text, kind, stale, upgradeable, ... }
 const { deployer } = await reg.resolve("<program id>");
-const { kind, format, calls, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
+const { kind, statusKind, format, calls, idl } = await fetchIdl(deployer, { storageApi: "http://127.0.0.1:8080/api/storage/v1" });
 // kind: "ok" | "unknown-format" | "unavailable" | "hash-mismatch" | "unparseable"; format: "spel-v1" | "spel-v2" | "unknown"
+// statusKind: Rust's names ("Ok", "UnknownFormat", "Unavailable", "HashMismatch", "ParseError")
+const mine = await reg.byAuthor("<account>", { limit: 20, scan: 1000 });  // { items, scanned, truncated }
+const community = await reg.thirdParty("<program id>", 20);
 ```
+
+Write bytes (register, third-party register, update) come from `sdk/js/writes.js`
+(`buildChange`), checked byte for byte against the Rust builders; see
+[`docs/sdk.md`](docs/sdk.md#discovery-and-writes-in-js).
 
 **Basecamp apps:** depend on the `program_registry` core module and call
 `program_label(program_id)` for a wallet prompt's one-line label, or drop in
@@ -589,6 +650,10 @@ the CLI reports the same kinds as `{"error", "kind"}`, plus `tx` when a transact
 cargo test -p lezreg-types -p lezreg-program            # unit tests
 cargo test --release -p lezreg-engine-test              # the real guest on the rc3 state machine
 cargo test --release -p lezreg-sdk -p lezreg            # SDK against a mocked sequencer; CLI unit tests
+cargo build -p lezreg-sdk --no-default-features         # the read-only SDK still builds
+cargo test -p lezreg-idl                                # IDL drift (scripts/idl.sh --check needs spel v0.7.0)
+node --test                                             # JS SDK against the Rust vectors (sdk/js/lezreg.test.mjs) and the browser's logic
+(cd module/rust-lib && cargo test --locked)             # the module; needs module/logos-rust-sdk-src (module.yml builds it with nix)
 scripts/test-deploy-sh.sh                               # chain/deploy.sh resume/failure cases (stub lezreg)
 # a write whose inclusion is never confirmed is confirmed by read-back (local sequencer, wallet copy):
 LEE_WALLET_HOME_DIR=<copy> ENTRY=<entry> PAYER=<funded> scripts/test-not-included.sh
@@ -600,7 +665,7 @@ LEZREG_E2E_RPC=http://127.0.0.1:3062 LEZREG_E2E_REGISTRY=<id> \
 scripts/demo.sh
 ```
 
-Network check (2026-11-02, macOS `sandbox-exec` on the Mini): with outbound network denied
+Network check (2026-11-02, macOS `sandbox-exec`): with outbound network denied
 except `localhost:3062`, `list` and `show` work; a write works with outbound limited to
 loopback (the `r0vm` executor talks to lezreg over a local socket), and the same sandbox blocks
 a request to any other host. lezreg links LEZ crates that contain other URLs (the LEZ wallet's
@@ -627,7 +692,7 @@ rsync -a --delete --exclude target --exclude .git --exclude _deps \
 | `action/` | the GitHub Action (`verify`, `prepare`) |
 | `chain/deploy.sh` | deploys the registry and its self-entry |
 | `scripts/demo.sh` | the evaluator demo (local chain, or `--testnet`) |
-| `idl/` | the generated IDL |
+| `idl/` | the registry's IDL: generated SPEL v1 + `x-lez04`, and a hand-written SPEL v2 twin checked against it |
 | `tools/` | engine tests, IDL drift checks, the M1 smoke client |
 | `docs/` | design notes and demo transcripts |
 
