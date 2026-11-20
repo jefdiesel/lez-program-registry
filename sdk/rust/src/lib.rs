@@ -31,6 +31,7 @@ pub mod apps;
 pub mod cid;
 pub mod error;
 pub mod idl;
+pub mod idl_codec;
 pub mod idl_format;
 pub mod jcs;
 pub mod lgx;

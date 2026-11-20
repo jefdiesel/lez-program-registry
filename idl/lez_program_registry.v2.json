@@ -1,0 +1,994 @@
+{
+  "version": "2",
+  "name": "lez_program_registry",
+  "messages": [
+    {
+      "name": "register_deployer",
+      "tag": 0,
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_third_party",
+      "tag": 1,
+      "fields": [
+        {
+          "name": "program",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update",
+      "tag": 2,
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "version",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "tags",
+          "type": {
+            "option": {
+              "vec": "string"
+            }
+          }
+        },
+        {
+          "name": "author_label",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "option": {
+              "defined": "SourceRef"
+            }
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "option": {
+              "defined": "BuildConfig"
+            }
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "transfer_author",
+      "tag": 3,
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "new_author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "freeze",
+      "tag": 4,
+      "fields": [
+        {
+          "name": "entry_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        },
+        {
+          "name": "via_pda_seed",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deploy_and_register",
+      "tag": 5,
+      "fields": [
+        {
+          "name": "first_segment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "immutable",
+          "type": "bool"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "author_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "revision_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "now",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "state": {
+    "defined": "Entry"
+  },
+  "events": [
+    {
+      "name": "Registered",
+      "selector": "f7e10a32e3134cad",
+      "type": {
+        "defined": "Registered"
+      }
+    },
+    {
+      "name": "Updated",
+      "selector": "99d67fef2c827eca",
+      "type": {
+        "defined": "Updated"
+      }
+    },
+    {
+      "name": "AuthorTransferred",
+      "selector": "cf450a1d3ff46fb5",
+      "type": {
+        "defined": "AuthorTransferred"
+      }
+    },
+    {
+      "name": "Frozen",
+      "selector": "b50933e5871bae9c",
+      "type": {
+        "defined": "Frozen"
+      }
+    }
+  ],
+  "types": [
+    {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "prev",
+          "type": {
+            "option": "account_id"
+          }
+        }
+      ],
+      "name": "AuthorNode"
+    },
+    {
+      "name": "AuthorTransferred",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "from",
+          "type": "account_id"
+        },
+        {
+          "name": "to",
+          "type": "account_id"
+        }
+      ]
+    },
+    {
+      "name": "BuildConfig",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "builder",
+          "type": "u8"
+        },
+        {
+          "name": "image_digest",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "image_tag",
+          "type": "string"
+        },
+        {
+          "name": "risc0_build",
+          "type": "string"
+        },
+        {
+          "name": "host_risc0_rust",
+          "type": "string"
+        },
+        {
+          "name": "manifest_path",
+          "type": "string"
+        },
+        {
+          "name": "binary",
+          "type": "string"
+        },
+        {
+          "name": "features",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "lock_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "docker_env",
+          "type": {
+            "vec": {
+              "defined": "EnvVar"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ContentRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cid",
+          "type": {
+            "vec": "u8"
+          }
+        },
+        {
+          "name": "sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        },
+        {
+          "name": "peer_hint",
+          "type": {
+            "option": {
+              "vec": "u8"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "name": "flags",
+          "type": "u8"
+        },
+        {
+          "name": "program",
+          "type": "account_id"
+        },
+        {
+          "name": "author",
+          "type": "account_id"
+        },
+        {
+          "name": "registrant",
+          "type": "account_id"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "author_label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "registered_at",
+          "type": "u64"
+        },
+        {
+          "name": "updated_at",
+          "type": "u64"
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        }
+      ],
+      "name": "Entry"
+    },
+    {
+      "name": "EnvVar",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Frozen",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        }
+      ]
+    },
+    {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "count",
+          "type": "u64"
+        },
+        {
+          "name": "newest",
+          "type": {
+            "option": "account_id"
+          }
+        }
+      ],
+      "name": "Head"
+    },
+    {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "seq",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "name": "program",
+          "type": "account_id"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "author",
+          "type": "account_id"
+        },
+        {
+          "name": "prev_global",
+          "type": {
+            "option": "account_id"
+          }
+        },
+        {
+          "name": "prev_name",
+          "type": {
+            "option": "account_id"
+          }
+        },
+        {
+          "name": "prev_author",
+          "type": {
+            "option": "account_id"
+          }
+        },
+        {
+          "name": "prev_program",
+          "type": {
+            "option": "account_id"
+          }
+        }
+      ],
+      "name": "Link"
+    },
+    {
+      "name": "Registered",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "program",
+          "type": "account_id"
+        },
+        {
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "name": "author",
+          "type": "account_id"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "seq",
+          "type": "u64"
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "idl_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "born_with_deploy",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "schema",
+          "type": "u8"
+        },
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "idl",
+          "type": {
+            "defined": "ContentRef"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "defined": "SourceRef"
+          }
+        },
+        {
+          "name": "build",
+          "type": {
+            "defined": "BuildConfig"
+          }
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "build_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "at",
+          "type": "u64"
+        }
+      ],
+      "name": "Release"
+    },
+    {
+      "name": "SourceRef",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "repo",
+          "type": "string"
+        },
+        {
+          "name": "commit",
+          "type": {
+            "vec": "u8"
+          }
+        },
+        {
+          "name": "docker_root",
+          "type": "string"
+        },
+        {
+          "name": "archive",
+          "type": {
+            "option": {
+              "defined": "ContentRef"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Updated",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "entry",
+          "type": "account_id"
+        },
+        {
+          "name": "revision",
+          "type": "u32"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "image_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "idl_sha256",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "build_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
