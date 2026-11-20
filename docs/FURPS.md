@@ -289,7 +289,7 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 to parse: the entry's on-chain metadata still displays, with the IDL surfaced as unavailable
 rather than the view failing."
 
-- **Status: met in the SDKs and the module. The CLI only partly does this.**
+- **Status: met in the SDKs, the module and the CLI (offline-tested).**
 - **Evidence:**
   - `fetch_idl` never fails. It returns a status instead: `IdlStatus::{Ok, UnknownFormat,
     Unavailable(..), HashMismatch, ParseError}`. Its unit tests are in `sdk/rust/src/idl.rs`.
@@ -302,13 +302,19 @@ rather than the view failing."
     - `R1.d`: the bytes do not match the on-chain sha256.
   - The module's `get_idl` answers `success: true` with `status: "unavailable: …"`. The JS
     `fetchIdl` returns a status.
-  - **The CLI gap:**
-    - `lezreg show` displays the metadata but never fetches the IDL. It cannot fail because of
-      the IDL, and it does not show whether the IDL is available either.
-    - `lezreg idl get` reports "IDL unavailable" and exits nonzero (`R1.b3`).
-    - No single CLI view shows the metadata together with the IDL status.
-  - `e2e.yml` covers only the "no Storage node" case. The other three cases are covered by
-    `scripts/demo.sh`, not by CI. DESIGN §5.4 says e2e covers all of them; it does not.
+  - `lezreg show` now fetches the IDL status with the infallible SDK call and shows it next to
+    the metadata in one view, in text (`  idl status    …`) and JSON (`idl_status`; on the
+    deployer entry, a located third-party entry, and each listed community entry). It uses a
+    no-retry, no-cache config built from the `--storage-api`/`--dir` flags, so a bad `--pin-peer`
+    or an unreachable Storage node cannot hide the on-chain entry.
+  - `lezreg idl get` still reports "IDL unavailable" and exits nonzero (`R1.b3`); that command's
+    exit code is unchanged.
+  - Offline coverage for all four failures: `sdk/rust/tests/idl_fetch_http.rs` uses a local fake
+    Storage HTTP node for unknown CID, not-JSON and sha256 mismatch, plus a dead port for no
+    Storage node; `cli/src/render.rs`'s unit test checks that all four statuses render as plain
+    text and status JSON. No chain, Storage process or Docker is needed.
+  - `e2e.yml` still covers only the "no Storage node" case through `idl get`; the other three
+    remain in `scripts/demo.sh` as well as in the new offline tests.
 
 **12.** "**No mandatory centralised external services.** Beyond the user's configured sequencer,
 Logos LEZ node, and Logos Storage, the registry and its tooling must not depend on any third-party
@@ -532,8 +538,9 @@ The facts, without a conclusion:
 - **No mandatory services:**
   - offline inputs for `verify` (a builder image tar, vendored crates, no forge);
   - one README list of the services `verify` uses.
-- **CLI degradation:** a CLI view that shows the metadata plus the IDL status. Today `show` never
-  fetches the IDL, and `idl get` fails when the IDL is unavailable.
+- **CLI degradation:** done — `show` displays metadata plus IDL status in one view and never fails
+  on the IDL; `idl get` keeps its nonzero exit code. Remaining: `e2e.yml` still covers only the
+  no-Storage-node case; the other three are covered by offline tests and `scripts/demo.sh`.
 - **Module:**
   - a demo/FURPS row for module writes: unit tests and `.github/workflows/module.yml` show
     register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module

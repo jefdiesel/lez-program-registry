@@ -127,6 +127,10 @@ enum Command {
         /// Also show the write-once release snapshot of this revision.
         #[arg(long)]
         revision: Option<u32>,
+        /// Storage options for the IDL status line. A failed IDL fetch never
+        /// hides the on-chain metadata.
+        #[command(flatten)]
+        storage: storage_cmd::StorageOpts,
     },
     /// List every entry, newest first, a page at a time, with each program's status
     /// (fresh, stale, or NO-PROGRAM when nothing is deployed at the claimed program).
@@ -1109,7 +1113,15 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             target,
             publisher,
             revision,
-        } => render::show(out, &reader(&net)?, &target, publisher.as_deref(), revision)?,
+            storage,
+        } => render::show(
+            out,
+            &reader(&net)?,
+            &target,
+            publisher.as_deref(),
+            revision,
+            &storage.show_fetch_config(),
+        )?,
         Command::List { limit, after } => {
             let r = reader(&net)?;
             let after = after
