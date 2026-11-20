@@ -32,9 +32,14 @@ live on Logos Storage; the chain holds their CID, sha256 and size. Entries recor
 tuple, and `lezreg verify` rebuilds it in Docker and compares the image id with the claimed one
 and with the live one.
 
+Its Basecamp module can also prepare and sign registry writes (register, third-party register,
+update, transfer, freeze) on the user's behalf through the lezreg wallet, with approval required
+for untrusted callers; the built change is decoded into a confirm card.
+
 Everything has run end to end on a local LEZ `v0.4.0-rc3` standalone sequencer: in CI on every
-push to `main`, and through `scripts/demo.sh`. Nothing has run on testnet 0.4 yet, because it has
-not launched. None of the adoption criteria are met yet.
+push to `main`, and through `scripts/demo.sh`. Module reads and writes are covered by
+`.github/workflows/module.yml` on the same local rc sequencer. Nothing has run on testnet 0.4 yet,
+because it has not launched. None of the adoption criteria are met yet.
 
 ## Repository
 
@@ -235,8 +240,10 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 - **Status: partly met.**
   - Rust SDK: all three (register, resolve, search).
   - JS SDK: resolve, list and search by name only (no search by author, no writes).
-  - Logos Core module: resolve, list and search by name only. It has no write methods, so
-    another Logos module **cannot register through it**.
+  - Logos Core module: resolve, list, search by name, **and prepare/sign writes** (register,
+    third-party register, update, transfer, freeze) through `submit`; another Logos module can
+    register, but its change waits for approval unless the caller is the registry browser or the
+    host. Still no search by author, and the JS SDK has no writes.
 - **Evidence:**
   - Rust SDK (`sdk/rust`):
     - reads: `Registry::resolve`, `list`, `search_name`, `by_author`, `third_party`;
@@ -251,11 +258,26 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
   - Module `program_registry` (`module/`): `resolve_program`, `program_label`, `get_idl`,
     `list_entries`, `search_name`, `third_party_entries`, `verify_app`, `verify_package`,
     `publisher_apps`, `config_get`/`config_set`.
+    - It also exposes `prepare_register`, `prepare_register_third_party`, `prepare_update`,
+      `prepare_transfer`, `prepare_freeze`, `submit`/`submit_status`, `signer_status`,
+      `pending_requests`, `approve_request`/`deny_request` and the `change_settled` event. The
+      builders live in `module/rust-lib/src/writes.rs` and are pinned byte-for-byte to the
+      program by `module/rust-lib/testdata/write-vectors.json` (`sdk/rust/tests/module_vectors.rs:205`,
+      unit tests at `module/rust-lib/src/lib.rs:1109,1174,1206,1219,1270,1288`).
+      `.github/workflows/module.yml:181-206` loads the module in logosctl on a local rc3 chain
+      and registers/updates/freeses an entry through it, with an on-chain assertion — met on a
+      local rc sequencer, pending testnet 0.4. Its app checks use the current SDK API
+      (`Contents::from_lgx` / `from_installed` and `Names::verify`), so the root is recomputed
+      from files and the `files_verified` / `root_mismatch` verdicts match the CLI (19 module
+      unit tests). No `docs/demo.log` row loads the module (`docs/demo.log:426-427` still says it
+      has no write methods).
     - Its search is by name only: there is no search by author in the module.
-    - The repo's module is 0.2.0, but **the catalog still serves 0.1.0** (released 2026-11-04,
-      before the app methods).
-    - No CI job loads the module. It was loaded with logosctl on the Mini by hand (DESIGN §11
-      M6); `module.yml` from DESIGN §8.3 does not exist.
+    - The repo's module is 0.3.0 (`module/metadata.json:4`), but **the catalog still serves 0.1.0**
+      (released 2026-11-04, before the app methods), so the catalog build has none of the write
+      methods.
+    - A CI job does load it: `.github/workflows/module.yml:166-206` (logosctl install/load and
+      reads, register/update/freeze, and the caller gate). It also ran by hand on the Mini
+      (DESIGN §11 M6).
 
 **10.** "Provide a CLI covering register, update, lookup, search, and source verification."
 
@@ -270,7 +292,7 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 to parse: the entry's on-chain metadata still displays, with the IDL surfaced as unavailable
 rather than the view failing."
 
-- **Status: met in the SDKs and the module. The CLI only partly does this.**
+- **Status: met in the SDKs, the module and the CLI (offline-tested).**
 - **Evidence:**
   - `fetch_idl` never fails. It returns a status instead: `IdlStatus::{Ok, UnknownFormat,
     Unavailable(..), HashMismatch, ParseError}`. Its unit tests are in `sdk/rust/src/idl.rs`.
@@ -283,36 +305,50 @@ rather than the view failing."
     - `R1.d`: the bytes do not match the on-chain sha256.
   - The module's `get_idl` answers `success: true` with `status: "unavailable: …"`. The JS
     `fetchIdl` returns a status.
-  - **The CLI gap:**
-    - `lezreg show` displays the metadata but never fetches the IDL. It cannot fail because of
-      the IDL, and it does not show whether the IDL is available either.
-    - `lezreg idl get` reports "IDL unavailable" and exits nonzero (`R1.b3`).
-    - No single CLI view shows the metadata together with the IDL status.
-  - `e2e.yml` covers only the "no Storage node" case. The other three cases are covered by
-    `scripts/demo.sh`, not by CI. DESIGN §5.4 says e2e covers all of them; it does not.
+  - `lezreg show` now fetches the IDL status with the infallible SDK call and shows it next to
+    the metadata in one view, in text (`  idl status    …`) and JSON (`idl_status`; on the
+    deployer entry, a located third-party entry, and each listed community entry). It uses a
+    no-retry, no-cache config built from the `--storage-api`/`--dir` flags, so a bad `--pin-peer`
+    or an unreachable Storage node cannot hide the on-chain entry.
+  - `lezreg idl get` still reports "IDL unavailable" and exits nonzero (`R1.b3`); that command's
+    exit code is unchanged.
+  - Offline coverage for all four failures: `sdk/rust/tests/idl_fetch_http.rs` uses a local fake
+    Storage HTTP node for unknown CID, not-JSON and sha256 mismatch, plus a dead port for no
+    Storage node; `cli/src/render.rs`'s unit test checks that all four statuses render as plain
+    text and status JSON. No chain, Storage process or Docker is needed.
+  - `e2e.yml` still covers only the "no Storage node" case through `idl get`; the other three
+    remain in `scripts/demo.sh` as well as in the new offline tests.
 
 **12.** "**No mandatory centralised external services.** Beyond the user's configured sequencer,
 Logos LEZ node, and Logos Storage, the registry and its tooling must not depend on any third-party
 web service to function. If one is used, it is disclosed, the user can disable it, and the registry
 remains fully functional with it disabled. Any analytics must be strictly opt-in."
 
-- **Status: partly met.** Register, update, lookup, enumeration, search and IDL resolution use
-  only the sequencer and the Storage node. `lezreg verify` and `lezreg build` cannot run without
-  third-party services, and they have no offline switches yet.
+- **Status: met for the core registry; partly met for the optional source-verification tools.**
+  Register, update, lookup, enumeration, search and IDL resolution use only the sequencer and the
+  Storage node. `verify` and `build` disclose their third-party services and can run from
+  user-supplied local inputs; the remaining limits are listed below.
 - **Evidence:**
   - There is no analytics code.
   - Reads refuse HTTP redirects (`max_redirects(0)`) and ignore `HTTP(S)_PROXY` unless
     `LEZREG_USE_PROXY=1` (`sdk/rust/src/rpc.rs`, `sdk/rust/src/storage.rs`).
   - The README records a network-isolation check (2026-11-02, macOS `sandbox-exec`): reads and
     writes worked with outbound traffic limited to loopback.
-  - **The gap:**
-    - `verify` and `build` need Docker Hub (the builder image), crates.io (`cargo fetch`) and the
-      git forge (the clone). The user can disable them only by not verifying.
-    - DESIGN §7.7's off switches (`--image-tar`, `--vendor-tar`, `--no-forge`, `--offline`) are
-      **not implemented**.
-    - The README does not list these services in one place.
-    - The GitHub Action and `publish --from-release` use GitHub. Both are optional: the CLI does
-      the same work locally.
+  - `verify` and `build` now disclose their services in `--help`, on stderr at every run, and in
+    JSON output (`services` plus `offline`/`network_denied`): Docker Hub
+    (`risczero/risc0-guest-builder`), crates.io (`cargo fetch`) and, for `verify`, the entry's git
+    forge. `verify` uses the sequencer and the user's Storage node only for chain reads.
+  - Offline mode is implemented: `--image-tar` is loaded with `docker load`, `--vendor-tar` is
+    unpacked into the build context with a cargo source replacement, and `--archive-file` with
+    `--no-forge` supplies the source tar instead of a forge clone. `--offline` refuses any other
+    network step and, when an input is missing, fails before any work with a message naming every
+    missing switch (`cli/tests/verify_offline.rs`). The generated offline Dockerfile has no
+    `cargo fetch` and no registry `FROM`; its compile runs with `--network=none`
+    (`sdk/rust/src/verify.rs` unit test). `--offline` plus `--allow-network` is refused.
+  - **Remaining limits:** the offline path still needs a local Docker daemon; it has not been run
+    here (no Docker on this Mac, and the owner's word is needed for Docker builds). The GitHub
+    Action and `publish --from-release` use GitHub. Both are optional: the CLI does the same work
+    locally. There is no analytics code.
 
 ### Performance
 
@@ -510,15 +546,20 @@ The facts, without a conclusion:
 - **Source hosting:**
   - make the reproducible source archive and upload it to Storage;
   - make `verify` able to rebuild from it.
-- **No mandatory services:**
-  - offline inputs for `verify` (a builder image tar, vendored crates, no forge);
-  - one README list of the services `verify` uses.
-- **CLI degradation:** a CLI view that shows the metadata plus the IDL status. Today `show` never
-  fetches the IDL, and `idl get` fails when the IDL is unavailable.
+- **No mandatory services:** done for `verify`/`build` inputs (`--image-tar`, `--vendor-tar`,
+  `--archive-file`, `--no-forge`, `--offline`), with disclosure in `--help`, stderr and JSON.
+  Remaining: run the offline path on a machine with Docker and record the result; add one README
+  list of the services (see `README.md`'s verify section for now).
+- **CLI degradation:** done — `show` displays metadata plus IDL status in one view and never fails
+  on the IDL; `idl get` keeps its nonzero exit code. Remaining: `e2e.yml` still covers only the
+  no-Storage-node case; the other three are covered by offline tests and `scripts/demo.sh`.
 - **Module:**
-  - write methods (register and update through the module);
-  - a CI job that loads it;
-  - release 0.2.0 to the catalog (it serves 0.1.0).
+  - a demo/FURPS row for module writes: unit tests and `.github/workflows/module.yml` show
+    register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module
+    has no write methods;
+  - release 0.3.0 (with the write methods) to the catalog, which serves 0.1.0;
+  - load the module in the real Basecamp (so far only logosctl on CI/Mini) and add the lez_core
+    signer once a usable release exists.
 - **Storage:** an IDL fetch across the public Storage network through relays only.
 - **Platforms:** Windows and Android builds; macOS in CI.
 - **Tooling** listed in DESIGN but not built: `lezreg idl gen` and `idl check`, the Action's

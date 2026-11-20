@@ -166,7 +166,7 @@ uses exactly this on its approval sheet.
 ## 4. Apps, verified by publisher
 
 The same module checks Basecamp **apps** against the LNS name that publishes them
-([APPS.md](APPS.md)): `verify_app(module_name)` for an installed app, `verify_package(manifest)`
+([APPS.md](APPS.md)): `verify_app(module_name)` for an installed app, `verify_package(package_path)`
 before installing, `publisher_apps(name)` to list a name's apps. Set the LNS program once with
 `config_set({"lns": "<program id>"})`. The CLI equivalents are `lezreg app show`,
 `lezreg app verify`, `lezreg app record` (with `--upload`, the package goes on Logos Storage and
@@ -178,8 +178,9 @@ and `apps::check_download` checks a download. Key on `Verdict::status()` (or `ex
 only `verified` proves the whole package; `files_verified` proves the files and not the
 manifest. `lgx::check_canonical_layout` is the stricter rule `lezreg app record` applies before
 vouching for a package (lgx's tar layout and a manifest lgx writes back unchanged). A check from a manifest alone is no longer
-possible: the manifest's `hashes.root` is a claim, and only files prove it. (The module's
-`verify_app` / `verify_package` at commit 74a0010 still compare that claim; see APPS.md §4.)
+possible: the manifest's `hashes.root` is a claim, and only files prove it. The module now uses
+these same SDK calls (`Contents::from_installed` / `from_lgx` and `Names::verify`), so its
+`files_verified` and `root_mismatch` verdicts mean what the CLI's do.
 
 A name's records can't be read without the name, but they are not secret: record addresses are
 visible on chain and a guessable name can be found by trying it, so treat an app record under a

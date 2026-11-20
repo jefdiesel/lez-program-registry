@@ -20,8 +20,9 @@ pub mod writes;
 
 use lezreg_sdk::{
     HttpRpc, Kind, Registry, Rpc as _,
-    apps::{self, Manifest, Names},
+    apps::{self, Names},
     idl::{self, FetchConfig, IdlStatus},
+    lgx::Contents,
     json as js,
     types::AccountId,
 };
@@ -70,16 +71,19 @@ pub trait ProgramRegistryModule: Send + 'static {
 
     /// Whether the installed Basecamp module `module_name` is really published by the LNS name
     /// its package names (docs/APPS.md): `{status, publisher, module, version, root, record}`.
-    /// `status` is `verified` (the name vouches for this exact package), `mismatch` (the name
-    /// publishes this module but not this package: a copy, or a release not yet vouched for),
-    /// `not_published`, `no_such_name`, or `unclaimed` (the package names no LNS publisher).
-    /// `record.programs` are the programs the app says it calls. Reads the installed
-    /// `manifest.json` from Basecamp's data folder and one LNS record from the sequencer.
+    /// `status` is `verified` (the name vouches for this exact package), `files_verified` (the
+    /// recorded root is not vouched for, but the installed files match it), `mismatch`,
+    /// `root_mismatch`, `file_mismatch`, `manifest_mismatch`, `ambiguous`, `not_published`,
+    /// `no_such_name`, or `unclaimed`. The root in the result is **recomputed from the files**,
+    /// never copied from `manifest.json`. `claimed.record.programs` are the programs the app
+    /// says it calls. Reads the installed package from Basecamp's data folder and one LNS
+    /// record from the sequencer.
     fn verify_app(&mut self, module_name: String) -> String;
 
-    /// The same check for a package not yet installed, given its `manifest.json` as JSON text
-    /// (the `manifest` of a catalog's index.json entry will do): for an install view.
-    fn verify_package(&mut self, manifest_json: String) -> String;
+    /// The same check for a package not yet installed, given a path to an `.lgx` file or an
+    /// installed package directory (not a bare manifest: a manifest's root is a claim, and the
+    /// SDK cannot recompute it without the files). For an install view.
+    fn verify_package(&mut self, package_path: String) -> String;
 
     /// The apps an LNS name publishes: `{name, apps: [{module, version, roots, catalog,
     /// programs: [label]}]}`, each program with its `program_label`. Only someone who knows a name
@@ -687,25 +691,27 @@ impl ProgramRegistry {
     }
 
     /// A package checked against its publisher, kept for [`APP_CHECK_TTL_MS`].
-    fn check(&mut self, manifest: &Manifest) -> Result<Value, String> {
+    fn check(&mut self, contents: &Contents) -> Result<Value, String> {
         let now = now_ms();
-        let key = (manifest.name.clone(), manifest.root);
+        let key = (contents.manifest.name.clone(), contents.root);
         if let Some((verdict, at)) = self.checked.get(&key) {
             if now.saturating_sub(*at) < APP_CHECK_TTL_MS {
                 return Ok(verdict.clone());
             }
         }
-        let (verdict, via) = if manifest.publisher().is_none() {
+        let (verdict, via) = if !contents.root_matches() {
+            (apps::Verdict::RootMismatch, None)
+        } else if contents.manifest.publisher().is_none() {
             (apps::Verdict::Unclaimed, None)
         } else {
-            self.names()?.verify(manifest, now).map_err(|e| e.to_string())?
+            self.names()?.verify(contents, now).map_err(|e| e.to_string())?
         };
-        let mut shown = verdict.to_json(manifest);
+        let mut shown = verdict.to_json(contents);
         // A publisher name that forwards was checked where it points; the prompt says so.
         shown["forwarded_from"] = json!(via);
-        if let Some(programs) = shown["record"]["programs"].as_array().cloned() {
+        if let Some(programs) = shown["claimed"]["record"]["programs"].as_array().cloned() {
             let labels: Vec<Value> = programs.iter().filter_map(Value::as_str).map(|p| self.label(p).unwrap_or_else(|e| json!({"text": p, "error": e}))).collect();
-            shown["record"]["program_labels"] = json!(labels);
+            shown["claimed"]["record"]["program_labels"] = json!(labels);
         }
         if self.checked.len() > 256 {
             self.checked.clear();
@@ -742,24 +748,35 @@ fn default_basecamp_data() -> Option<PathBuf> {
     })
 }
 
-/// The installed manifest of `module`: core modules under `modules/`, ui apps under `plugins/`.
-fn installed_manifest(data: &std::path::Path, module: &str) -> Result<Manifest, String> {
+/// The installed package of `module`: core modules under `modules/`, ui apps under `plugins/`.
+/// The SDK recomputes the root from the files; the manifest's root stays only a claim.
+fn installed_contents(data: &std::path::Path, module: &str) -> Result<Contents, String> {
     // A module name becomes a path: only the characters an app record's key allows, no `..`.
     if !apps::is_module_name(module) || module.contains("..") || module.starts_with('.') {
         return Err(format!("'{module}' is not a module name"));
     }
     for dir in ["modules", "plugins"] {
-        let path = data.join(dir).join(module).join("manifest.json");
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            let json: Value = serde_json::from_str(&text).map_err(|_| format!("{} is not JSON", path.display()))?;
-            let manifest = Manifest::parse(&json).map_err(|e| e.to_string())?;
-            if manifest.name != module {
-                return Err(format!("{} names another module ({})", path.display(), manifest.name));
+        let path = data.join(dir).join(module);
+        if path.is_dir() {
+            let contents = Contents::from_installed(&path).map_err(|e| e.to_string())?;
+            if contents.manifest.name != module {
+                return Err(format!("{} names another module ({})", path.display(), contents.manifest.name));
             }
-            return Ok(manifest);
+            return Ok(contents);
         }
     }
     Err(format!("{module} is not installed in {}", data.display()))
+}
+
+/// A path to an unpacked directory or a `.lgx` package, for `verify_package`.
+fn contents_from_path(text: &str) -> Result<Contents, String> {
+    let path = std::path::PathBuf::from(text.trim());
+    if path.is_dir() {
+        Contents::from_installed(&path).map_err(|e| e.to_string())
+    } else {
+        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Contents::from_lgx(&bytes).map_err(|e| e.to_string())
+    }
 }
 
 impl ProgramRegistryModule for ProgramRegistry {
@@ -858,23 +875,18 @@ impl ProgramRegistryModule for ProgramRegistry {
         })())
     }
 
-    // TODO(appfix): the SDK is about to recompute a package's root from its files instead of
-    // trusting manifest.json (branch `appfix`, not merged; its verdicts and the apps.rs/lgx.rs API
-    // will change). verify_app and verify_package stay on the current API until it lands; then
-    // bump the SDK pin and report its new verdict here.
     fn verify_app(&mut self, module_name: String) -> String {
         reply((|| {
             let data = self.basecamp_data().ok_or("no Basecamp data folder: call config_set with {\"basecamp_data\": \"<path>\"}")?;
-            let manifest = installed_manifest(&data, module_name.trim())?;
-            self.check(&manifest)
+            let contents = installed_contents(&data, module_name.trim())?;
+            self.check(&contents)
         })())
     }
 
-    fn verify_package(&mut self, manifest_json: String) -> String {
+    fn verify_package(&mut self, package_path: String) -> String {
         reply((|| {
-            let json: Value = serde_json::from_str(&manifest_json).map_err(|e| format!("not JSON: {e}"))?;
-            let manifest = Manifest::parse(&json).map_err(|e| e.to_string())?;
-            self.check(&manifest)
+            let contents = contents_from_path(&package_path)?;
+            self.check(&contents)
         })())
     }
 
@@ -887,7 +899,7 @@ impl ProgramRegistryModule for ProgramRegistry {
                 match record {
                     Ok(r) => {
                         let labels: Vec<Value> = r.programs.iter().map(|p| self.label(&p.to_base58()).unwrap_or_else(|e| json!({"text": p.to_base58(), "error": e}))).collect();
-                        shown.push(json!({"module": module, "version": r.version, "roots": r.roots.iter().map(hex::encode).collect::<Vec<_>>(), "catalog": r.catalog, "programs": labels}));
+                        shown.push(json!({"module": module, "version": r.newest().version, "roots": r.roots().iter().map(hex::encode).collect::<Vec<_>>(), "catalog": r.catalog, "programs": labels}));
                     }
                     Err(e) => shown.push(json!({"module": module, "error": e.to_string()})),
                 }
@@ -1332,15 +1344,27 @@ mod tests {
         assert_eq!(limit_arg(10_000), 200);
     }
 
-    /// A Basecamp data folder with one core module and one ui app installed.
+    /// A Basecamp data folder with one core module and one ui app installed,
+    /// each with files whose hashes make the declared root true. The SDK
+    /// recomputes the root; a bare manifest with a made-up root is refused.
     fn basecamp(label: &str) -> PathBuf {
+        use std::collections::BTreeMap;
         let dir = std::env::temp_dir().join(format!("lezreg-module-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let root = "ab".repeat(32);
         for (kind, name, author) in [("modules", "names", "lns:jef"), ("plugins", "forumer_ui", "")] {
-            std::fs::create_dir_all(dir.join(kind).join(name)).unwrap();
-            let manifest = json!({"name": name, "version": "1.0.0", "author": author, "hashes": {"root": root}});
-            std::fs::write(dir.join(kind).join(name).join("manifest.json"), manifest.to_string()).unwrap();
+            let package = dir.join(kind).join(name);
+            std::fs::create_dir_all(&package).unwrap();
+            let payload = b"the publisher's build";
+            let file_hash = hex::encode(lezreg_sdk::types::pda::sha256(payload));
+            let files = BTreeMap::from([(
+                format!("variants/darwin-arm64/{name}.bin"),
+                file_hash,
+            )]);
+            let hashes = lezreg_sdk::lgx::merkle_tree(&files);
+            let manifest = json!({"name": name, "version": "1.0.0", "author": author, "hashes": hashes});
+            std::fs::write(package.join("manifest.json"), manifest.to_string()).unwrap();
+            std::fs::write(package.join("variant"), "darwin-arm64").unwrap();
+            std::fs::write(package.join(format!("{name}.bin")), payload).unwrap();
         }
         dir
     }
@@ -1362,10 +1386,17 @@ mod tests {
             assert_eq!(parsed(&m.verify_app(bad.into()))["success"], false, "{bad}");
         }
         assert!(parsed(&m.verify_app("missing".into()))["error"].as_str().unwrap().contains("not installed"));
-        // A package not yet installed, as a catalog index lists it.
-        let v = parsed(&m.verify_package(json!({"name": "faucet_ui", "version": "0.1.0", "author": "", "hashes": {"root": "cd".repeat(32)}}).to_string()));
+        // A package not yet installed: give the directory, not a bare manifest.
+        let path = data.join("plugins").join("forumer_ui").display().to_string();
+        let v = parsed(&m.verify_package(path));
         assert_eq!(v["value"]["status"], "unclaimed");
-        assert_eq!(parsed(&m.verify_package("{}".into()))["success"], false);
+        assert_eq!(parsed(&m.verify_package("no-such-package".into()))["success"], false);
+        // A swapped file moves the recomputed root and is refused up front.
+        let plugin = data.join("plugins").join("forumer_ui").join("forumer_ui.bin");
+        std::fs::write(&plugin, b"MALICIOUS").unwrap();
+        let v = parsed(&m.verify_app("forumer_ui".into()));
+        assert_eq!(v["value"]["status"], "root_mismatch", "{v}");
+        std::fs::write(&plugin, b"the publisher's build").unwrap();
         assert!(parsed(&m.publisher_apps("jef".into()))["error"].as_str().unwrap().contains("no LNS program"));
         let shown = parsed(&m.config_get());
         assert_eq!(shown["value"]["basecamp_data"], data.display().to_string());

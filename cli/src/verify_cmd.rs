@@ -16,6 +16,77 @@ use serde_json::json;
 
 use crate::{args::parse_account, out::Out};
 
+/// Third-party services used by `verify`/`build`, disclosed in --help and at
+/// runtime. The user's sequencer and Storage node are not third parties.
+pub const SERVICES: &str =
+    "third-party services: Docker Hub (risczero/risc0-guest-builder), crates.io (cargo fetch), and the entry's git forge. Use --offline with --image-tar, --vendor-tar and --archive-file to avoid all three.";
+
+#[derive(clap::Args, Clone, Debug, Default)]
+pub struct OfflineOpts {
+    /// A locally saved builder image tar (`docker save`). Loaded with `docker load`, never pulled.
+    #[arg(long)]
+    pub image_tar: Option<PathBuf>,
+    /// A `cargo vendor` tar unpacked into the build context; replaces crates.io.
+    #[arg(long)]
+    pub vendor_tar: Option<PathBuf>,
+    /// Do not clone the entry's git forge; use --archive-file.
+    #[arg(long)]
+    pub no_forge: bool,
+    /// A local `git archive` tar of the recorded source.
+    #[arg(long)]
+    pub archive_file: Option<PathBuf>,
+    /// Refuse every network step apart from the user's sequencer and Storage node.
+    #[arg(long)]
+    pub offline: bool,
+}
+
+impl OfflineOpts {
+    /// Fail before any work if the user asked for offline mode without the
+    /// inputs that replace the three services. Name every missing input.
+    pub fn validate(&self) -> Result<()> {
+        if !self.offline && !self.no_forge {
+            return Ok(());
+        }
+        let mut missing = Vec::new();
+        if self.image_tar.is_none() {
+            missing.push("--image-tar <builder image tar>");
+        }
+        if self.vendor_tar.is_none() {
+            missing.push("--vendor-tar <vendored crates tar>");
+        }
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            bail!(
+                "offline mode needs {}; missing: {}",
+                SERVICES,
+                missing.join(", ")
+            )
+        }
+    }
+
+    /// Unpack a vendor tar into the build context so the Dockerfile's cargo
+    /// source replacement points at real files.
+    pub fn unpack_vendor(&self, dir: &Path) -> Result<()> {
+        let Some(tar) = &self.vendor_tar else {
+            return Ok(());
+        };
+        let target = dir.join("vendor");
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::create_dir_all(&target)?;
+        let status = std::process::Command::new("tar")
+            .arg("-xf")
+            .arg(tar)
+            .arg("-C")
+            .arg(&target)
+            .status()?;
+        if !status.success() {
+            bail!("cannot unpack --vendor-tar {}", tar.display());
+        }
+        Ok(())
+    }
+}
+
 fn workdir(given: Option<&Path>, tag: &str) -> Result<PathBuf> {
     let d = match given {
         Some(d) => d.to_path_buf(),
@@ -45,7 +116,13 @@ pub fn verify(
     work: Option<&Path>,
     allow_network: bool,
     mark: bool,
+    offline: &OfflineOpts,
 ) -> Result<()> {
+    offline.validate()?;
+    if offline.offline && allow_network {
+        bail!("--offline and --allow-network cannot be used together");
+    }
+    eprintln!("{SERVICES}");
     let program = parse_account(target).map_err(|_| anyhow!("verify takes a program id"))?;
     let resolved = r.resolve(&tid(&program))?;
     let entry = resolved
@@ -82,17 +159,26 @@ pub fn verify(
         t.source.repo,
         hex::encode(&t.source.commit)
     );
-    if t.source.repo.is_empty() {
+    let use_local_source = offline.offline || offline.no_forge;
+    if use_local_source && offline.archive_file.is_none() {
+        bail!("offline source needs --archive-file <source tar> (no forge clone)");
+    }
+    if t.source.repo.is_empty() && !use_local_source {
         bail!(
-            "this entry has only a Storage archive; archive sources come with the source pinner (DESIGN §4.4)"
+            "this entry has only a Storage archive; pass --archive-file with --no-forge (DESIGN §4.4)"
         );
     }
-    let src = verify::source_from_git(
-        &t.source.repo,
-        &t.source.commit,
-        &t.source.docker_root,
-        &work,
-    )?;
+    let src = if use_local_source {
+        let archive = offline.archive_file.as_ref().expect("offline inputs validated");
+        verify::source_from_tar(archive, &work)?
+    } else {
+        verify::source_from_git(
+            &t.source.repo,
+            &t.source.commit,
+            &t.source.docker_root,
+            &work,
+        )?
+    };
     if let Some(a) = &t.source.archive
         && a.sha256 != src.archive_sha256
     {
@@ -113,7 +199,17 @@ pub fn verify(
         );
     }
     eprintln!("building in Docker (network off for the compile)…");
-    let (elf, network_denied) = match verify::docker_build(&src.dir, &t.build, true, &work) {
+    let (elf, network_denied) = if use_local_source {
+        let image_ref = verify::docker_load(offline.image_tar.as_ref().expect("validated"))?;
+        offline.unpack_vendor(&src.dir)?;
+        let flags = verify::guest_rustc_flags(&src.dir, &t.build.manifest_path);
+        let df = verify::dockerfile_offline(&t.build, &flags, &image_ref)?;
+        (
+            verify::docker_build_df(&src.dir, &df, &work)?,
+            true,
+        )
+    } else {
+    match verify::docker_build(&src.dir, &t.build, true, &work) {
         Ok(elf) => (elf, true),
         Err(e) if allow_network => {
             eprintln!("offline build failed ({e}); retrying with the network on (--allow-network)");
@@ -127,6 +223,7 @@ pub fn verify(
             out.json(json!({"verdict": v.label(), "error": e.to_string()}));
             bail!("NotReproducible: {e}");
         }
+    }
     };
     let rebuilt = verify::image_id_of_elf(&elf)?;
     let v = Verdict::of(rebuilt, t.claimed, live);
@@ -144,7 +241,7 @@ pub fn verify(
         h(&src.archive_sha256),
         h(&lezreg_types::pda::sha256(&elf))
     ));
-    out.json(json!({"verdict": v.label(), "rebuilt": h(&rebuilt), "claimed": h(&t.claimed), "live": live.map(|l| h(&l)), "revision": t.revision, "network_denied": network_denied, "archive_sha256": h(&src.archive_sha256)}));
+    out.json(json!({"verdict": v.label(), "rebuilt": h(&rebuilt), "claimed": h(&t.claimed), "live": live.map(|l| h(&l)), "revision": t.revision, "network_denied": network_denied, "archive_sha256": h(&src.archive_sha256), "offline": use_local_source, "services": SERVICES}));
     if mark && v == Verdict::Match {
         let key = mark_key(network, target, &rebuilt, &t.build, &src.archive_sha256);
         let at = std::time::SystemTime::now()
@@ -165,9 +262,25 @@ pub fn verify(
 
 /// `lezreg build`: the canonical build of a local source tree (an author checks what the
 /// registry will verify before deploying).
-pub fn build(out: &mut Out, dir: &Path, b: &BuildConfig, work: Option<&Path>) -> Result<()> {
+pub fn build(
+    out: &mut Out,
+    dir: &Path,
+    b: &BuildConfig,
+    work: Option<&Path>,
+    offline: &OfflineOpts,
+) -> Result<()> {
+    offline.validate()?;
+    eprintln!("{SERVICES}");
     let work = workdir(work, "build")?;
-    let elf = verify::docker_build(dir, b, true, &work)?;
+    let elf = if offline.offline || offline.no_forge {
+        let image_ref = verify::docker_load(offline.image_tar.as_ref().expect("validated"))?;
+        offline.unpack_vendor(dir)?;
+        let flags = verify::guest_rustc_flags(dir, &b.manifest_path);
+        let df = verify::dockerfile_offline(b, &flags, &image_ref)?;
+        verify::docker_build_df(dir, &df, &work)?
+    } else {
+        verify::docker_build(dir, b, true, &work)?
+    };
     let id = verify::image_id_of_elf(&elf)?;
     let elf_path = work.join(format!("{}.elf", b.binary));
     std::fs::write(&elf_path, &elf)?;
@@ -183,7 +296,7 @@ pub fn build(out: &mut Out, dir: &Path, b: &BuildConfig, work: Option<&Path>) ->
         bin_path.display(),
         hex::encode(lezreg_types::pda::sha256(&bin))
     ));
-    out.json(json!({"image_id": hex::encode(id), "elf": elf_path.display().to_string(), "bin": bin_path.display().to_string(), "image_digest": hex::encode(b.image_digest), "network_denied": true}));
+    out.json(json!({"image_id": hex::encode(id), "elf": elf_path.display().to_string(), "bin": bin_path.display().to_string(), "image_digest": hex::encode(b.image_digest), "network_denied": true, "offline": offline.offline || offline.no_forge, "services": SERVICES}));
     Ok(())
 }
 

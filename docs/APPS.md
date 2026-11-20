@@ -184,9 +184,9 @@ The `names set-text` line `record` prints is the one output not escaped, because
 only from validated parts (an LNS name, `app.<module>`, and a record whose catalog must be a
 plain URL) with the value single-quoted for the shell.
 
-The Basecamp module (`verify_app`, `verify_package`) still compares the manifest's claimed
-root at commit 74a0010 and must move to these SDK calls; until then its "verified" means only
-that the manifest's claim matches.
+The Basecamp module (`verify_app`, `verify_package`) now uses these SDK calls: it recomputes
+the root from the installed files or the `.lgx`, so `files_verified` and `root_mismatch` have the
+same meaning as in the CLI. A bare manifest JSON is no longer accepted as a package path.
 
 Where it shows:
 

@@ -39,6 +39,19 @@ pub struct StorageOpts {
 }
 
 impl StorageOpts {
+    /// A fetch config for `show`: no pin-peer parsing, no retries and no blob
+    /// cache, so showing an entry can never fail because of its IDL.
+    pub fn show_fetch_config(&self) -> FetchConfig {
+        FetchConfig {
+            storage_api: Some(self.storage_api.clone()),
+            cache_dir: None,
+            byo_dirs: self.dirs.clone(),
+            pin_peers: Vec::new(),
+            backoff: Vec::new(),
+            ..FetchConfig::default()
+        }
+    }
+
     fn fetch_config(&self) -> Result<FetchConfig> {
         let backoff = [2u64, 8, 20]
             .iter()

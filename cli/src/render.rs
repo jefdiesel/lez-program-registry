@@ -4,7 +4,8 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use lezreg_sdk::{
-    Found, Freshness, Header, HttpRpc, Kind, Listed, Page, Registry, cid, json as j, tx::Receipt,
+    FetchConfig, Found, Freshness, Header, HttpRpc, IdlStatus, Kind, Listed, Page, Registry,
+    cid, idl::fetch_idl, json as j, text::shown, tx::Receipt,
 };
 use lezreg_types::{AccountId, Entry};
 use serde_json::json;
@@ -56,6 +57,16 @@ fn freshness_text(f: &Freshness, claimed: &[u8; 32]) -> String {
     }
 }
 
+/// The IDL status is fetched with an infallible SDK call: `show` must keep
+/// displaying the on-chain metadata when the IDL is unavailable.
+fn idl_status_of(e: &Entry, cfg: &FetchConfig) -> IdlStatus {
+    fetch_idl(&e.idl, cfg)
+}
+
+fn idl_status_text(status: &IdlStatus) -> String {
+    format!("{} — {}", status.label(), shown(&status.to_string()))
+}
+
 fn entry_text(
     out: &Out,
     title: &str,
@@ -64,6 +75,7 @@ fn entry_text(
     e: &Entry,
     header: Option<&Header>,
     f: &Freshness,
+    idl: &IdlStatus,
 ) {
     out.text(&format!(
         "{title}  {} v{}  (revision {})",
@@ -121,6 +133,7 @@ fn entry_text(
         short(&e.idl.sha256),
         e.idl.size
     ));
+    out.text(&format!("  idl status    {}", idl_status_text(idl)));
     if !e.source.repo.is_empty() {
         out.text(&format!(
             "  source       {} @ {} (docker root {})",
@@ -172,6 +185,7 @@ pub fn show(
     target: &str,
     publisher: Option<&str>,
     revision: Option<u32>,
+    idl_cfg: &FetchConfig,
 ) -> Result<()> {
     let Ok(program) = crate::args::parse_account(target).map(|p| lezreg_sdk::tx::tid(&p)) else {
         return show_name(out, r, target);
@@ -180,6 +194,7 @@ pub fn show(
         let publisher = lezreg_sdk::tx::tid(&crate::args::parse_account(p)?);
         let (at, _) = r.third_party_entry(&program, &publisher)?;
         let loc = r.locate(&at)?.ok_or(lezreg_sdk::Error::NoEntry(at))?;
+        let idl = idl_status_of(&loc.entry, idl_cfg);
         entry_text(
             out,
             "third-party entry",
@@ -188,8 +203,10 @@ pub fn show(
             &loc.entry,
             loc.header.as_ref(),
             &loc.freshness,
+            &idl,
         );
         let mut v = j::located(&loc);
+        v["idl_status"] = j::idl_status(&idl);
         release(out, r, &at, revision, &mut v)?;
         out.json(v);
         return Ok(());
@@ -215,6 +232,7 @@ pub fn show(
     match &resolved.deployer {
         Some(e) => {
             out.text("");
+            let idl = idl_status_of(e, idl_cfg);
             entry_text(
                 out,
                 "deployer entry",
@@ -223,7 +241,9 @@ pub fn show(
                 e,
                 resolved.header.as_ref(),
                 &resolved.freshness().expect("entry"),
+                &idl,
             );
+            v["deployer_entry"]["idl_status"] = j::idl_status(&idl);
             release(out, r, &program, revision, &mut v)?;
         }
         None => out.text("\nno deployer entry: the program's header key has not registered it"),
@@ -242,14 +262,16 @@ pub fn show(
             continue;
         };
         let f = Freshness::of(e, resolved.header.as_ref());
+        let idl = idl_status_of(e, idl_cfg);
         match i.kind {
             Some(Kind::ThirdParty { publisher }) => {
                 out.text(&format!(
-                    "  community entry by {publisher}: {} v{} (revision {}), {}  [{}]",
+                    "  community entry by {publisher}: {} v{} (revision {}), {}, IDL {}  [{}]",
                     e.name,
                     e.version,
                     e.revision,
                     f.label(),
+                    idl.label(),
                     i.address
                 ));
             }
@@ -260,6 +282,7 @@ pub fn show(
         }
         let mut x = j::listed(i);
         x["freshness"] = j::freshness(&f);
+        x["idl_status"] = j::idl_status(&idl);
         tj.push(x);
     }
     v["third_party"] = json!(tj);
@@ -493,4 +516,28 @@ pub fn receipt(out: &mut Out, r: &Receipt) {
         )),
     }
     out.json(r.json());
+}
+
+#[cfg(test)]
+mod idl_status_tests {
+    use super::*;
+    use lezreg_sdk::Unavailable;
+
+    #[test]
+    fn all_four_failure_statuses_render_as_plain_text() {
+        let cases = [
+            IdlStatus::Unavailable(Unavailable::NoStorageNode("none".into())),
+            IdlStatus::Unavailable(Unavailable::NotFound("HTTP 404".into())),
+            IdlStatus::ParseError("not JSON".into()),
+            IdlStatus::HashMismatch {
+                expected: [0u8; 32],
+                got: [1u8; 32],
+            },
+        ];
+        for status in cases {
+            let text = idl_status_text(&status);
+            assert!(!text.is_empty());
+            assert_eq!(j::idl_status(&status)["status"], json!(status.label()));
+        }
+    }
 }
