@@ -1,7 +1,9 @@
 [package]
 name = "lezreg-idl"
 description = "IDL tools for the registry: `lezreg-idl-extend` (adds x-lez04, fills discriminator/spec/metadata) and the IDL drift tests."
-version.workspace = true
+# Not the workspace version: env!("CARGO_PKG_VERSION") here is the `metadata.version` written
+# into idl/ (the program's IDL), which follows the program (0.1.0), not the tools' release.
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish = false
