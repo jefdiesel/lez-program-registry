@@ -391,7 +391,7 @@ fn gunzip(bytes: &[u8]) -> Result<Vec<u8>> {
 /// reader that stops at the NUL and 0o1234 to lgx: a size like that hid a whole second package
 /// (review B1). Anything but the plain form is refused, never interpreted.
 fn strict_number(field: &[u8], what: &str) -> Result<u64> {
-    let digits = field.iter().take_while(|b| (b'0'..=b'7').contains(b)).count();
+    let digits = field.iter().take_while(|&&b| (b'0'..=b'7').contains(&b)).count();
     if digits == 0 || digits > 21 || !field[digits..].iter().all(|&b| b == 0 || b == b' ') {
         return Err(bad(&format!("a tar header whose {what} field is not plain octal ({field:?}); refused rather than guessed at")));
     }
