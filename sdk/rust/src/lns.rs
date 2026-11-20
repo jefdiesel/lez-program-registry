@@ -182,6 +182,15 @@ impl Profile {
     }
 }
 
+/// The NFT deed a version-7 name record points at (logos-names `DEEDS.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Deed {
+    /// The deed definition PDA on the LNS registry.
+    pub definition: [u8; 32],
+    /// The nonce that derives the definition and the holding account.
+    pub nonce: [u8; 32],
+}
+
 /// A registered name's record, opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameRecord {
@@ -191,6 +200,8 @@ pub struct NameRecord {
     pub expires: u64,
     /// `None` when the record holds no profile this key opens for this name.
     pub profile: Option<Profile>,
+    /// The NFT deed, on records of version 7 or later.
+    pub deed: Option<Deed>,
 }
 
 impl NameRecord {
@@ -284,10 +295,24 @@ pub fn decode_record(bytes: &[u8], key: &[u8; 32], name: &str) -> Result<NameRec
     let owner_tag = r.bytes32()?;
     let expires = r.u64()?;
     let sealed = r.byte_vec()?;
-    // SPEC §5: version 6 ends with `claimed`; earlier versions end at `sealed`. A version this
-    // reader doesn't know, or bytes after the record, are refused rather than guessed at (the
-    // Names CLI also refuses trailing bytes).
+    // SPEC §5: v1–5 end at `sealed`; v6 adds `claimed`; v7 adds a deed option.
+    // Bytes after the record, or an option tag we do not know, are refused
+    // rather than guessed at (the Names CLI also refuses trailing bytes).
+    let mut deed = None;
     match version {
+        7 => {
+            if r.u8()? > 1 {
+                return Err(Error::Invalid("an LNS record's claimed flag is not 0 or 1".into()));
+            }
+            deed = match r.u8()? {
+                0 => None,
+                1 => Some(Deed {
+                    definition: r.bytes32()?,
+                    nonce: r.bytes32()?,
+                }),
+                _ => return Err(Error::Invalid("an LNS deed option tag is not 0 or 1".into())),
+            };
+        }
         6 => {
             if r.u8()? > 1 {
                 return Err(Error::Invalid("an LNS record's claimed flag is not 0 or 1".into()));
@@ -303,6 +328,7 @@ pub fn decode_record(bytes: &[u8], key: &[u8; 32], name: &str) -> Result<NameRec
         owner_tag,
         expires,
         profile: open_profile(key, sealed, name),
+        deed,
     })
 }
 
@@ -435,6 +461,48 @@ mod tests {
         assert!(decode_record(&record(6, &[2]), &key, "jef").is_err(), "claimed is a bool");
         assert!(decode_record(&record(99, &[0]), &key, "jef").is_err(), "unknown version");
         assert!(decode_record(&record(6, &[]), &key, "jef").is_err(), "v6 without claimed");
+    }
+
+    #[test]
+    fn a_real_version7_deed_record_decodes() {
+        // One read of `getAccount` for jef05's record address on our rc3 chain,
+        // Origin https://nameswallet.app, 2026-11-20. The profile cannot be
+        // opened with a made-up key; this test only checks the v7 tail.
+        let key = [7_u8; 32];
+        let record = |version: u8, tail: &[u8]| {
+            let mut b = vec![version];
+            b.extend([1_u8; 32]);
+            b.extend(u64::MAX.to_le_bytes());
+            b.extend(0_u32.to_le_bytes());
+            b.extend(tail);
+            b
+        };
+        let reply: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/jef05-account.json")).unwrap();
+        let bytes = reply["result"]["data"]["actor_states"]
+            ["6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b.as_u64().unwrap() as u8)
+            .collect::<Vec<_>>();
+        let parsed = decode_record(&bytes, &[7_u8; 32], "jef05").unwrap();
+        assert_eq!(parsed.expires, u64::MAX);
+        let deed = parsed.deed.expect("jef05 has a deed");
+        assert_eq!(
+            hex::encode(deed.definition),
+            "c777a7b0f37917d23a11b61e43f97e94d585ad3952fa5d14a7362e76ae72dbcc"
+        );
+        assert_eq!(
+            hex::encode(deed.nonce),
+            "553886ce80c1b34caedb8c7cfc0a46ad2480c49db6c449381ca7d0df3ae46cf5"
+        );
+        // Synthetic v7 edge cases: tag 0 is None, tag 2 and a short tail fail.
+        assert!(decode_record(&record(7, &[0, 0]), &key, "jef").is_ok());
+        assert!(decode_record(&record(7, &[0, 2]), &key, "jef").is_err());
+        let mut short = record(7, &[0, 1]);
+        short.pop();
+        assert!(decode_record(&short, &key, "jef").is_err());
     }
 
     #[test]
