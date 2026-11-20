@@ -266,8 +266,11 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
       unit tests at `module/rust-lib/src/lib.rs:1109,1174,1206,1219,1270,1288`).
       `.github/workflows/module.yml:181-206` loads the module in logosctl on a local rc3 chain
       and registers/updates/freeses an entry through it, with an on-chain assertion — met on a
-      local rc sequencer, pending testnet 0.4. No `docs/demo.log` row loads the module
-      (`docs/demo.log:426-427` still says it has no write methods).
+      local rc sequencer, pending testnet 0.4. Its app checks use the current SDK API
+      (`Contents::from_lgx` / `from_installed` and `Names::verify`), so the root is recomputed
+      from files and the `files_verified` / `root_mismatch` verdicts match the CLI (19 module
+      unit tests). No `docs/demo.log` row loads the module (`docs/demo.log:426-427` still says it
+      has no write methods).
     - Its search is by name only: there is no search by author in the module.
     - The repo's module is 0.3.0 (`module/metadata.json:4`), but **the catalog still serves 0.1.0**
       (released 2026-11-04, before the app methods), so the catalog build has none of the write
