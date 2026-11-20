@@ -12,7 +12,8 @@ answer gets no reply, as a module that never answers would: the screen must stil
 Scenarios: list (the index as it opens), detail (the newest entry's guide page), detail-vest,
 detail-family (an older member of a family), detail-registry (a deployer entry), detail-tech
 (Technical details open), detail-author (the author's update form, as far down as it goes),
-search (a name search), narrow-list and narrow-detail (a window too narrow for both: the guide
+search (a name search), basecamp-list and basecamp-end (1250x700, the test Basecamp's
+window; -end scrolled to the bottom), narrow-list, narrow-end and narrow-detail (a window too narrow for both: the guide
 page replaces the index), small (a small window with both), freeze-confirm (the confirm sheet
 for Freeze; needs a recorded prepare_freeze), nomodule (no program_registry at all).
 Answers can come from tools/record.py (logosctl) or tools/answers_from_lezreg.py (lezreg reads).
@@ -60,6 +61,9 @@ SCENARIOS = {
     "detail-tech": 'if (root.items.length) { root.open(byName("vest")); techDetails.open = true }',
     "detail-author": 'if (root.items.length) { root.open(byName("lez_program_registry")); techDetails.open = true; authorTools.open = true }',
     "narrow-list": "",
+    "basecamp-list": "",
+    "basecamp-end": "list.contentY = list.originY + list.contentHeight - list.height",
+    "narrow-end": "list.contentY = list.originY + list.contentHeight - list.height",
     "narrow-detail": 'if (root.items.length) root.open(byName("vest"))',
     "small": 'if (root.items.length) root.open(byName("names-evm-bridge-v7"))',
     "search": 'root.query = "%(search)s"; root.loadList(false)',
@@ -68,7 +72,7 @@ SCENARIOS = {
 }
 
 
-SIZES = {"narrow-list": (720, 900), "narrow-detail": (720, 900), "small": (1000, 700), "detail-tech": (1280, 1500), "detail-author": (1280, 2300)}
+SIZES = {"basecamp-list": (1250, 700), "basecamp-end": (1250, 700), "narrow-end": (720, 900), "narrow-list": (720, 900), "narrow-detail": (720, 900), "small": (1000, 700), "detail-tech": (1280, 1500), "detail-author": (1280, 2300)}
 
 
 def main():

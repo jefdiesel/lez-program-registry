@@ -1,0 +1,523 @@
+{
+ "_about": "list_entries as read from the live rc3 registry 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82 at https://lez.nameswallet.app/ on 2026-11-20 as first seeded, before the descriptions were rewritten in the guidebook voice (lezreg list --json, the SDK serializer the module uses). Test fixture for logic.test.mjs and tools/render.py.",
+ "items": [
+  {
+   "address": "ECRWE8kjRpeDmT4q2Y3s7VtSLXZKvUqBHBsNBnazeKkq",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "token_guest",
+     "build_hash": "8696e4fb94d0054907fea76fbe84a1cab271c5082cd49df960489fb523f7e92a",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/token_guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Logos 0.4 fungible token program (logos-blockchain/lez-programs cad71fc, programs/token, by Logos), built in the vest repo's methods/token_guest and deployed by us for Vest. IDL from lez-programs.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rheWH8MHfsbSSDpgA4zjw7JWiEivJ8k7VJQ5tgqcg965F3",
+     "peer_hint": null,
+     "sha256": "74d0c64e805491cd28161e1a04e8eba9bb0ea1b30498a4cd64b06b8713866e26",
+     "size": 6821
+    },
+    "image_id": "223b3cef442ed5b2a2b2193f3ee12c0c6ebe42a77be4dabca39ecc7b27b1c146",
+    "kind": "third-party",
+    "name": "lez-token",
+    "program": "FCvRhHFsraY3pBKajWtvC1QCsvXw7MCeYBbNgMnjNzqz",
+    "registered_at": 1795200307764,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 1,
+    "source": {
+     "archive": null,
+     "commit": "c230c15744e3e23120b8b5ec2d72dbcbf7db6416",
+     "docker_root": ".",
+     "repo": "https://github.com/jefdiesel/vest"
+    },
+    "tags": [
+     "token",
+     "vesting"
+    ],
+    "updated_at": 1795200307764,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "lez-token",
+    "program": "FCvRhHFsraY3pBKajWtvC1QCsvXw7MCeYBbNgMnjNzqz",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 7
+   },
+   "seq": 7
+  },
+  {
+   "address": "DbjzKsLdJSjeZRHCbJ2ZFPthtfPRrr1xQBSSM7iht53",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "vesting_guest",
+     "build_hash": "c7948667e7b9cf67099573df7a0146d6023ff38b6e0f0546b461e097139845bf",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/vesting_guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Vest: privacy-preserving token vesting on LEZ 0.4 (Logos RFP-017): schedules, cliffs, private claims, batch, cancel. Native build, not reproducible yet.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhfJguhJhTP9E2mtEGfyfiUdYmquMWr6m52xuTrmwyYKY9",
+     "peer_hint": null,
+     "sha256": "80b461ccfbfda61d783210f4274dd3d705fcb6ec1cdee10798ce48c7d92ea52e",
+     "size": 14421
+    },
+    "image_id": "2feaa8d38d50ef1e5ba5269a7bff6f9983928b4fc627c4d0780c2342d6008ab6",
+    "kind": "third-party",
+    "name": "vest",
+    "program": "2kgxMAueD56gK2tArRA4ziFFw1Hz4W6njVZWGNJXHeM2",
+    "registered_at": 1795200292766,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 1,
+    "source": {
+     "archive": null,
+     "commit": "c230c15744e3e23120b8b5ec2d72dbcbf7db6416",
+     "docker_root": ".",
+     "repo": "https://github.com/jefdiesel/vest"
+    },
+    "tags": [
+     "vesting",
+     "token"
+    ],
+    "updated_at": 1795200292766,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "vest",
+    "program": "2kgxMAueD56gK2tArRA4ziFFw1Hz4W6njVZWGNJXHeM2",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 6
+   },
+   "seq": 6
+  },
+  {
+   "address": "3iuqde92pQGGbs2GbPPggWyWdhYpBgg1Y8jcv8bHoaWs",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "logos_names",
+     "build_hash": "0938919eeb6764aa750f0b7ae306e122880fb995541891788cdfe4dc04693402",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "LNS (Logos Name Service) registry: private names, sealed profiles and pages, optional name NFTs (deeds). Branch lns-deeds. Native build, not reproducible yet.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhmTZR6845s9zmrgH44oMe9fmTwoJaYvJx2qEnyexkgu79",
+     "peer_hint": null,
+     "sha256": "dc20421db62d65a1abe2d9bb9eceeb0cd38a48bea44a04f471b13bae8aaf6a1c",
+     "size": 7890
+    },
+    "image_id": "52a22df2cc078867a3478a3296b9327d224373cddde01086b386a990dc4fa5cc",
+    "kind": "third-party",
+    "name": "logos-names",
+    "program": "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA",
+    "registered_at": 1795200068728,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 1,
+    "source": {
+     "archive": null,
+     "commit": "f6eea87e810b60c2c353b8f6fab4a1b0da1fb3d3",
+     "docker_root": ".",
+     "repo": "https://github.com/jefdiesel/logos-names"
+    },
+    "tags": [
+     "lns",
+     "names"
+    ],
+    "updated_at": 1795200068728,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "logos-names",
+    "program": "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 5
+   },
+   "seq": 5
+  },
+  {
+   "address": "YKX77vy7Ua5tuqRE2gc9XFioyoBMqnughtN5pzeRNtK",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "bridge_guest",
+     "build_hash": "0b4aec74cefffc5a799405433c5bd5aa43c6878c4e3b52c59470ecebbfb0100c",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/bridge_guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Private ETH bridge (RFP-022), instance for Sepolia vault v7 (withdrawals on 2 of 3 signers). Guest image 0dabbd6c. Native build, not reproducible.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhmp1h5kRbFKdGrKoKcsGVQuLfWkyqFuZmkDfnGwcL7Nyu",
+     "peer_hint": null,
+     "sha256": "e15d95a404d2e799521cfcd285e167a88d8f685f7a1fb03aaab5160c3768cad8",
+     "size": 13706
+    },
+    "image_id": "0dabbd6c4c3035d1824c7d5ccb958ab93e3d57871bfd1efea76ab72718ef9ffa",
+    "kind": "third-party",
+    "name": "names-evm-bridge-v7",
+    "program": "CdijfhGnf1NjyCvYTZcGijQZzZ6soNJQ75Piex1ZTM93",
+    "registered_at": 1795197592722,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 2,
+    "source": {
+     "archive": null,
+     "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
+     "docker_root": "lez-bridge",
+     "repo": "https://github.com/jefdiesel/names-evm-bridge"
+    },
+    "tags": [
+     "bridge",
+     "eth"
+    ],
+    "updated_at": 1795198417718,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "names-evm-bridge-v7",
+    "program": "CdijfhGnf1NjyCvYTZcGijQZzZ6soNJQ75Piex1ZTM93",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 4
+   },
+   "seq": 4
+  },
+  {
+   "address": "DBq2z7V919wDpJC6bZFo9xACfZwwRP2txQQXbDjUTRXy",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "bridge_guest",
+     "build_hash": "0b4aec74cefffc5a799405433c5bd5aa43c6878c4e3b52c59470ecebbfb0100c",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/bridge_guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Private ETH bridge (RFP-022), instance for Sepolia vault v6 (deposit roots from the RFP-021 light client). Guest image 0dabbd6c. Native build, not reproducible.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhXgseucisvicfHxk7JRW7ZhGbFkbk68pCuTNoiFuF7QSE",
+     "peer_hint": null,
+     "sha256": "0f85d05a3f96a5f4dd3cbb4f8d42a624249af374749c1da844d1d30c7773da43",
+     "size": 13706
+    },
+    "image_id": "0dabbd6c4c3035d1824c7d5ccb958ab93e3d57871bfd1efea76ab72718ef9ffa",
+    "kind": "third-party",
+    "name": "names-evm-bridge-v6",
+    "program": "4PxaLAfPZDvpfZaR8SsC2Y7pYMPNwPPGVGMpjEVPQWed",
+    "registered_at": 1795197577719,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 2,
+    "source": {
+     "archive": null,
+     "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
+     "docker_root": "lez-bridge",
+     "repo": "https://github.com/jefdiesel/names-evm-bridge"
+    },
+    "tags": [
+     "bridge",
+     "eth"
+    ],
+    "updated_at": 1795198402716,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "names-evm-bridge-v6",
+    "program": "4PxaLAfPZDvpfZaR8SsC2Y7pYMPNwPPGVGMpjEVPQWed",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 3
+   },
+   "seq": 3
+  },
+  {
+   "address": "FqkzE366dCaiRQuZn85Mb6zM3w8t1He3q9qSrKCD72t",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "token_guest",
+     "build_hash": "8696e4fb94d0054907fea76fbe84a1cab271c5082cd49df960489fb523f7e92a",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "methods/token_guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Wrapped-token program the ETH bridge (RFP-022) mints into, shared by bridge instances v3 to v7. Image ac175cb5. Native build, not reproducible.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhbVCq69PYp2TQfUrqdzaw2kaXsYir2zVEqGvQDDzHYAH5",
+     "peer_hint": null,
+     "sha256": "47f74613296350a411c41639b1cde14d900115aa949a74f2d72fb0f02f333460",
+     "size": 4074
+    },
+    "image_id": "ac175cb59bff0f5e59d51b566552546087f082a9bcea9571b705633f031eafba",
+    "kind": "third-party",
+    "name": "names-evm-bridge-token",
+    "program": "5w6nTkftFFDy8mtdpnKpZVetGQJ2WCKdhmpJsAYArbU7",
+    "registered_at": 1795197517723,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 2,
+    "source": {
+     "archive": null,
+     "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
+     "docker_root": "lez-bridge",
+     "repo": "https://github.com/jefdiesel/names-evm-bridge"
+    },
+    "tags": [
+     "bridge",
+     "token"
+    ],
+    "updated_at": 1795198387717,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "names-evm-bridge-token",
+    "program": "5w6nTkftFFDy8mtdpnKpZVetGQJ2WCKdhmpJsAYArbU7",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 2
+   },
+   "seq": 2
+  },
+  {
+   "address": "Av7UUsYHgMu1kyCM99P76F7N2FiPDu9nkpUUdfzFpqNL",
+   "entry": {
+    "author": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "author_label": "lns:jefdiesel",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "nft",
+     "build_hash": "718c9f80e78af657e2e25d1f2c1bebb61ef3edb62471ae06f9234aacc5dd4994",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+     "manifest_path": "programs/nft/methods/guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "Logos NFT program (logos-blockchain/lez-programs, by Logos), deployed by us at this header on our LEZ 0.4 rc3 chain. LNS name deeds are 1-of-1 NFTs of it.",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhiGFU2QV3nzmrZ28cFrNaSnjgZY7Tcd2Th9CTSnaeHkY6",
+     "peer_hint": null,
+     "sha256": "aca7835e4a539df4e8dc29bf3eb519febcaada4582964f5f57fd3d4cd4cae347",
+     "size": 6920
+    },
+    "image_id": "4fbb28723a040e0f6da48d8c8c5f839f181086112673cb210fabb6047bbddf58",
+    "kind": "third-party",
+    "name": "lez-nft",
+    "program": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
+    "registered_at": 1795195057777,
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "revision": 2,
+    "source": {
+     "archive": null,
+     "commit": "dea23c22a47c728c9b6f925d0ef1677f99613f09",
+     "docker_root": ".",
+     "repo": "https://github.com/logos-blockchain/lez-programs"
+    },
+    "tags": [
+     "nft",
+     "lns"
+    ],
+    "updated_at": 1795198372718,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": {
+    "third_party": {
+     "publisher": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP"
+    }
+   },
+   "link": {
+    "kind": 1,
+    "name": "lez-nft",
+    "program": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
+    "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
+    "seq": 1
+   },
+   "seq": 1
+  },
+  {
+   "address": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+   "entry": {
+    "author": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+    "author_label": "LEZ Program Registry",
+    "author_label_proven": false,
+    "born_with_deploy": false,
+    "build": {
+     "binary": "lez_program_registry",
+     "build_hash": "20b72b25c796aed40a50446e7b9cb5d488b615786727cfdd7fa9028e1112888c",
+     "builder": 1,
+     "docker_env": [],
+     "features": [],
+     "host_risc0_rust": "1.91.1",
+     "image_digest": "fafb377a44e1cfca415577c48d2f7012bda99ed36f2fae27f9a663b9fe6048f0",
+     "image_tag": "r0.1.91.1",
+     "lock_sha256": "dd4b807d6fe31b1ab9db525d9efca3bf02ff9b8e00a09cb9a3349b727794987e",
+     "manifest_path": "methods/guest/Cargo.toml",
+     "risc0_build": "3.0.5"
+    },
+    "description": "The LEZ Program Registry, registered in itself: on-chain registry of LEZ 0.4 programs with proven deployer entries",
+    "frozen": false,
+    "idl": {
+     "cid": "zb2rhmX1oijHp38HsFsaWxf8NtBFpDMrHJG3yjggeSBcwzQda",
+     "peer_hint": null,
+     "sha256": "dd02d715f6494fd4e9c539f5734a55f82d68f81bc087bcd83e22ad9e61294bad",
+     "size": 37789
+    },
+    "image_id": "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc",
+    "kind": "deployer",
+    "name": "lez_program_registry",
+    "program": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+    "registered_at": 1794614120131,
+    "registrant": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+    "revision": 1,
+    "source": {
+     "archive": null,
+     "commit": "5c87d700c7874f7b898fc3534aee4ce70ab1e3a5",
+     "docker_root": ".",
+     "repo": "https://github.com/jefdiesel/lez-program-registry"
+    },
+    "tags": [
+     "registry",
+     "infrastructure"
+    ],
+    "updated_at": 1794614120131,
+    "version": "0.1.0"
+   },
+   "freshness": {
+    "status": "fresh"
+   },
+   "kind": "deployer",
+   "link": {
+    "kind": 0,
+    "name": "lez_program_registry",
+    "program": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+    "registrant": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+    "seq": 0
+   },
+   "seq": 0
+  }
+ ],
+ "next": null,
+ "total": 8
+}

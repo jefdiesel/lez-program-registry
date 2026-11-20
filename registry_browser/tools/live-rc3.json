@@ -1,5 +1,5 @@
 {
- "_about": "list_entries as read from the live rc3 registry 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82 at https://lez.nameswallet.app/ on 2026-11-20 (lezreg list --json, the SDK serializer the module uses). Test fixture for logic.test.mjs and tools/render.py.",
+ "_about": "list_entries as read from the live rc3 registry 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82 at https://lez.nameswallet.app/ on 2026-11-20, after the community entries were given guidebook descriptions (lezreg list --json, the SDK serializer the module uses). Test fixture for logic.test.mjs and tools/render.py.",
  "items": [
   {
    "address": "ECRWE8kjRpeDmT4q2Y3s7VtSLXZKvUqBHBsNBnazeKkq",
@@ -21,7 +21,7 @@
      "manifest_path": "methods/token_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Logos 0.4 fungible token program (logos-blockchain/lez-programs cad71fc, programs/token, by Logos), built in the vest repo's methods/token_guest and deployed by us for Vest. IDL from lez-programs.",
+    "description": "LEZ Token: create your own fungible token, then mint, send and burn it. Logos's token program (logos-blockchain/lez-programs cad71fc, programs/token), built in the vest repo and deployed here for Vest. IDL from lez-programs.",
     "frozen": false,
     "idl": {
      "cid": "zb2rheWH8MHfsbSSDpgA4zjw7JWiEivJ8k7VJQ5tgqcg965F3",
@@ -35,7 +35,7 @@
     "program": "FCvRhHFsraY3pBKajWtvC1QCsvXw7MCeYBbNgMnjNzqz",
     "registered_at": 1795200307764,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 1,
+    "revision": 2,
     "source": {
      "archive": null,
      "commit": "c230c15744e3e23120b8b5ec2d72dbcbf7db6416",
@@ -46,7 +46,7 @@
      "token",
      "vesting"
     ],
-    "updated_at": 1795200307764,
+    "updated_at": 1795217847447,
     "version": "0.1.0"
    },
    "freshness": {
@@ -86,7 +86,7 @@
      "manifest_path": "methods/vesting_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Vest: privacy-preserving token vesting on LEZ 0.4 (Logos RFP-017): schedules, cliffs, private claims, batch, cancel. Native build, not reproducible yet.",
+    "description": "Vest: lock tokens for someone on a cliff, linear or milestone schedule, and they claim what has vested, even to a private account. Built for Logos RFP-017 on LEZ 0.4; schedules can be created in batches and cancelled. Native build, not reproducible yet.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhfJguhJhTP9E2mtEGfyfiUdYmquMWr6m52xuTrmwyYKY9",
@@ -100,7 +100,7 @@
     "program": "2kgxMAueD56gK2tArRA4ziFFw1Hz4W6njVZWGNJXHeM2",
     "registered_at": 1795200292766,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 1,
+    "revision": 2,
     "source": {
      "archive": null,
      "commit": "c230c15744e3e23120b8b5ec2d72dbcbf7db6416",
@@ -111,7 +111,7 @@
      "vesting",
      "token"
     ],
-    "updated_at": 1795200292766,
+    "updated_at": 1795217862447,
     "version": "0.1.0"
    },
    "freshness": {
@@ -151,7 +151,7 @@
      "manifest_path": "methods/guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "LNS (Logos Name Service) registry: private names, sealed profiles and pages, optional name NFTs (deeds). Branch lns-deeds. Native build, not reproducible yet.",
+    "description": "Logos Names: claim an LNS name for your account, with a sealed profile and page and an optional NFT deed. The LNS (Logos Name Service) registry, branch lns-deeds. Native build, not reproducible yet.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhmTZR6845s9zmrgH44oMe9fmTwoJaYvJx2qEnyexkgu79",
@@ -165,7 +165,7 @@
     "program": "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA",
     "registered_at": 1795200068728,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 1,
+    "revision": 2,
     "source": {
      "archive": null,
      "commit": "f6eea87e810b60c2c353b8f6fab4a1b0da1fb3d3",
@@ -176,7 +176,7 @@
      "lns",
      "names"
     ],
-    "updated_at": 1795200068728,
+    "updated_at": 1795217877446,
     "version": "0.1.0"
    },
    "freshness": {
@@ -216,7 +216,7 @@
      "manifest_path": "methods/bridge_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Private ETH bridge (RFP-022), instance for Sepolia vault v7 (withdrawals on 2 of 3 signers). Guest image 0dabbd6c. Native build, not reproducible.",
+    "description": "Names EVM Bridge v7: bring ETH from Sepolia into LEZ privately, and send it back out once 2 of 3 signers approve. Private ETH bridge (RFP-022) for Sepolia vault v7. Guest image 0dabbd6c. Native build, not reproducible.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhmp1h5kRbFKdGrKoKcsGVQuLfWkyqFuZmkDfnGwcL7Nyu",
@@ -230,7 +230,7 @@
     "program": "CdijfhGnf1NjyCvYTZcGijQZzZ6soNJQ75Piex1ZTM93",
     "registered_at": 1795197592722,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 2,
+    "revision": 3,
     "source": {
      "archive": null,
      "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
@@ -241,7 +241,7 @@
      "bridge",
      "eth"
     ],
-    "updated_at": 1795198417718,
+    "updated_at": 1795217892447,
     "version": "0.1.0"
    },
    "freshness": {
@@ -281,7 +281,7 @@
      "manifest_path": "methods/bridge_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Private ETH bridge (RFP-022), instance for Sepolia vault v6 (deposit roots from the RFP-021 light client). Guest image 0dabbd6c. Native build, not reproducible.",
+    "description": "Names EVM Bridge v6: bring ETH from Sepolia into LEZ privately, through Sepolia vault v6. Private ETH bridge (RFP-022); its deposit roots come from the RFP-021 light client. Guest image 0dabbd6c. Native build, not reproducible.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhXgseucisvicfHxk7JRW7ZhGbFkbk68pCuTNoiFuF7QSE",
@@ -295,7 +295,7 @@
     "program": "4PxaLAfPZDvpfZaR8SsC2Y7pYMPNwPPGVGMpjEVPQWed",
     "registered_at": 1795197577719,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 2,
+    "revision": 3,
     "source": {
      "archive": null,
      "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
@@ -306,7 +306,7 @@
      "bridge",
      "eth"
     ],
-    "updated_at": 1795198402716,
+    "updated_at": 1795217907446,
     "version": "0.1.0"
    },
    "freshness": {
@@ -346,7 +346,7 @@
      "manifest_path": "methods/token_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Wrapped-token program the ETH bridge (RFP-022) mints into, shared by bridge instances v3 to v7. Image ac175cb5. Native build, not reproducible.",
+    "description": "Names EVM Bridge Token: the wrapped tokens the ETH bridge mints when you bring ETH into LEZ. Shared by bridge instances v3 to v7 (RFP-022). Image ac175cb5. Native build, not reproducible.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhbVCq69PYp2TQfUrqdzaw2kaXsYir2zVEqGvQDDzHYAH5",
@@ -360,7 +360,7 @@
     "program": "5w6nTkftFFDy8mtdpnKpZVetGQJ2WCKdhmpJsAYArbU7",
     "registered_at": 1795197517723,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 2,
+    "revision": 3,
     "source": {
      "archive": null,
      "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
@@ -371,7 +371,7 @@
      "bridge",
      "token"
     ],
-    "updated_at": 1795198387717,
+    "updated_at": 1795217922446,
     "version": "0.1.0"
    },
    "freshness": {
@@ -411,7 +411,7 @@
      "manifest_path": "programs/nft/methods/guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Logos NFT program (logos-blockchain/lez-programs, by Logos), deployed by us at this header on our LEZ 0.4 rc3 chain. LNS name deeds are 1-of-1 NFTs of it.",
+    "description": "LEZ NFT: create an NFT collection, then print, send and burn its NFTs. Logos's NFT program (logos-blockchain/lez-programs), deployed here on our LEZ 0.4 test network. LNS name deeds are 1-of-1 NFTs of it.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhiGFU2QV3nzmrZ28cFrNaSnjgZY7Tcd2Th9CTSnaeHkY6",
@@ -425,7 +425,7 @@
     "program": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
     "registered_at": 1795195057777,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 2,
+    "revision": 3,
     "source": {
      "archive": null,
      "commit": "dea23c22a47c728c9b6f925d0ef1677f99613f09",
@@ -436,7 +436,7 @@
      "nft",
      "lns"
     ],
-    "updated_at": 1795198372718,
+    "updated_at": 1795217937446,
     "version": "0.1.0"
    },
    "freshness": {

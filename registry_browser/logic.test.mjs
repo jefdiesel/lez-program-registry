@@ -83,8 +83,11 @@ const arrayLike = { 0: "defi", 1: "token", length: 2 };
 check("tags from a QML model show as a list", changeLines({ what: "RegisterDeployer", entry: P, signers: { 0: P, length: 1 }, sequencer: "s", summary: { values: { tags: arrayLike } } }).filter((l) => l === "tags: defi, token" || l === `Signed by ${P} with your lezreg wallet`).length, 2);
 
 // ── The index (guidebook list), on the 8 entries of the live rc3 registry (tools/live-rc3.json) ──
-const live = JSON.parse(readFileSync(new URL("tools/live-rc3.json", import.meta.url), "utf8")).items;
+// tools/live-rc3-seed.json is the same registry as first seeded (descriptions written like build
+// notes): the hard cases for titles and sentences.
+const live = JSON.parse(readFileSync(new URL("tools/live-rc3-seed.json", import.meta.url), "utf8")).items;
 const byName = (n) => live.find((i) => i.entry.name === n);
+const now = JSON.parse(readFileSync(new URL("tools/live-rc3.json", import.meta.url), "utf8")).items;
 check("titleCase keeps acronyms and versions", ["lez-token", "names-evm-bridge-v7", "lez_program_registry", "logos-names", "lez-nft", "my-idl-tool", "rpc  api"].map(titleCase),
   ["LEZ Token", "Names EVM Bridge v7", "LEZ Program Registry", "Logos Names", "LEZ NFT", "My IDL Tool", "RPC API"]);
 check("titles of the live entries", live.map((i) => guideText(i.entry).title),
@@ -133,6 +136,14 @@ check("sourceLink: GitHub at the commit", sourceLink(byName("vest").entry.source
 check("sourceLink: only https, nothing odd", [sourceLink({ repo: "http://x.org/a", commit: "" }), sourceLink({ repo: "javascript:alert(1)" }), sourceLink({ repo: "https://a b" }), sourceLink(null),
   sourceLink({ repo: "https://git.example/a.git", commit: "abc1234" })], [null, null, null, null, { url: "https://git.example/a", text: "git.example/a" }]);
 check("listedBy", ["deployer", "community", "unverified"].map((k) => listedBy(k).split(":")[0].split(" ").slice(0, 3).join(" ")), ["Listed by the", "A community listing", "This record is"]);
+check("the live index now (guidebook descriptions on chain)", indexRows(now).map((r) => r.type === "heading" ? "# " + r.text : (r.secondary ? "  - " : "") + r.title + ": " + r.sentence),
+  ["# Tokens", "LEZ Token: Create your own fungible token, then mint, send and burn it.",
+   "Vest: Lock tokens for someone on a cliff, linear or milestone schedule, and they claim what has vested, even to a private account.",
+   "# Names", "Logos Names: Claim an LNS name for your account, with a sealed profile and page and an optional NFT deed.",
+   "# NFTs", "LEZ NFT: Create an NFT collection, then print, send and burn its NFTs.",
+   "# Bridges", "Names EVM Bridge: Bring ETH from Sepolia into LEZ privately, and send it back out once 2 of 3 signers approve.",
+   "  - v6: Bring ETH from Sepolia into LEZ privately, through Sepolia vault v6.", "  - Token: The wrapped tokens the ETH bridge mints when you bring ETH into LEZ.",
+   "# Tools", "LEZ Program Registry: On-chain registry of LEZ 0.4 programs with proven deployer entries."]);
 check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
 check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
 check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),

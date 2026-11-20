@@ -401,6 +401,20 @@ Item {
                     spacing: 2
                     model: root.rows
                     boundsBehavior: Flickable.StopAtBounds
+                    // After the last entry, scrolling with the list: the italics note and More.
+                    footer: Column {
+                        width: list.width
+                        topPadding: 16
+                        bottomPadding: 24
+                        spacing: 12
+                        Text { textFormat: Text.PlainText;
+                            visible: root.rows.some(function(r) { return r.type === "entry" && !r.proven })
+                            width: parent.width
+                            text: "Publishers in italics named themselves; nothing on the chain confirms those names."
+                            color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(13); font.italic: true
+                        }
+                        Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more programs"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
+                    }
                     delegate: Item {
                         required property var modelData
                         required property int index
@@ -430,14 +444,6 @@ Item {
                         }
                     }
                 }
-                Text { textFormat: Text.PlainText;
-                    visible: root.rows.some(function(r) { return r.type === "entry" && !r.proven })
-                    Layout.fillWidth: true
-                    text: "Publishers in italics named themselves; nothing on the chain confirms those names."
-                    color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(13); font.italic: true
-                }
-                Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more programs"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
-                Item { Layout.preferredHeight: 16 }
             }
 
             // ── The guide page ──────────────────────────────────────────
