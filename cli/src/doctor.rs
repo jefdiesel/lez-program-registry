@@ -370,6 +370,9 @@ mod tests {
             name: "x".into(),
             rpc: Some("http://127.0.0.1:9".into()),
             registry: None,
+            chain_id: None,
+            lns: None,
+            storage_api: None,
             registry_images: Vec::new(),
         };
         let checks = run_checks(&net, "http://127.0.0.1:9/api/storage/v1");
@@ -379,16 +382,23 @@ mod tests {
         assert_eq!(get("storage"), Some(Level::Warn));
         let mut out = Out::new(false);
         assert!(!report(&mut out, &checks));
-        // testnet before launch: says so instead of guessing an RPC.
+        // testnet with no RPC: says so instead of guessing one.
         let checks = run_checks(
             &Net {
                 name: "testnet".into(),
                 rpc: None,
                 registry: None,
+                chain_id: None,
+                lns: None,
+                storage_api: None,
                 registry_images: Vec::new(),
             },
             "http://127.0.0.1:9/api/storage/v1",
         );
-        assert!(checks.iter().any(|c| c.detail.contains("not launched")));
+        assert!(
+            checks
+                .iter()
+                .any(|c| c.detail.contains("no RPC") || c.detail.contains("loops"))
+        );
     }
 }

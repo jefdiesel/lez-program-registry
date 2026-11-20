@@ -1,0 +1,86 @@
+{
+  "format": "names-network/1",
+  "version": 2,
+  "revision": 2,
+  "name": "Bridge test network",
+  "kind": "our-test",
+  "lez": "0.4",
+  "lez_release": {
+    "tag": "v0.4.0-rc3",
+    "commit": "bafd07be0701398f9bc435f73ab05e9a7936c301",
+    "risc0": "3.0.5",
+    "wire": "rc3"
+  },
+  "chain_id": "2da7f7dfb6e51a28c942ea80391aa518253ec515e98d28cb4d83cc9e16ff5374",
+  "rpc": "https://lez.nameswallet.app/",
+  "faucet": "https://lez.nameswallet.app/",
+  "faucet_kind": "lez-proxy-jsonrpc",
+  "limits": {
+    "rpc_max_batch": 20,
+    "rpc_max_range": 100,
+    "max_cycles": 10000000,
+    "max_segment_bytes": 98304
+  },
+  "cors": ["https://nameswallet.app"],
+  "registry": "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA",
+  "bridge_programs": [
+    "JECKBkvoc2e3dC18Wm6zZJEC2BGMwUwLsdZiQzYTnUx7",
+    "4eaeK3yiqATXhpCEYEFMMtjUn1bS7HLxPwfrH31mXCvr",
+    "BKXe3q5JcKeiSrKv9FUBjZw3AowbvYgyHZ3SYPgDxJBf",
+    "CuV1ctZ2qJG4wQcXP4TBudVGKzNmdoYT3DpP1veHnDMA",
+    "4PxaLAfPZDvpfZaR8SsC2Y7pYMPNwPPGVGMpjEVPQWed",
+    "CdijfhGnf1NjyCvYTZcGijQZzZ6soNJQ75Piex1ZTM93"
+  ],
+  "nft_programs": [
+    {
+      "program": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
+      "label": "Logos NFT program (LNS name cards)"
+    }
+  ],
+  "programs": {
+    "lns_registry": {
+      "id": "6Yxj5k8AiuBSuMAYVQFGrYKjJGUSSaWWgoB9D9XXN3gA",
+      "image_id": "00ad457122dbd1c88b62d45a6aee5bd38167cc331d562459e1c8885bc76dd2dd",
+      "label": "LNS names registry",
+      "source": "logos-names rc3-port"
+    },
+    "lns_nft": {
+      "id": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
+      "image_id": "4fbb28723a040e0f6da48d8c8c5f839f181086112673cb210fabb6047bbddf58",
+      "label": "Logos NFT program (LNS name cards)"
+    },
+    "nft": {
+      "id": "CjrUpegdA1RjqDN43T8P19kAkwnD1quAkNkER8k3dw9G",
+      "image_id": "4fbb28723a040e0f6da48d8c8c5f839f181086112673cb210fabb6047bbddf58",
+      "label": "Logos NFT program"
+    },
+    "program_registry": {
+      "id": "7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82",
+      "image_id": "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc",
+      "label": "LEZ Program Registry"
+    },
+    "vesting": null,
+    "token": {
+      "id": "5w6nTkftFFDy8mtdpnKpZVetGQJ2WCKdhmpJsAYArbU7",
+      "image_id": "ac175cb59bff0f5e59d51b566552546087f082a9bcea9571b705633f031eafba",
+      "label": "Token program (bridges v3-v7)"
+    },
+    "testimonial": null,
+    "board": null,
+    "nft_gate": null,
+    "nft_gate_consumer": null,
+    "bridges": [
+      { "id": "JECKBkvoc2e3dC18Wm6zZJEC2BGMwUwLsdZiQzYTnUx7", "instance": "v2", "label": "Bridge v2" },
+      { "id": "4eaeK3yiqATXhpCEYEFMMtjUn1bS7HLxPwfrH31mXCvr", "instance": "v3", "label": "Bridge v3" },
+      { "id": "BKXe3q5JcKeiSrKv9FUBjZw3AowbvYgyHZ3SYPgDxJBf", "instance": "v4", "label": "Bridge v4" },
+      { "id": "CuV1ctZ2qJG4wQcXP4TBudVGKzNmdoYT3DpP1veHnDMA", "instance": "v5", "label": "Bridge v5" },
+      { "id": "4PxaLAfPZDvpfZaR8SsC2Y7pYMPNwPPGVGMpjEVPQWed", "instance": "v6", "label": "Bridge v6" },
+      { "id": "CdijfhGnf1NjyCvYTZcGijQZzZ6soNJQ75Piex1ZTM93", "instance": "v7", "label": "Bridge v7" }
+    ],
+    "eth_light_clients": []
+  },
+  "capabilities": { "private": false, "zones": false },
+  "storage_api": null,
+  "replaces": null,
+  "updated": "2026-11-20"
+}
