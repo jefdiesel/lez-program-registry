@@ -249,9 +249,10 @@ The one list of `lezreg` commands (`lezreg <command> --help` for the flags; ever
 | `module send` | the signing bridge for the Basecamp module | wallet |
 | `wallet …` | the LEZ wallet's own commands, always on lezreg's sequencer | wallet |
 
-The prebuilt 0.1.0 release that the install line fetches predates `idl encode|decode`,
-`call --plan`, `image-id`, the IDL status in `show`, network files and `verify --offline`; build
-from source for those until the next release.
+Release 0.2.0, which the install line fetches, has every command above
+([release notes](docs/releases/v0.2.0.md)). The older 0.1.0 predates `idl encode|decode`,
+`call --plan`, `image-id`, the IDL status in `show`, network files and `verify --offline`:
+`lezreg --version` says which one is on PATH.
 
 ### Networks
 

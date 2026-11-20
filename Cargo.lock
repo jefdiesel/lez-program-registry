@@ -3974,7 +3974,7 @@ dependencies = [
 
 [[package]]
 name = "lezreg"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "borsh",
@@ -4002,7 +4002,7 @@ dependencies = [
 
 [[package]]
 name = "lezreg-engine-test"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "lee",
@@ -4021,14 +4021,14 @@ dependencies = [
 
 [[package]]
 name = "lezreg-helper-methods"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "risc0-build",
 ]
 
 [[package]]
 name = "lezreg-idl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "lee_core",
@@ -4039,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "lezreg-methods"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "risc0-build",
 ]
@@ -4056,7 +4056,7 @@ dependencies = [
 
 [[package]]
 name = "lezreg-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -4084,7 +4084,7 @@ dependencies = [
 
 [[package]]
 name = "lezreg-smoke"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "borsh",

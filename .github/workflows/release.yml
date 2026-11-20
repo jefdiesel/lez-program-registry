@@ -358,6 +358,12 @@ jobs:
           Built by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA.
           EOF
           sed -i 's/^          //' notes.md
+          # This version's release notes go first, when the repository has them.
+          if [ -f "docs/releases/$tag.md" ]; then
+            { cat "docs/releases/$tag.md"; printf '\n---\n\n'; cat notes.md; } > notes.full && mv notes.full notes.md
+          else
+            echo "::warning::no docs/releases/$tag.md: the draft has only the install text"
+          fi
           # A published release for this tag is never touched. Drafts for this version (matched by
           # tag or by title: a draft can lose its tag name) are deleted and made again, so a rerun
           # leaves exactly one draft with this run's files.

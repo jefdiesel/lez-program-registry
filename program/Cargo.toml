@@ -1,7 +1,9 @@
 [package]
 name = "lezreg-program"
 description = "LEZ Program Registry on-chain program, in SPEL attribute syntax, compiled for LEZ 0.4 by spel04-shim."
-version.workspace = true
+# Not the workspace version: a crate's version feeds rustc (-C metadata), so a release bump
+# could move the guest's image id, the registry's identity. Change only with a new program build.
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 

@@ -42,9 +42,10 @@ lz show 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82    # the registry's own ent
 lz show <PROGRAM_ID> --json               # any program: entry, status, IDL pointer, source
 ```
 
-The installer fetches the latest release, 0.1.0. It predates `--network testnet` (hence `lz`
-above), the IDL status in `show`, `idl encode|decode`, `call --plan`, `image-id` and
-`verify --offline`; for those, build from source.
+The installer fetches the latest release, 0.2.0 (notes: `docs/releases/v0.2.0.md`). It has
+`--network testnet`, the IDL status in `show`, `idl encode|decode`, `call --plan`, `image-id` and
+`verify --offline`. The older 0.1.0 has none of these; `lz` above works with both, and
+`lezreg --version` says which one is on PATH.
 
 No prebuilt build for your machine (Intel Mac, musl)? Build it: `git clone` this repository,
 `cargo build --release -p lezreg` (Linux also needs libpcsclite-dev and pkg-config), and use
