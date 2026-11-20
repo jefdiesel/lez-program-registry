@@ -281,8 +281,13 @@ pub fn set(
 mod tests {
     use super::*;
 
+    /// Both tests set and remove `LEZREG_CONFIG_DIR`, a process-wide variable; cargo runs tests
+    /// in parallel, so they take turns.
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn testnet_resolves_from_the_embedded_network_file() {
+        let _env = ENV.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!("lezreg-net-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         unsafe { std::env::set_var("LEZREG_CONFIG_DIR", &dir) };
@@ -302,6 +307,7 @@ mod tests {
 
     #[test]
     fn saved_chain_id_and_lns_are_read_and_flag_overrides_lns() {
+        let _env = ENV.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!("lezreg-net2-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         unsafe { std::env::set_var("LEZREG_CONFIG_DIR", &dir) };
