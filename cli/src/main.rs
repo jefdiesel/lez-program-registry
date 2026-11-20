@@ -10,6 +10,7 @@ mod app_cmd;
 mod args;
 mod config;
 mod doctor;
+mod idl_codec_cmd;
 mod module_cmd;
 mod out;
 mod project;
@@ -232,6 +233,31 @@ enum Command {
     Idl {
         #[command(subcommand)]
         cmd: IdlCmd,
+    },
+    /// Compute a program's image id from a local ELF or deployable .bin, exactly as LEZ's
+    /// program loader does; --compare gives a MATCH/MISMATCH verdict (no chain needed).
+    ImageId {
+        /// The guest ELF or deployable .bin.
+        elf: std::path::PathBuf,
+        /// Expected image id (hex); compared with the computed one.
+        #[arg(long)]
+        compare: Option<String>,
+    },
+    /// Build a call from an IDL and print a simulate-ready plan: message bytes, actors to
+    /// declare, signers and time rules. --plan never signs or sends; no chain is contacted.
+    Call {
+        /// The IDL JSON file.
+        #[arg(long)]
+        idl: std::path::PathBuf,
+        /// Message name (variant, snake_case or kebab-case).
+        #[arg(long)]
+        message: String,
+        /// The message's fields as one JSON object.
+        #[arg(long)]
+        args: String,
+        /// Build the plan only (the supported path; nothing is sent).
+        #[arg(long)]
+        plan: bool,
     },
     /// Keep an entry's IDL on your Storage node and announce it, so it stays resolvable
     /// when the author's node is offline.
@@ -485,6 +511,33 @@ enum IdlCmd {
         file: std::path::PathBuf,
         #[command(flatten)]
         storage: storage_cmd::StorageOpts,
+    },
+    /// Encode a message, actor state or event from a JSON IDL (v1, v2 or x-lez04) as hex.
+    Encode {
+        /// The IDL JSON file.
+        #[arg(long)]
+        idl: std::path::PathBuf,
+        /// message, state or event.
+        #[arg(long)]
+        kind: String,
+        /// Message or event name; a state's type is read from the IDL when omitted.
+        #[arg(long)]
+        name: Option<String>,
+        /// The fields as one JSON object.
+        #[arg(long)]
+        value: String,
+    },
+    /// Decode message bytes, actor state or an event with a JSON IDL into named fields.
+    Decode {
+        #[arg(long)]
+        idl: std::path::PathBuf,
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        name: Option<String>,
+        /// Hex bytes (for an event: the 8-byte selector followed by its payload).
+        #[arg(long)]
+        data: String,
     },
 }
 
@@ -921,7 +974,37 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
             IdlCmd::Push { file, storage } => {
                 storage_cmd::push(out, &file, &storage)?;
             }
+            IdlCmd::Encode {
+                idl,
+                kind,
+                name,
+                value,
+            } => {
+                idl_codec_cmd::encode(&idl, &kind, name.as_deref(), &value, out)?;
+            }
+            IdlCmd::Decode {
+                idl,
+                kind,
+                name,
+                data,
+            } => {
+                idl_codec_cmd::decode(&idl, &kind, name.as_deref(), &data, out)?;
+            }
         },
+        Command::ImageId { elf, compare } => {
+            idl_codec_cmd::image_id(&elf, compare.as_deref(), out)?;
+        }
+        Command::Call {
+            idl,
+            message,
+            args,
+            plan,
+        } => {
+            if !plan {
+                bail!("call sends nothing in this build: pass --plan to build the message and its actor/signer plan");
+            }
+            idl_codec_cmd::plan(&idl, &message, &args, out)?;
+        }
         Command::Verify {
             program,
             revision,
