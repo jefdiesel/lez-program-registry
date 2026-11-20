@@ -946,6 +946,8 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
     match cli.command {
         Command::Wallet { .. } => unreachable!("handled in main"),
         Command::App { cmd } => {
+            // --lns / LEZREG_LNS, else the network's LNS program (a network file's lns_registry).
+            let lns = lns.or_else(|| net.lns.map(|l| l.to_base58()));
             app_cmd::run(out, cmd, net.rpc().ok(), reader(&net).ok(), lns.as_deref())?
         }
         Command::Network { cmd } => match cmd {

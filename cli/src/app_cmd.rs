@@ -74,10 +74,10 @@ pub enum AppCmd {
 /// The most a package may be: a download larger than any Basecamp module is refused.
 const MAX_PACKAGE: usize = 256 * 1024 * 1024;
 
-/// The LNS program to read names from: `--lns`, `LEZREG_LNS`.
+/// The LNS program to read names from: `--lns`, `LEZREG_LNS`, else the network's.
 fn lns_program(lns: Option<&str>) -> Result<AccountId> {
     let text = lns.ok_or_else(|| {
-        anyhow!("no LNS program: pass --lns <program id> (or set LEZREG_LNS); LNS launches on LEZ testnet 0.4 with the testnet")
+        anyhow!("no LNS program: pass --lns <program id> (or set LEZREG_LNS), or use a network whose file names one (`--network testnet`)")
     })?;
     AccountId::from_base58(text.trim()).ok_or_else(|| anyhow!("--lns is not a base58 program id: {text}"))
 }

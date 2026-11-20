@@ -503,8 +503,10 @@ yet; `verify` rebuilds from the recorded repository and commit.
 
 An app published by the LNS name `forumer` names it in its `metadata.json`
 (`"author": "lns:forumer"`), and `forumer`'s profile vouches for each release with an
-`app.<module>` entry ([`docs/APPS.md`](docs/APPS.md)). Pass `--lns <LNS program id>` (or set
-`LEZREG_LNS`) to the commands that read names.
+`app.<module>` entry ([`docs/APPS.md`](docs/APPS.md)). The commands that read names use the
+network's LNS program (`--network testnet` has one in its network file), or `--lns <LNS program
+id>` / `LEZREG_LNS`. LNS records up to version 7 are read, including names that carry an NFT
+deed.
 
 ```sh
 # Publisher: the entry for a release, with the package put on your Logos Storage node.
