@@ -960,7 +960,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                     out.text(&format!("chain check   ok ({chain})"));
                 }
                 out.text(&format!(
-                    "network  {}\nrpc      {}\nchain   {}\nregistry {}\nlns      {}\nconfig   {}",
+                    "network  {}\nrpc      {}\nchain    {}\nregistry {}\nlns      {}\nconfig   {}",
                     net.name,
                     net.rpc.as_deref().unwrap_or("(none)"),
                     net.chain_id.as_deref().unwrap_or("(none)"),
@@ -972,7 +972,7 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                         .map_or_else(|| "(no config dir)".into(), |p| p.display().to_string())
                 ));
                 out.json(json!({"network": net.name, "rpc": net.rpc, "chain_id": net.chain_id, "lns": net.lns.map(|l| l.to_base58()), "registry": net.registry.map(|r| r.to_base58()),
-                                "trusted_registry_images": std::iter::once(lezreg_sdk::REGISTRY_IMAGE).chain(net.registry_images.iter().copied()).map(hex::encode).collect::<Vec<_>>()}));
+                                "trusted_registry_images": std::iter::once(lezreg_sdk::REGISTRY_IMAGE).chain(net.registry_images.iter().copied().filter(|i| *i != lezreg_sdk::REGISTRY_IMAGE)).map(hex::encode).collect::<Vec<_>>()}));
             }
             NetworkCmd::Set {
                 name,

@@ -672,7 +672,7 @@ EOF
   ok X.g "freeze X (author B signs)" lz freeze "$X" --payer "$PAYER"
   refused X.h "a frozen entry refuses updates" "frozen" update "$X" --version 9.9.9 --payer "$PAYER"
   unset LEZREG_NETWORK
-  refused X.i "the wallet refuses a network with no RPC instead of falling back to a default sequencer" "has not launched" --network testnet wallet check-health
+  refused X.i "the wallet refuses a network it has no RPC for (an unknown name) instead of falling back to a default sequencer" "unknown network" --network no-such-network wallet check-health
   export LEZREG_NETWORK=demo
   refused X.j "writes through a sequencer that is not on this machine need --yes" "is not on this machine" \
     --rpc http://192.0.2.1:3062 wallet auth-transfer send --from "Public/$PAYER" --to "Public/$A" --amount 1

@@ -133,7 +133,7 @@ fn entry_text(
         short(&e.idl.sha256),
         e.idl.size
     ));
-    out.text(&format!("  idl status    {}", idl_status_text(idl)));
+    out.text(&format!("  idl status   {}", idl_status_text(idl)));
     if !e.source.repo.is_empty() {
         out.text(&format!(
             "  source       {} @ {} (docker root {})",
