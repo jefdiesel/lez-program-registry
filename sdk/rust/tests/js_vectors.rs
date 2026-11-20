@@ -103,6 +103,7 @@ fn idl_formats() -> Value {
 }
 
 fn vectors() -> Value {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let reg = id(0xa5);
     let e = entry();
     let link = Link {
@@ -152,6 +153,12 @@ fn vectors() -> Value {
         "release": {"borsh": h(&borsh::to_vec(&release).unwrap()), "revision": 2, "at": release.at.to_string()},
         "sha256:abc": h(&sha256(b"abc")),
         "idl_formats": idl_formats(),
+        // Write encoders: the module's JSON -> real Instruction bytes, from the vectors pinned
+        // against the deployed program by `module_vectors.rs`. The JS SDK must encode identically.
+        "writes": serde_json::from_slice::<Value>(
+            &std::fs::read(root.join("module/rust-lib/testdata/write-vectors.json")).unwrap(),
+        )
+        .unwrap(),
     })
 }
 

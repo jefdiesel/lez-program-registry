@@ -105,5 +105,37 @@ for (const [path, kind, format] of [
   check(`fetch ${format ?? "garbage"}: other bytes refused before parsing`, [wrong.kind, wrong.idl], ["hash-mismatch", null]);
 }
 
+// ── writes: every JS encoder checked byte for byte against the Rust-built vectors ─────────
+const { encodeRegister, encodeRegisterThirdParty, encodeUpdate, buildChange, revisionSeed } = await import("./writes.js");
+check("revision seed is little-endian", hex(revisionSeed(0x01020304)), "04030201" + "00".repeat(28));
+const encoders = { register: encodeRegister, register_third_party: encodeRegisterThirdParty, update: encodeUpdate };
+let writesChecked = 0;
+for (const c of v.writes.cases) {
+  const encode = encoders[c.op];
+  if (!encode) continue; // transfer/freeze are outside this job's scope
+  const opts = { now: v.writes.now, liveImage: c.input.image_id, storedRevision: c.stored_revision };
+  const got = encode(c.input, opts);
+  check(`write message ${c.op} #${writesChecked}`, hex(got), c.message);
+  const change = await buildChange(c.op, c.input, { registry: v.writes.registry, ...opts });
+  check(`write accounts ${c.op} #${writesChecked}`, change.accounts.map((a) => a.account), c.accounts.map((a) => a[0]));
+  check(`write signers ${c.op} #${writesChecked}`, change.signers, c.signers);
+  check(`write entry ${c.op} #${writesChecked}`, change.entry, c.entry);
+  writesChecked += 1;
+}
+check("write vectors cover all three encoders", writesChecked >= 4, true);
+await throws("signing needs an explicit signer", async () => {
+  const { signAndSend } = await import("./writes.js");
+  await signAndSend({ message: "" }, { rpc: {} });
+});
+
+// ── discovery parity: name/author/third-party search and IDL status names ────────────────
+check("pending IDL has Rust's status name", (await import("./lezreg.js")).pendingIdl().statusKind, "Pending");
+const enc = new TextEncoder();
+check("garbage IDL is ParseError", parseIdl(enc.encode('not json')).statusKind, "ParseError");
+check("unknown object is UnknownFormat", parseIdl(enc.encode('{"a":1}')).statusKind, "UnknownFormat");
+check("valid v2 IDL is Ok", parseIdl(enc.encode('{"version":"2","name":"x","messages":[]}')).statusKind, "Ok");
+check("author search is on the registry", typeof registry.byAuthor, "function");
+check("third-party search is on the registry", typeof registry.thirdParty, "function");
+
 console.log(failed ? `${failed} FAILED` : "ALL PASS");
 process.exit(failed ? 1 : 0);

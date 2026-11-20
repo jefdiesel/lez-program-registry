@@ -138,6 +138,12 @@ export const addr = {
   authorNode: async (reg, newAuthor, entry) => forPublicPda(reg, await combine([seedStr(SEEDS.authorNode), newAuthor, entry])),
 };
 
+/** AuthorNode (types/src/records.rs): schema, entry account, previous entry. */
+export function decodeAuthorNode(bytes) {
+  const r = new Reader(bytes);
+  return finish(r, { schema: r.u8(), entry: r.id(), prev: r.option(() => r.id()) });
+}
+
 // ── borsh ─────────────────────────────────────────────────────────────────────────────
 
 class Reader {
@@ -403,6 +409,46 @@ export class Registry {
     const head = decodeHead(await this.state(toBase58(await addr.nameHead(this.reg, name.toLowerCase()))));
     return (await this.walk(head.newest, limit, "prevName")).items;
   }
+
+  /** Third-party entries made for `program`, newest first (Rust `Registry::third_party`). */
+  async thirdParty(program, limit = 50) {
+    const head = decodeHead(await this.state(toBase58(await addr.programHead(this.reg, accountId(program)))));
+    return (await this.walk(head.newest, limit, "prevProgram")).items;
+  }
+
+  /**
+   * Entries `author` holds now, newest first (Rust `Registry::by_author`). A transferred entry
+   * is reached through an AuthorNode; one the author transferred away is skipped.
+   */
+  async byAuthor(author, { limit = 50, scan = 1000 } = {}) {
+    const who = accountId(author);
+    const whoText = typeof author === "string" ? author.trim() : toBase58(who);
+    const head = decodeHead(await this.state(toBase58(await addr.authorHead(this.reg, who))));
+    const out = [];
+    const seen = new Set();
+    let next = head.newest;
+    let scanned = 0;
+    while (next && out.length < limit && scanned < scan) {
+      if (seen.has(next)) throw new Error(`the author list loops at ${next}`);
+      seen.add(next);
+      scanned += 1;
+      const at = next;
+      const link = decodeLink(await this.state(toBase58(await addr.link(this.reg, accountId(at)))));
+      if (link.author === whoText) {
+        next = link.prevAuthor;
+      } else {
+        const nodeBytes = await this.state(toBase58(await addr.authorNode(this.reg, who, accountId(at))));
+        if (!nodeBytes.length) throw new Error(`entry ${at} has no author node`);
+        next = decodeAuthorNode(nodeBytes).prev;
+      }
+      const entryBytes = await this.state(at);
+      if (entryBytes.length) {
+        const entry = decodeEntry(entryBytes);
+        if (entry.author === whoText) out.push({ address: at, link, entry });
+      }
+    }
+    return { items: out, scanned, truncated: Boolean(next && out.length < limit) };
+  }
 }
 
 // ── IDL formats ───────────────────────────────────────────────────────────────────────
@@ -479,10 +525,23 @@ export function idlCalls(idl) {
   return f ? f.calls(idl) : [];
 }
 
-function idlResult(status, kind, idl = null) {
+/**
+ * The Rust IdlStatus name is returned as `statusKind`, so callers can branch on the same five
+ * cases as `sdk/rust/src/idl.rs` (Ok, UnknownFormat, Unavailable, HashMismatch, ParseError),
+ * plus Pending. `status`/`kind` are kept for existing consumers and the committed vectors.
+ */
+function idlResult(status, kind, idl = null, statusKind) {
   const info = idl ? idlFormat(idl) : null;
-  return { status, kind, idl, format: info?.format ?? null, formatVersion: info?.formatVersion ?? null, calls: idl ? idlCalls(idl) : [] };
+  const names = { ok: "Ok", "unknown-format": "UnknownFormat", unavailable: "Unavailable", "hash-mismatch": "HashMismatch", unparseable: "ParseError", pending: "Pending" };
+  return {
+    status, kind, statusKind: statusKind ?? names[kind] ?? "ParseError",
+    idl, format: info?.format ?? null, formatVersion: info?.formatVersion ?? null,
+    calls: idl ? idlCalls(idl) : [],
+  };
 }
+
+/** A fetch that has not started yet (Rust IdlStatus::Pending). */
+export const pendingIdl = () => idlResult("pending", "pending", null, "Pending");
 
 /**
  * Classifies IDL bytes that already passed the hash check. `kind` is `ok` (a known format),

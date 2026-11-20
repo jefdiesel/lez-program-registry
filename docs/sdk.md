@@ -135,6 +135,44 @@ if (deployer) {
 const label = await reg.programLabel("<program id>");                  // { text, kind, stale, ... }
 ```
 
+### JS SDK parity with Rust (Job B12)
+
+The JS SDK now covers the same discovery and write surfaces as `sdk/rust`:
+
+```js
+import { Registry } from './lezreg.js';
+import { buildChange, signAndSend, configureSigner } from './writes.js';
+
+const reg = new Registry({ rpc, registry });
+const thirdParty = await reg.thirdParty(programId, 20);      // Rust: Registry::third_party
+const { items, scanned, truncated } = await reg.byAuthor(authorId, { limit: 20, scan: 1000 }); // Rust: by_author
+
+// IDL statuses use the Rust enum names in `statusKind` as well as the legacy `kind` string:
+// "Ok" | "UnknownFormat" | "Unavailable" | "HashMismatch" | "ParseError" | "Pending".
+
+// Writes: build the same instruction bytes and actor list as module/rust-lib/src/writes.rs.
+const change = await buildChange('register', input, {
+  registry: registryId,
+  now,
+  liveImage: input.image_id,
+});
+// change.message is hex Borsh; change.accounts/signers/entry match the Rust `Built::change`.
+configureSigner(lezTx);                 // the existing audited lez-tx.js bundle; no keys in this SDK
+await signAndSend(change, { rpc });
+```
+
+`buildChange` supports `register`, `register_third_party` and `update`; `transfer` and `freeze`
+remain module/CLI-only. Signing is deliberately absent from the zero-dependency core: an object
+implementing `signHash`, `accountIdOfPrivateKey` and `encodePublicTransaction` must be supplied
+explicitly (see `sdk/js/signing.js`, copied from logos-sdk-js). Nothing is sent without it, and a
+dry run is still the caller's responsibility before sending.
+
+Every JS encoder is checked byte for byte against Rust: `sdk/js/vectors.json` embeds the
+`module/rust-lib/testdata/write-vectors.json` cases produced by
+`sdk/rust/tests/module_vectors.rs`, and `sdk/rust/tests/js_vectors.rs` regenerates/verifies the
+combined file. Run both with `node sdk/js/lezreg.test.mjs` and
+`~/logos/laptop-build.sh cargo test -p lezreg-sdk --test js_vectors --test module_vectors`.
+
 ## 3. From a Basecamp app: the `program_registry` module
 
 Install `program_registry` from the catalog
