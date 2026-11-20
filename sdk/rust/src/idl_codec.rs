@@ -336,20 +336,30 @@ impl<'a> Idl<'a> {
                 Ok(())
             }
             Some("enum") => {
-                let obj = value
-                    .as_object()
-                    .ok_or("enum value must be {\"Variant\": {...}}")?;
-                let (variant, fields) = obj.iter().next().ok_or("empty enum value")?;
+                // A unit variant is `"Variant"`; a variant with fields is `{"Variant": {...}}`.
+                let (variant, fields): (&str, Option<&Map<String, Value>>) = match value {
+                    Value::String(s) => (s.as_str(), None),
+                    Value::Object(obj) => {
+                        let (name, payload) = obj.iter().next().ok_or("empty enum value")?;
+                        (name.as_str(), payload.as_object())
+                    }
+                    _ => {
+                        return Err("enum value must be \"Variant\" or {\"Variant\": {...}}".into());
+                    }
+                };
                 let variants = def["variants"].as_array().ok_or("variants")?;
                 let (index, def_v) = variants
                     .iter()
                     .enumerate()
-                    .find(|(_, v)| v["name"] == *variant)
+                    .find(|(_, v)| v["name"] == variant)
                     .ok_or("unknown variant")?;
                 out.push(u8::try_from(index).map_err(|_| "variant index")?);
                 for f in def_v["fields"].as_array().map_or(&[][..], Vec::as_slice) {
                     let field = f["name"].as_str().ok_or("field name")?;
-                    self.encode(&f["type"], fields.get(field).ok_or("missing field")?, out)?;
+                    let fv = fields
+                        .and_then(|m| m.get(field))
+                        .ok_or_else(|| format!("{name}.{variant}: missing field {field}"))?;
+                    self.encode(&f["type"], fv, out)?;
                 }
                 Ok(())
             }
