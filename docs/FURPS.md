@@ -571,8 +571,6 @@ The facts, without a conclusion:
     register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module
     has no write methods;
   - release 0.3.0 (with the write methods) to the catalog, which serves 0.1.0;
-  - pin the module's SDK to a commit that reads version-7 (deeded) LNS names; its app checks
-    use the older SDK until then;
   - load the module in the real Basecamp (so far only logosctl, in CI and by hand) and add the
     lez_core signer once a usable release exists.
 - **Storage:** an IDL fetch across the public Storage network through relays only.

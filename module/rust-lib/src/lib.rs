@@ -1333,6 +1333,18 @@ mod tests {
         assert_eq!(m.shown()["lns"], Value::Null);
     }
 
+    /// Live read of our rc3 chain's LNS (the built-in network file): jef05 carries an NFT deed,
+    /// a version-7 record, which SDKs before cec2133 refused to decode. Needs the network, so it
+    /// is not in the default run: `cargo test -- --ignored live_`.
+    #[test]
+    #[ignore = "reads the live rc3 chain"]
+    fn live_a_deeded_lns_name_reads() {
+        let mut m = ProgramRegistry::default();
+        let v = parsed(&m.publisher_apps("jef05".into()));
+        assert_eq!(v["success"], true, "{v}");
+        assert_eq!(v["value"]["name"], "jef05", "{v}");
+    }
+
     /// Chain text that reorders or hides what a reader sees is cleaned out of labels (C).
     #[test]
     fn labels_drop_bidi_and_zero_width_characters() {

@@ -261,8 +261,8 @@ these same SDK calls (`Contents::from_installed` / `from_lgx` and `Names::verify
 `files_verified` and `root_mismatch` verdicts mean what the CLI's do.
 
 The SDK reads LNS records up to version 7, so names that carry an NFT deed work in the CLI's
-`lezreg app` commands. The module is pinned to an earlier SDK commit and does not read version-7
-(deeded) names yet.
+`lezreg app` commands and in the module's app checks (`publisher_apps`, `verify_app`,
+`verify_package`).
 
 A name's records can't be read without the name, but they are not secret: record addresses are
 visible on chain and a guessable name can be found by trying it, so treat an app record under a
