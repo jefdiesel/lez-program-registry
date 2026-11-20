@@ -225,7 +225,7 @@ that program as 'locally verified' for themselves."
 testnet 0.4."
 
 - **Status: not yet.** Testnet 0.4 has not launched. `lezreg`'s `testnet` network now reads an
-  embedded `names-network/2` file (`sdk/rust/network-rc3.json`), which today describes this
+  embedded v2 network file (`sdk/rust/network-rc3.json`), which today describes this
   project's own rc3 test network (`lez.nameswallet.app`, `"kind": "our-test"`), not Logos's
   testnet 0.4; on launch a new file replaces it. `lezreg network show --check-chain` compares the
   file's chain id with the sequencer's `getChannelId` (run once by hand against the rc3 test

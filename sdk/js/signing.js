@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 export const SIGNING_NOT_CONFIGURED = "no signer configured: pass { signHash, accountIdOfPrivateKey, encodePublicTransaction } from the existing lez-tx.js bundle";
-export const SIGNER_SOURCE = "logos-names-web-register-04/gateway/app-src/lez-tx.js (browser bundle at gateway/public/app/lez-tx.js)";
+export const SIGNER_SOURCE = "logos-names: gateway/app-src/lez-tx.js (browser bundle at gateway/public/app/lez-tx.js)";
 
 export function configureSigner(signer) {
   for (const method of ["signHash", "accountIdOfPrivateKey", "encodePublicTransaction"]) {

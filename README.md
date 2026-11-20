@@ -23,8 +23,11 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
   and can't be read without the name; record addresses are visible on chain, though, and a
   guessable name can be found by trying it, so an app under a guessable name is public). Packages can be fetched from Logos Storage by CID, with no web
   host on the path. See [Apps](#apps-verified-by-publisher) and [`docs/APPS.md`](docs/APPS.md).
-- **No server of ours is ever on the path.** The SDK and `lezreg` talk directly to the LEZ
-  sequencer you choose, and later to your Logos Storage node. There are no analytics. Reads
+- **No server of ours is in between.** The SDK and `lezreg` talk directly to the LEZ
+  sequencer you choose, and later to your Logos Storage node. There are no analytics. The one
+  default that names a host is the `testnet` profile (and the Basecamp module with no saved
+  settings): the sequencer of this project's rc3 test network, `lez.nameswallet.app`, until
+  Logos testnet 0.4 launches; `--network local`, `--rpc` or `config_set` choose another. Reads
   refuse HTTP redirects and ignore `HTTP(S)_PROXY` unless you set `LEZREG_USE_PROXY=1`, and
   `lezreg wallet` never falls back to the LEZ wallet's own default sequencer.
 
@@ -43,7 +46,8 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 | M8: adoption tools | **done** (e2e green on 6f0dc66): `init --detect`, `publish` (deploy+register, register or update, idempotent), `publish --from-release`, `adopt`, `stats`, `doctor`, `release prepare`, and the GitHub Action ([`action/`](action/action.yml), `verify` and `prepare` modes). Run end to end on a local rc1 chain; `e2e.yml` now runs the same flow and the Action. Not yet: `idl gen`/`idl check`, source-archive upload, the Action's opt-in `publish` mode |
 
 Logos LEZ testnet 0.4 has not launched. Until it does, `lezreg --network testnet` reads an
-embedded `names-network/2` file that describes this project's own rc3 test network
+embedded network file (the v2 network-file format: `"format": "names-network/1"`,
+`"version": 2` while LEZ is 0.4) that describes this project's own rc3 test network
 (`https://lez.nameswallet.app/`, registry `7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82`; it is
 reset now and then). On launch day the registry is deployed to testnet 0.4 with
 `chain/deploy.sh` and a new network file replaces the embedded one.
@@ -257,16 +261,17 @@ lezreg network set local --registry <REGISTRY_ID>    # chain/deploy.sh does this
 lezreg --network local list                          # local = http://127.0.0.1:3062
 lezreg --network testnet network show --check-chain  # the embedded network file; checks getChannelId
 lezreg --rpc http://host:port --registry <ID> list   # any sequencer, any registry
-lezreg network set mynet --network-file net.json     # one whole names-network/2 file
+lezreg network set mynet --network-file net.json     # one whole network file
 ```
 
 The settings live in `~/.config/lezreg/networks.json` (override with `LEZREG_CONFIG_DIR`). You
 can also set `LEZREG_NETWORK`, `LEZREG_RPC`, `LEZREG_REGISTRY`, `LEZREG_LNS` and
 `LEZREG_NETWORK_FILE` in the environment.
 
-**Network files.** `testnet` comes from an embedded `names-network/2` file
+**Network files.** `testnet` comes from an embedded v2 network file
 (`sdk/rust/network-rc3.json`): RPC, chain id, registry id, LNS program id and the registry's
-image. `LEZREG_NETWORK_FILE` or `network set --network-file` uses another file, always whole
+image. Both `names-network/1` files and v2 ones (`"version": 2`) are read.
+`LEZREG_NETWORK_FILE` or `network set --network-file` uses another file, always whole
 (fields are never merged from two files). `network show --check-chain` asks the sequencer for
 `getChannelId` and refuses a chain other than the file's; it runs only when you ask for it.
 

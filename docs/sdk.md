@@ -135,8 +135,8 @@ offline; nothing is signed or sent, and it is not a chain simulation) and
 same message bytes, state and event selectors (it is not generated from source).
 [`PR188.md`](PR188.md) maps these tools to the IDL rows of the prize spec rewrite.
 
-**Network file.** `lezreg_sdk::network_file` parses a `names-network/1` or `/2` file (the same
-file Names Wallet publishes): chain id, RPC, and the program ids of the registry and of LNS.
+**Network file.** `lezreg_sdk::network_file` parses a network file, v1 or v2 (`"format":
+"names-network/1"` with `"version": 2` while LEZ is 0.4; the same file Names Wallet publishes): chain id, RPC, and the program ids of the registry and of LNS.
 `network_file::builtin()` is the embedded profile `lezreg --network testnet` uses, and
 `chain_matches` compares a file's chain id with the sequencer's `getChannelId`. It is parse-only:
 one whole file, no merging, no fetch.
@@ -175,7 +175,8 @@ The JS SDK covers the same discovery surface as `sdk/rust` and builds the same w
 
 ```js
 import { Registry } from './lezreg.js';
-import { buildChange, signAndSend, configureSigner } from './writes.js';
+import { buildChange, signAndSend } from './writes.js';
+import { configureSigner } from './signing.js';
 
 const reg = new Registry({ rpc, registry });
 const thirdParty = await reg.thirdParty(programId, 20);      // Rust: Registry::third_party
