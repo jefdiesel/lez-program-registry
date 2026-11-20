@@ -1,4 +1,5 @@
-// One entry in an index: a title, one plain sentence of what it is, and who published it.
+// One entry in an index: a title, and optionally one plain sentence of what it is and who
+// published it (leave them empty for an index of names only).
 // `proven: false` sets the publisher in italics (their own words, not confirmed): quiet, no
 // badge; the index explains italics once, under the list. `note` is a quiet line ("v7, the
 // newest of 3"). `secondary` is an older or lesser member of a family, drawn under its lead,
@@ -17,7 +18,9 @@ Rectangle {
     property bool secondary: false
     property bool selected: false
     signal pressed()
-    implicitHeight: column.implicitHeight + (secondary ? 12 : 20)
+    // A title alone (an index of names) is one tight line; with a sentence, a roomier card.
+    readonly property bool titleOnly: sentence === "" && publisher === "" && note === ""
+    implicitHeight: column.implicitHeight + (titleOnly ? (secondary ? 8 : 12) : (secondary ? 12 : 20))
     radius: 6
     color: selected ? look.raised : rowArea.containsMouse ? Qt.rgba(look.raised.r, look.raised.g, look.raised.b, 0.6) : "transparent"
     border.width: activeFocus ? 1 : 0

@@ -1,7 +1,7 @@
 {
   "name": "registry_browser",
   "display_name": "Program Registry",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": "lns:jefdiesel",
   "type": "ui_qml",
   "category": "developer",

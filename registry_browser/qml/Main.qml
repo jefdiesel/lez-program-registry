@@ -401,18 +401,12 @@ Item {
                     spacing: 2
                     model: root.rows
                     boundsBehavior: Flickable.StopAtBounds
-                    // After the last entry, scrolling with the list: the italics note and More.
+                    // After the last entry, scrolling with the list: More.
                     footer: Column {
                         width: list.width
                         topPadding: 16
                         bottomPadding: 24
                         spacing: 12
-                        Text { textFormat: Text.PlainText;
-                            visible: root.rows.some(function(r) { return r.type === "entry" && !r.proven })
-                            width: parent.width
-                            text: "Publishers in italics named themselves; nothing on the chain confirms those names."
-                            color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(13); font.italic: true
-                        }
                         Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more programs"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
                     }
                     delegate: Item {
@@ -420,7 +414,7 @@ Item {
                         required property int index
                         readonly property bool isHeading: modelData.type === "heading"
                         width: list.width
-                        height: isHeading ? heading.implicitHeight + (index > 0 ? 24 : 14) : indexRow.implicitHeight
+                        height: isHeading ? heading.implicitHeight + (index > 0 ? 20 : 10) : indexRow.implicitHeight
                         SectionHeading {
                             id: heading
                             look: root.look
@@ -434,10 +428,7 @@ Item {
                             visible: !parent.isHeading
                             width: parent.width
                             title: parent.isHeading ? "" : modelData.title
-                            sentence: parent.isHeading ? "" : modelData.sentence
-                            publisher: parent.isHeading ? "" : modelData.publisher
-                            proven: parent.isHeading || modelData.proven
-                            note: parent.isHeading ? "" : modelData.note
+                            // Names only: the sentence and the publisher are on the guide page.
                             secondary: !parent.isHeading && modelData.secondary
                             selected: !parent.isHeading && !!root.selected && root.selected.address === modelData.item.address
                             onPressed: root.open(modelData.item)

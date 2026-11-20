@@ -62,6 +62,7 @@ SCENARIOS = {
     "detail-author": 'if (root.items.length) { root.open(byName("lez_program_registry")); techDetails.open = true; authorTools.open = true }',
     "narrow-list": "",
     "basecamp-list": "",
+    "basecamp-detail": 'if (root.items.length) root.open(byName("names-evm-bridge-v7"))',
     "basecamp-end": "list.contentY = list.originY + list.contentHeight - list.height",
     "narrow-end": "list.contentY = list.originY + list.contentHeight - list.height",
     "narrow-detail": 'if (root.items.length) root.open(byName("vest"))',
@@ -72,7 +73,7 @@ SCENARIOS = {
 }
 
 
-SIZES = {"basecamp-list": (1250, 700), "basecamp-end": (1250, 700), "narrow-end": (720, 900), "narrow-list": (720, 900), "narrow-detail": (720, 900), "small": (1000, 700), "detail-tech": (1280, 1500), "detail-author": (1280, 2300)}
+SIZES = {"basecamp-list": (1250, 700), "basecamp-detail": (1250, 700), "basecamp-end": (1250, 700), "narrow-end": (720, 900), "narrow-list": (720, 900), "narrow-detail": (720, 900), "small": (1000, 700), "detail-tech": (1280, 1500), "detail-author": (1280, 2300)}
 
 
 def main():
