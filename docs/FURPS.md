@@ -32,9 +32,14 @@ live on Logos Storage; the chain holds their CID, sha256 and size. Entries recor
 tuple, and `lezreg verify` rebuilds it in Docker and compares the image id with the claimed one
 and with the live one.
 
+Its Basecamp module can also prepare and sign registry writes (register, third-party register,
+update, transfer, freeze) on the user's behalf through the lezreg wallet, with approval required
+for untrusted callers; the built change is decoded into a confirm card.
+
 Everything has run end to end on a local LEZ `v0.4.0-rc3` standalone sequencer: in CI on every
-push to `main`, and through `scripts/demo.sh`. Nothing has run on testnet 0.4 yet, because it has
-not launched. None of the adoption criteria are met yet.
+push to `main`, and through `scripts/demo.sh`. Module reads and writes are covered by
+`.github/workflows/module.yml` on the same local rc sequencer. Nothing has run on testnet 0.4 yet,
+because it has not launched. None of the adoption criteria are met yet.
 
 ## Repository
 
@@ -235,8 +240,10 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
 - **Status: partly met.**
   - Rust SDK: all three (register, resolve, search).
   - JS SDK: resolve, list and search by name only (no search by author, no writes).
-  - Logos Core module: resolve, list and search by name only. It has no write methods, so
-    another Logos module **cannot register through it**.
+  - Logos Core module: resolve, list, search by name, **and prepare/sign writes** (register,
+    third-party register, update, transfer, freeze) through `submit`; another Logos module can
+    register, but its change waits for approval unless the caller is the registry browser or the
+    host. Still no search by author, and the JS SDK has no writes.
 - **Evidence:**
   - Rust SDK (`sdk/rust`):
     - reads: `Registry::resolve`, `list`, `search_name`, `by_author`, `third_party`;
@@ -251,11 +258,23 @@ register entries, resolve a program ID to its metadata and IDL, and run searches
   - Module `program_registry` (`module/`): `resolve_program`, `program_label`, `get_idl`,
     `list_entries`, `search_name`, `third_party_entries`, `verify_app`, `verify_package`,
     `publisher_apps`, `config_get`/`config_set`.
+    - It also exposes `prepare_register`, `prepare_register_third_party`, `prepare_update`,
+      `prepare_transfer`, `prepare_freeze`, `submit`/`submit_status`, `signer_status`,
+      `pending_requests`, `approve_request`/`deny_request` and the `change_settled` event. The
+      builders live in `module/rust-lib/src/writes.rs` and are pinned byte-for-byte to the
+      program by `module/rust-lib/testdata/write-vectors.json` (`sdk/rust/tests/module_vectors.rs:205`,
+      unit tests at `module/rust-lib/src/lib.rs:1109,1174,1206,1219,1270,1288`).
+      `.github/workflows/module.yml:181-206` loads the module in logosctl on a local rc3 chain
+      and registers/updates/freeses an entry through it, with an on-chain assertion — met on a
+      local rc sequencer, pending testnet 0.4. No `docs/demo.log` row loads the module
+      (`docs/demo.log:426-427` still says it has no write methods).
     - Its search is by name only: there is no search by author in the module.
-    - The repo's module is 0.2.0, but **the catalog still serves 0.1.0** (released 2026-11-04,
-      before the app methods).
-    - No CI job loads the module. It was loaded with logosctl on the Mini by hand (DESIGN §11
-      M6); `module.yml` from DESIGN §8.3 does not exist.
+    - The repo's module is 0.3.0 (`module/metadata.json:4`), but **the catalog still serves 0.1.0**
+      (released 2026-11-04, before the app methods), so the catalog build has none of the write
+      methods.
+    - A CI job does load it: `.github/workflows/module.yml:166-206` (logosctl install/load and
+      reads, register/update/freeze, and the caller gate). It also ran by hand on the Mini
+      (DESIGN §11 M6).
 
 **10.** "Provide a CLI covering register, update, lookup, search, and source verification."
 
@@ -516,9 +535,12 @@ The facts, without a conclusion:
 - **CLI degradation:** a CLI view that shows the metadata plus the IDL status. Today `show` never
   fetches the IDL, and `idl get` fails when the IDL is unavailable.
 - **Module:**
-  - write methods (register and update through the module);
-  - a CI job that loads it;
-  - release 0.2.0 to the catalog (it serves 0.1.0).
+  - a demo/FURPS row for module writes: unit tests and `.github/workflows/module.yml` show
+    register/update/freeze on a local rc chain, but `docs/demo.log:426-427` still says the module
+    has no write methods;
+  - release 0.3.0 (with the write methods) to the catalog, which serves 0.1.0;
+  - load the module in the real Basecamp (so far only logosctl on CI/Mini) and add the lez_core
+    signer once a usable release exists.
 - **Storage:** an IDL fetch across the public Storage network through relays only.
 - **Platforms:** Windows and Android builds; macOS in CI.
 - **Tooling** listed in DESIGN but not built: `lezreg idl gen` and `idl check`, the Action's
