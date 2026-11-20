@@ -1,11 +1,11 @@
 {
   "name": "registry_browser",
   "display_name": "Program Registry",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": "lns:jefdiesel",
   "type": "ui_qml",
   "category": "developer",
-  "description": "Browse and search the LEZ Program Registry: who deployed a program, whether it still runs the registered code, its IDL; update or freeze your own entries",
+  "description": "An index of the programs on LEZ, read like a guidebook: what each one does, who published it, where its source is; technical details (proven author, freshness, IDL) and updating your own entries one fold down",
   "view": "qml/Main.qml",
   "icon": "src/icons/icon.png",
   "dependencies": [

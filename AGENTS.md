@@ -86,6 +86,12 @@ moves it with `logosctl call program_registry config_set '{"network_file": "<abs
 single values (`sequencer`, `registry`, `lns`); `config_get` shows what is in use. Build:
 `nix build .#lgx-portable` in `module/` and in `registry_browser/` (as `module.yml` does); install
 and use: `docs/INTEGRATE.md`. Both manifests carry `"author": "lns:jefdiesel"`.
+Since 0.1.3 the browser reads like a guidebook: an index grouped by section (from tags), each entry a
+title, one sentence and its publisher, with a guide page beside it and everything technical folded
+under "Technical details". Titles and sentences come from the entry (`registry_browser/qml/logic.mjs`,
+`guideText` / `indexRows`); the look is in `registry_browser/qml/kit/` (no registry logic there:
+shared with our other apps). Offscreen renders: `registry_browser/tools/render.py`, with answers from
+`tools/record.py` (logosctl) or `tools/answers_from_lezreg.py` (read-only `lezreg ... --json` output).
 
 ## Work on this repository
 

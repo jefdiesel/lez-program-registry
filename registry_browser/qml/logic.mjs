@@ -150,3 +150,213 @@ export function requestTitle(q) {
   if (!q || !q.change) return "";
   return `An app that calls itself "${clean(q.from) || "?"}" (name chosen by the app, unverified) asks to sign: ${clean(q.change.what)}`;
 }
+
+// ── The index: entries read like a guidebook, not a technical record ──────────────────────
+// Everything below is derived from the entry's own text (name, description, tags, author label):
+// nothing here knows any particular program.
+
+/** Words kept in capitals when a name becomes a title. */
+const ACRONYMS = { lez: "LEZ", nft: "NFT", nfts: "NFTs", evm: "EVM", lns: "LNS", idl: "IDL", eth: "ETH", rpc: "RPC", api: "API", ui: "UI", zk: "ZK", dao: "DAO", dex: "DEX", amm: "AMM", rfp: "RFP", lp: "LP" };
+
+/** A program name as a title: "names-evm-bridge-v7" → "Names EVM Bridge v7". */
+export function titleCase(name) {
+  return clean(name).split(/[-_\s]+/).filter(Boolean).map((w) => {
+    const low = w.toLowerCase();
+    if (ACRONYMS[low]) return ACRONYMS[low];
+    if (/^v\d+(\.\d+)*$/.test(low)) return low;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(" ");
+}
+
+/** Text without its (parenthetical asides), and tidy spaces around what is left. */
+function withoutAsides(s) {
+  let t = s, prev;
+  do { prev = t; t = t.replace(/\s*\([^()]*\)/g, ""); } while (t !== prev);
+  return t.replace(/\s+([,.;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+}
+
+/** The first sentence: up to a full stop followed by a space (so "LEZ 0.4" stays whole). */
+function firstSentence(s) {
+  const m = /^(.*?[.!?])\s+\S/.exec(s);
+  return m ? m[1] : s;
+}
+
+/** Capital first letter, full stop at the end, at most `max` characters (cut at a word). */
+function tidySentence(s, max) {
+  let t = s.trim().replace(/[\s,;:]+$/, "");
+  if (!t) return "";
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  if (t.length > max) {
+    const cut = t.slice(0, max - 1);
+    t = cut.slice(0, Math.max(cut.lastIndexOf(" "), max * 0.6)).replace(/[\s,;:.]+$/, "") + "…";
+  } else if (!/[.!?…]$/.test(t)) t += ".";
+  return t;
+}
+
+/** An entry's title and one plain sentence. The description's text before ": " is the title when
+ * it is short and plain ("Vest: privacy-preserving …" → "Vest"); a longer lead that only restates
+ * the title is dropped; otherwise the title is the name in title case. The sentence is the first
+ * sentence of what is left, without (asides). `about` is the whole description, cleaned. */
+export function guideText(entry, fallbackName) {
+  const e = entry || {};
+  const name = clean(e.name || fallbackName || "");
+  const about = clean(e.description || "").replace(/⏎/g, " ").replace(/\s+/g, " ").trim();
+  let title = titleCase(name);
+  let rest = about;
+  const colon = about.indexOf(": ");
+  if (colon > 0) {
+    const lead = about.slice(0, colon).trim();
+    const plain = !/[,()[\].;]/.test(lead) && lead.split(/\s+/).length <= 3 && lead.length <= 32;
+    if (plain) { title = lead; rest = about.slice(colon + 2); }
+    else if (title && withoutAsides(lead).toLowerCase().replace(/^the\s+/, "").startsWith(title.toLowerCase())) rest = about.slice(colon + 2);
+  }
+  return { title: title || "Unnamed program", sentence: tidySentence(withoutAsides(firstSentence(rest)), 150), about };
+}
+
+/** Who published an entry, as people read it: the author label without its "lns:" prefix, or the
+ * short account when there is no label. `proven` is false for a label the chain doesn't confirm. */
+export function publisherOf(entry) {
+  const e = entry || {};
+  const label = clean(e.author_label || "").trim().replace(/^lns:/i, "");
+  if (label) return { text: label, proven: !!e.author_label_proven, account: false };
+  return { text: shortId(e.author), proven: true, account: true };
+}
+
+/** Sections of the index, in reading order, and the tags that put an entry in one. */
+const SECTIONS = [
+  ["Tokens", ["token", "tokens", "fungible", "vesting", "defi", "finance", "payments", "stablecoin"]],
+  ["Names", ["lns", "names", "name", "naming", "identity"]],
+  ["NFTs", ["nft", "nfts", "collectible", "collectibles", "deeds"]],
+  ["Bridges", ["bridge", "bridges", "eth", "evm", "interop", "cross-chain"]],
+  ["Tools", ["registry", "infrastructure", "tools", "tool", "developer", "dev", "utility"]],
+];
+
+/** The index section for an entry's tags: the first tag that names a known section wins; an
+ * unknown first tag is its own section; no tags at all is "Other". */
+export function sectionOf(tags) {
+  const t = list(tags).map((x) => clean(x).toLowerCase().trim()).filter(Boolean);
+  for (const tag of t) for (const [section, words] of SECTIONS) if (words.includes(tag)) return section;
+  return t.length ? titleCase(t[0]) : "Other";
+}
+
+function sectionRank(s) {
+  const i = SECTIONS.findIndex(([name]) => name === s);
+  return i >= 0 ? i : s === "Other" ? 1000 : 100;
+}
+
+/** The family key of a name: the name without a trailing version ("bridge-v7" → "bridge"). */
+function familyKey(name) {
+  return clean(name).toLowerCase().replace(/[-_]v\d+$/, "");
+}
+
+/** The index as rows, in reading order:
+ *   {type: "heading", text}
+ *   {type: "entry", item, title, sentence, publisher, proven, note, secondary, family}
+ * Entries whose names differ only by a version ("x-v6", "x-v7"), or extend such a name
+ * ("x-token"), and that have the SAME author account, read as one family: the newest (highest
+ * seq) leads under the family's title, the others follow as secondary rows, newest first.
+ * Sections follow SECTIONS, then other tags A–Z, then "Other"; families A–Z by title inside. */
+export function indexRows(items) {
+  const listed = list(items).filter((i) => i && (i.entry || i.link));
+  const nameOf = (i) => (i.entry ? i.entry.name : i.link.name) || "";
+  const authorOf = (i) => (i.entry ? i.entry.author : i.link.registrant) || "";
+  // Keys that some versioned name ("…-vN") introduces: only these gather a family.
+  const versioned = new Set(listed.filter((i) => familyKey(nameOf(i)) !== clean(nameOf(i)).toLowerCase()).map((i) => authorOf(i) + "\u0000" + familyKey(nameOf(i))));
+  const families = new Map();
+  for (const i of listed) {
+    const key = familyKey(nameOf(i));
+    const author = authorOf(i);
+    let fam = null;
+    for (const v of versioned) {
+      const [a, k] = v.split("\u0000");
+      if (a === author && (key === k || key.startsWith(k + "-") || key.startsWith(k + "_")) && (!fam || k.length > fam.length)) fam = k;
+    }
+    const id = fam !== null ? author + "\u0000" + fam : "\u0001" + i.address;
+    if (!families.has(id)) families.set(id, { key: fam, members: [] });
+    families.get(id).members.push(i);
+  }
+  const groups = [];
+  for (const f of families.values()) {
+    f.members.sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0));
+    const lead = f.members[0];
+    const family = f.members.length > 1;
+    const leadText = guideText(lead.entry, nameOf(lead));
+    const title = family ? titleCase(f.key) : leadText.title;
+    const variant = (i) => titleCase(clean(nameOf(i)).slice(f.key.length).replace(/^[-_]/, "")) || "Original";
+    const rows = f.members.map((i, n) => {
+      const t = guideText(i.entry, nameOf(i));
+      const p = publisherOf(i.entry || { author: authorOf(i) });
+      return {
+        type: "entry", item: i, title: n === 0 ? title : variant(i), sentence: t.sentence, publisher: p.text, proven: p.proven,
+        note: family ? (n === 0 ? `${variant(i)}, the newest of ${f.members.length}` : "") : "", secondary: n > 0, family: family ? title : "",
+        variant: family ? variant(i) : "",
+      };
+    });
+    groups.push({ section: sectionOf(lead.entry ? lead.entry.tags : []), title, rows });
+  }
+  groups.sort((a, b) => sectionRank(a.section) - sectionRank(b.section) || a.section.localeCompare(b.section) || a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+  const out = [];
+  let section = null;
+  for (const g of groups) {
+    if (g.section !== section) { out.push({ type: "heading", text: g.section }); section = g.section; }
+    out.push(...g.rows);
+  }
+  return out;
+}
+
+/** What the detail page leads with, for one listed item: the index row's words, its family's
+ * other members ({address, label}) and the full title ("Names EVM Bridge v6"). */
+export function guideOf(item, items) {
+  if (!item) return null;
+  const rows = indexRows(list(items).some((i) => i && i.address === item.address) ? items : list(items).concat([item]));
+  const row = rows.find((r) => r.type === "entry" && r.item.address === item.address);
+  const name = item.entry ? item.entry.name : item.link ? item.link.name : "";
+  const t = guideText(item.entry, name);
+  const family = row && row.family ? rows.filter((r) => r.type === "entry" && r.family === row.family && r.item.address !== item.address
+      && (r.item.entry ? r.item.entry.author : r.item.link.registrant) === (item.entry ? item.entry.author : item.link.registrant)).map((r) => ({ address: r.item.address, label: r.variant + (r.secondary ? "" : " (newest)") })) : [];
+  const p = publisherOf(item.entry || { author: item.link ? item.link.registrant : "" });
+  return {
+    title: row && row.family ? titleCase(name) : t.title, sentence: t.sentence, about: t.about, publisher: p.text, proven: p.proven, account: p.account,
+    family, section: sectionOf(item.entry ? item.entry.tags : []),
+  };
+}
+
+/** Where to read an entry's source: an https link (to the commit on GitHub) and its words. null
+ * when the entry names no repository, or one this app won't open. */
+export function sourceLink(source) {
+  const repo = clean(source && source.repo).trim();
+  if (!/^https:\/\/[^\s"'<>]+$/i.test(repo)) return null;
+  const commit = clean(source.commit).trim();
+  const base = repo.replace(/\.git$/, "").replace(/\/+$/, "");
+  const github = /^https:\/\/github\.com\/[^/]+\/[^/]+$/i.test(base);
+  return { url: github && /^[0-9a-f]{7,40}$/i.test(commit) ? `${base}/tree/${commit}` : base, text: base.replace(/^https:\/\//i, "") };
+}
+
+/** How an entry came to be listed, in plain words. */
+export function listedBy(kind) {
+  if (kind === "deployer") return "Listed by the program's own deployer.";
+  if (kind === "community") return "A community listing: written by someone other than the program's deployer.";
+  return "This record is not where the registry would put it.";
+}
+
+/** A day as people write it ("20 Nov 2026", UTC), or "" for none. */
+export function day(ms) {
+  if (!ms) return "";
+  const d = new Date(Number(ms));
+  if (isNaN(d.getTime())) return "";
+  return `${d.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** The host of an address, for a network line ("lez.nameswallet.app"). */
+export function hostOf(url) {
+  const m = /^[a-z]+:\/\/([^/:?#]+)/i.exec(clean(url));
+  return m ? m[1] : clean(url);
+}
+
+/** A name the Names app's `reverse` gave for an account, or "" (no name, no Names app, odd reply). */
+export function reverseName(reply) {
+  const a = answer(reply);
+  const v = a.ok ? a.value : null;
+  const name = v && typeof v === "object" ? v.name : typeof v === "string" ? v : "";
+  return /^[a-z0-9][a-z0-9-]{0,62}$/i.test(clean(name)) ? clean(name) : "";
+}

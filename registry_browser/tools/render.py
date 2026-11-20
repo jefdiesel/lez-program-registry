@@ -9,15 +9,24 @@ Names app's tools/replay.py does.
 tokens). Set QT_QPA_PLATFORM=offscreen to run without a display. A call with no recorded
 answer gets no reply, as a module that never answers would: the screen must still draw.
 
-Scenarios: list (the list as it opens), detail (the newest entry opened), search (a name
-search), freeze-confirm (the confirm sheet for Freeze), nomodule (no program_registry at all).
+Scenarios: list (the index as it opens), detail (the newest entry's guide page), detail-vest,
+detail-family (an older member of a family), detail-registry (a deployer entry), detail-tech
+(Technical details open), detail-author (the author's update form, as far down as it goes),
+search (a name search), narrow-list and narrow-detail (a window too narrow for both: the guide
+page replaces the index), small (a small window with both), freeze-confirm (the confirm sheet
+for Freeze; needs a recorded prepare_freeze), nomodule (no program_registry at all).
+Answers can come from tools/record.py (logosctl) or tools/answers_from_lezreg.py (lezreg reads).
 """
 import json, os, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 BRIDGE = r"""
-    width: 1280; height: 900
+    width: %(width)s; height: %(height)s
+    function byName(n) {
+        for (var i = 0; i < root.items.length; i++) if ((root.items[i].entry || root.items[i].link).name === n) return root.items[i]
+        return root.items[0]
+    }
     property var recorded: %(answers)s
     property bool absent: %(absent)s
     property var logos: QtObject {
@@ -45,10 +54,21 @@ BRIDGE = r"""
 SCENARIOS = {
     "list": "",
     "detail": "if (root.items.length) root.open(root.items[0])",
+    "detail-vest": 'if (root.items.length) root.open(byName("vest"))',
+    "detail-family": 'if (root.items.length) root.open(byName("names-evm-bridge-v6"))',
+    "detail-registry": 'if (root.items.length) root.open(byName("lez_program_registry"))',
+    "detail-tech": 'if (root.items.length) { root.open(byName("vest")); techDetails.open = true }',
+    "detail-author": 'if (root.items.length) { root.open(byName("lez_program_registry")); techDetails.open = true; authorTools.open = true }',
+    "narrow-list": "",
+    "narrow-detail": 'if (root.items.length) root.open(byName("vest"))',
+    "small": 'if (root.items.length) root.open(byName("names-evm-bridge-v7"))',
     "search": 'root.query = "%(search)s"; root.loadList(false)',
     "freeze-confirm": 'if (root.items.length) { root.open(root.items[0]); root.prepare("prepare_freeze", {}) }',
     "nomodule": "",
 }
+
+
+SIZES = {"narrow-list": (720, 900), "narrow-detail": (720, 900), "small": (1000, 700), "detail-tech": (1280, 1500), "detail-author": (1280, 2300)}
 
 
 def main():
@@ -71,7 +91,8 @@ def main():
         if os.path.exists(out):
             os.unlink(out)
         bridge = BRIDGE % {"answers": json.dumps(answers), "absent": "true" if scenario == "nomodule" else "false",
-                           "scenario": SCENARIOS[scenario] % {"search": search}, "out": out}
+                           "scenario": SCENARIOS[scenario] % {"search": search}, "out": out,
+                           "width": SIZES.get(scenario, (1280, 900))[0], "height": SIZES.get(scenario, (1280, 900))[1]}
         # Beside Main.qml, so its relative imports (logic.mjs, RegistryLabel.qml) resolve.
         with tempfile.NamedTemporaryFile("w", suffix=".qml", delete=False, dir=os.path.join(HERE, "..", "qml")) as handle:
             handle.write(source.replace(marker, marker + bridge, 1))

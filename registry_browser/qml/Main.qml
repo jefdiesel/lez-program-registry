@@ -1,18 +1,22 @@
-// Program Registry for Basecamp: browse and search the LEZ Program Registry, read an entry
-// (deployer or community, fresh or stale, its IDL, this machine's verify mark), and, for an
-// entry your lezreg wallet authors, update or freeze it.
+// Program Registry for Basecamp: an index of the programs on this network, read like a
+// guidebook. Each entry has a title, one plain sentence and its publisher; open one for its guide
+// page (what it is, who published it, its source, what you can do), with everything technical
+// (ids, revisions, code, IDL, this machine's verify mark) folded under "Technical details". An
+// entry your lezreg wallet authors can be updated or frozen from there.
 //
 // A front end on the `program_registry` core module, which reads the sequencer itself; nothing
 // here talks to the network. Changes are prepared by the module (`prepare_*`), shown on a
 // confirm sheet, and signed by your own `lezreg` CLI wallet (`submit`).
 //
-// Controls are drawn here, as the Names app does, so it looks the same whatever style the host
-// applies; colours come from the shared Logos theme.
+// The parts in kit/ (index row, section heading, guide header, technical details, buttons, page
+// header) hold no registry logic: they are the shared look of our apps (Names Wallet is the
+// reference). Everything about entries is in logic.mjs, tested by logic.test.mjs.
 
 import QtQuick
 import QtQuick.Layouts
 import Logos.Theme
 import "logic.mjs" as Logic
+import "kit"
 
 Item {
     id: root
@@ -25,7 +29,7 @@ Item {
     property string query: ""          // the search shown, "" for the full list
     property bool loading: false
     property string problem: ""        // why the list could not be read
-    property var selected: null        // the listed item open on the right
+    property var selected: null        // the listed item open on the guide page
     property var resolved: null        // resolve_program for its program
     property var idl: null             // get_idl
     property var label: null           // program_label (the local verify mark)
@@ -37,6 +41,10 @@ Item {
     property var job: null             // the last submitted change
     property var requests: []          // changes other apps submitted, waiting for approval
     property bool remoteOk: false      // the person ticked "this spends real funds on <sequencer>"
+    property bool busy: false          // a change is being prepared or sent
+    property string workingOn: ""      // which: a prepare_* method or "submit"
+    property var accountNames: ({})    // account → LNS name, from the Names app's lookup
+    property string guideNote: ""      // "Program ID copied." and such, under the guide's buttons
     // Sign / Approve buttons rest for a moment after a card appears or changes, so a click meant
     // for something else can't land on them as the layout shifts.
     property bool armed: false
@@ -48,20 +56,18 @@ Item {
 
     readonly property bool bridgeReady: typeof logos !== "undefined" && !!logos && !!logos.callModuleAsync
 
-    // ── Look (the Names app's tokens) ───────────────────────────────────
-    readonly property color slate: Theme.palette.background
-    readonly property color card: Theme.isDark ? Theme.palette.backgroundSecondary : Theme.palette.surfaceRaised
-    readonly property color raised: Theme.isDark ? Theme.palette.surface : Theme.palette.backgroundButton
-    readonly property color line: Theme.palette.border
-    readonly property color ink: Theme.palette.text
-    readonly property color dim: Theme.palette.textSecondary
-    readonly property color faint: Theme.palette.textPlaceholder
-    readonly property color brass: Theme.isDark ? Theme.palette.warning : Theme.palette.primary
-    readonly property color alarm: Theme.palette.error
-    readonly property color good: Theme.palette.success
-    function px(size) { return Math.round(size * (Theme.typography.scale || 1)) }
-    readonly property string sans: "Avenir Next"
-    readonly property string mono: "Menlo"
+    // What the screen shows, derived from the entries (logic.mjs).
+    readonly property var rows: Logic.indexRows(items)
+    readonly property var guide: Logic.guideOf(selected, items)
+    readonly property var entry: selected ? selected.entry : null
+    readonly property string kind: selected ? Logic.kindOf(selected) : ""
+    readonly property var source: entry ? Logic.sourceLink(entry.source) : null
+
+    // ── Look (kit/Look.qml: the palette and type every app shares) ──────
+    property Look look: Look {}
+    // One left edge for everything; the index at 300 px, the guide page beside it in a column of
+    // at most 680. Too narrow for both: the guide page replaces the index, with Back.
+    readonly property bool narrow: width < look.edge * 2 + look.indexWidth + 32 + 420
 
     // ── The module ──────────────────────────────────────────────────────
     /// Asks program_registry; exactly one of done(value) and failed(message, code) runs, later.
@@ -81,10 +87,9 @@ Item {
         ask("config_get", [], function(v) {
             config = v
             if (v.registry) loadList(false)
-            else { settingsOpen = true; problem = "No registry is set: see Settings." }
+            else { settingsOpen = true; problem = "No registry is set: see Network settings." }
         }, function(e) { problem = e })
     }
-
 
     function loadList(more) {
         loading = true
@@ -104,10 +109,13 @@ Item {
         }, function(e) { problem = e; loading = false })
     }
 
-    function open(item) {
+    function open(item, keepDetails) {
         selected = item
         resolved = null; idl = null; label = null; community = []
         change = null
+        guideNote = ""
+        if (!keepDetails) { techDetails.open = false; authorTools.open = false }
+        guideFlick.contentY = 0
         var program = item.entry ? item.entry.program : item.link.program
         editVersion = item.entry ? item.entry.version : ""
         editDescription = item.entry ? item.entry.description : ""
@@ -115,6 +123,29 @@ Item {
         ask("program_label", [program], function(v) { label = v }, function(e) {})
         ask("third_party_entries", [program], function(v) { community = v }, function(e) {})
         ask("get_idl", [program], function(v) { idl = v }, function(e) { idl = { status: "unavailable: " + e, idl: null } }, 30000)
+        lookUpName(item.entry ? item.entry.author : item.link.registrant)
+    }
+
+    function openAddress(address) {
+        for (var i = 0; i < items.length; i++)
+            if (items[i].address === address) { open(items[i]); return }
+    }
+
+    /// The LNS name an account goes by, from the Names app's own lookup (`names.reverse`), shown
+    /// beside the account in Technical details. No Names app, no name, or no answer: nothing shown.
+    function lookUpName(account) {
+        if (!account || !bridgeReady || accountNames[account] !== undefined) return
+        var pending = Object.assign({}, accountNames); pending[account] = ""; accountNames = pending
+        logos.callModuleAsync("names", "reverse", [account], function(reply) {
+            var name = Logic.reverseName(reply)
+            if (name === "") return
+            var known = Object.assign({}, root.accountNames); known[account] = name; root.accountNames = known
+        }, 8000)
+    }
+
+    function accountLine(account) {
+        var name = accountNames[account] || ""
+        return account + (name !== "" ? "\nGoes by " + name + " (LNS, from the Names app)" : "")
     }
 
     function prepare(method, fields) {
@@ -128,14 +159,18 @@ Item {
             }
             input.allow_remote = true
         }
-        ask(method, [JSON.stringify(input)], function(v) { change = v }, function(e, code) { notice = e + (code ? " (" + code + ")" : "") })
+        busy = true; workingOn = method
+        ask(method, [JSON.stringify(input)], function(v) { busy = false; workingOn = ""; change = v },
+            function(e, code) { busy = false; workingOn = ""; notice = e + (code ? " (" + code + ")" : "") })
     }
 
     function submitChange() {
         var c = change
         change = null
         remoteOk = false   // "spends real funds" is asked again for every change
-        ask("submit", [JSON.stringify(c)], function(v) { job = v; pollJob() }, function(e, code) { notice = e + (code ? " (" + code + ")" : "") })
+        busy = true; workingOn = "submit"
+        ask("submit", [JSON.stringify(c)], function(v) { busy = false; workingOn = ""; job = v; pollJob() },
+            function(e, code) { busy = false; workingOn = ""; notice = e + (code ? " (" + code + ")" : "") })
     }
 
     function pollJob() {
@@ -143,7 +178,7 @@ Item {
         ask("submit_status", [job.job], function(v) {
             job = v
             if (v.state === "running") jobTimer.start()
-            else if (v.state === "applied") open(selected)
+            else if (v.state === "applied") open(selected, true)
         }, function(e) { notice = e })
     }
 
@@ -168,153 +203,87 @@ Item {
 
     Component.onCompleted: loadConfig()
 
-    // ── Controls ────────────────────────────────────────────────────────
-    component Action: Rectangle {
-        id: action
-        property string label: ""
-        property bool strong: false
-        property bool grave: false
-        property bool enabledNow: true
-        readonly property color fill: grave ? root.alarm : root.brass
-        signal pressed()
-        implicitWidth: actionText.implicitWidth + 24
-        implicitHeight: 34
-        radius: 6
-        color: !enabledNow ? "transparent" : strong ? (area.containsMouse ? Qt.lighter(fill, 1.08) : fill) : (area.containsMouse ? root.raised : "transparent")
-        border.width: strong && enabledNow ? 0 : 1
-        border.color: grave ? root.alarm : root.line
-        opacity: enabledNow ? 1 : 0.55
-        Text { textFormat: Text.PlainText;
-            id: actionText
-            anchors.centerIn: parent
-            text: action.label
-            color: action.strong && action.enabledNow ? root.slate : action.grave ? root.alarm : root.ink
-            font.family: root.sans
-            font.pixelSize: root.px(15)
-            font.weight: Font.DemiBold
-        }
-        MouseArea {
-            id: area
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: action.enabledNow
-            cursorShape: Qt.PointingHandCursor
-            onClicked: action.pressed()
-        }
+    // ── Guide page actions ──────────────────────────────────────────────
+    function copy(text, what) {
+        clipboard.text = text
+        clipboard.selectAll()
+        clipboard.copy()
+        guideNote = what + " copied."
     }
 
-    component Field: Rectangle {
-        id: field
-        property alias text: input.text
-        property string placeholder: ""
-        property bool monospace: false
-        signal accepted()
-        implicitHeight: 34
-        radius: 6
-        color: root.slate
-        border.width: 1
-        border.color: input.activeFocus ? root.brass : root.line
-        TextInput {
-            id: input
-            anchors.fill: parent
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            verticalAlignment: TextInput.AlignVCenter
-            color: root.ink
-            clip: true
-            font.family: field.monospace ? root.mono : root.sans
-            font.pixelSize: root.px(14)
-            selectByMouse: true
-            onAccepted: field.accepted()
-        }
-        Text { textFormat: Text.PlainText;
-            anchors.fill: input
-            anchors.leftMargin: 10
-            verticalAlignment: Text.AlignVCenter
-            visible: input.text === "" && !input.activeFocus
-            text: field.placeholder
-            color: root.faint
-            font.family: root.sans
-            font.pixelSize: root.px(14)
-        }
+    /// Opens the entry's source in the browser: only an https address (sourceLink lets no other
+    /// kind through), and only if Basecamp lets this app open one.
+    function viewSource() {
+        if (!source) return
+        var opened = false
+        try { opened = Qt.openUrlExternally(source.url) } catch (error) { opened = false }
+        guideNote = opened ? "Opened " + source.url : "Basecamp did not open the link. Copy it instead: " + source.url
     }
 
-    /// Deployer (proven) or Community (unproven).
-    component KindBadge: Rectangle {
-        property string kind: "deployer"
-        readonly property var badge: Logic.kindBadge(kind)
-        implicitWidth: badgeText.implicitWidth + 14
-        implicitHeight: 22
-        radius: 11
-        color: badge.proven ? Qt.rgba(root.good.r, root.good.g, root.good.b, 0.16) : Qt.rgba(root.brass.r, root.brass.g, root.brass.b, 0.16)
-        Text { textFormat: Text.PlainText;
-            id: badgeText
-            anchors.centerIn: parent
-            text: parent.badge.text
-            color: parent.badge.proven ? root.good : root.brass
-            font.family: root.sans
-            font.pixelSize: root.px(12)
-            font.weight: Font.DemiBold
-        }
+    function guideAction(key) {
+        if (key === "source") viewSource()
+        else if (key === "copy-id" && entry) copy(entry.program, "Program ID")
+        else if (key === "copy-source" && source) copy(source.url, "Source link")
     }
 
-    component Row2: RowLayout {
-        property string key: ""
-        property string value: ""
-        property bool monospace: false
-        property color tone: root.ink
-        Layout.fillWidth: true
-        spacing: 12
-        Text { textFormat: Text.PlainText; text: parent.key; color: root.dim; font.family: root.sans; font.pixelSize: root.px(13); Layout.preferredWidth: 120; Layout.alignment: Qt.AlignTop }
-        Text { textFormat: Text.PlainText; text: Logic.clean(parent.value); color: parent.tone; font.family: parent.monospace ? root.mono : root.sans; font.pixelSize: root.px(13); wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
-    }
+    TextEdit { id: clipboard; visible: false }
 
     // ── Screen ──────────────────────────────────────────────────────────
-    Rectangle { anchors.fill: parent; color: root.slate }
+    Rectangle { anchors.fill: parent; color: look.slate }
 
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 20
-        spacing: 14
+        id: screen
+        anchors { fill: parent; leftMargin: root.width >= 600 ? look.edge : 24; rightMargin: root.narrow ? (root.width >= 600 ? look.edge : 24) : 32; topMargin: 40 }
+        spacing: 16
+        readonly property real columnWidth: root.narrow ? Math.min(width, look.pageWidth) : Math.min(width, look.indexWidth + 40 + look.pageWidth)
 
+        // The app's header, the network it reads, and its settings: hidden while a guide page
+        // stands in for the index in a narrow window.
         RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-            Text { textFormat: Text.PlainText; text: "Program Registry"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(24); font.weight: Font.Bold }
-            Text { textFormat: Text.PlainText;
-                Layout.fillWidth: true
-                text: root.config && root.config.registry ? "registry " + Logic.shortId(root.config.registry) + " on " + root.config.sequencer : ""
-                color: root.dim; font.family: root.sans; font.pixelSize: root.px(13); elide: Text.ElideRight
+            visible: !(root.narrow && root.selected)
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
+            spacing: 16
+            PageHeader {
+                look: root.look
+                title: "Program Registry"
+                sentence: "What each program on this network does, who published it, and where its source is."
+                runsOnPrefix: "Reads"
+                network: root.config ? Logic.clean(root.config.network && root.config.network.name ? root.config.network.name : Logic.hostOf(root.config.sequencer)) : ""
+                networkDetail: root.config && root.config.network && root.config.network.name ? Logic.hostOf(root.config.sequencer) : ""
             }
-            Action { label: root.settingsOpen ? "Close settings" : "Settings"; onPressed: root.settingsOpen = !root.settingsOpen }
+            Action {
+                look: root.look
+                Layout.alignment: Qt.AlignTop
+                label: root.settingsOpen ? "Close settings" : "Network settings"
+                onPressed: root.settingsOpen = !root.settingsOpen
+            }
         }
 
         // Settings: which sequencer and registry the module reads.
         Rectangle {
-            visible: root.settingsOpen
-            Layout.fillWidth: true
-            implicitHeight: settingsCol.implicitHeight + 24
-            radius: 8; color: root.card; border.color: root.line
+            visible: root.settingsOpen && !(root.narrow && root.selected)
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
+            implicitHeight: settingsCol.implicitHeight + 32
+            radius: 8; color: look.card; border.color: look.line
             ColumnLayout {
                 id: settingsCol
-                anchors.fill: parent; anchors.margins: 12; spacing: 8
-                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.ink; font.family: root.sans; font.pixelSize: root.px(13)
-                       text: "Sequencer: " + Logic.clean(root.config ? root.config.sequencer : "") + "\nRegistry: " + Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)")
-                             + (root.config && root.config.network && root.config.network.chain_id
-                                ? "\nNetwork profile: " + Logic.clean(root.config.network.name || "") + " · chain " + Logic.shortId(root.config.network.chain_id) + " · " + Logic.clean(root.config.network.source || "")
-                                : "")
-                             + (root.config && root.config.network && root.config.network.error ? "\nNetwork file not used: " + Logic.clean(root.config.network.error) : "") }
-                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12)
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16 }
+                spacing: 14
+                FactRow { look: root.look; key: "Sequencer"; value: Logic.clean(root.config ? root.config.sequencer : ""); monospace: true }
+                FactRow { look: root.look; key: "Registry"; value: Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)"); monospace: true }
+                FactRow {
+                    look: root.look
+                    visible: !!(root.config && root.config.network && root.config.network.chain_id)
+                    key: "Network profile"
+                    value: root.config && root.config.network ? Logic.clean(root.config.network.name || "") + " · chain " + Logic.shortId(root.config.network.chain_id) + " · " + Logic.clean(root.config.network.source || "") : ""
+                }
+                FactRow { look: root.look; visible: !!(root.config && root.config.network && root.config.network.error); key: "Not used"; tone: look.alarm
+                          value: root.config && root.config.network && root.config.network.error ? "Network file: " + Logic.clean(root.config.network.error) : "" }
+                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: look.dim; font.family: look.sans; font.pixelSize: look.px(14)
                        text: "The sequencer and the registry decide what every app is told and where changes are signed, so only the host sets them: logosctl call program_registry config_set (sequencer, registry, or network_file), or ~/.config/lez-registry/module.json. Out of the box they come from the module's built-in network profile." }
             }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-            Field { id: searchField; Layout.fillWidth: true; placeholder: "Search by name"; onAccepted: { root.query = text.trim(); root.loadList(false) } }
-            Action { label: "Search"; strong: true; onPressed: { root.query = searchField.text.trim(); root.loadList(false) } }
-            Action { label: "All"; visible: root.query !== ""; onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
         }
 
         // Requests from other apps: in their own scroll area, so long ones can't push the
@@ -322,7 +291,8 @@ Item {
         Flickable {
             id: reqFlick
             visible: root.requests.length > 0
-            Layout.fillWidth: true
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
             Layout.preferredHeight: Math.min(reqColumn.implicitHeight, 280)
             clip: true
             contentWidth: width
@@ -332,276 +302,398 @@ Item {
                 id: reqColumn
                 width: reqFlick.width
                 spacing: 8
-        Repeater {
-            model: root.requests
-            Rectangle {
-                required property var modelData
-                Layout.fillWidth: true
-                implicitHeight: reqCol.implicitHeight + 20
-                radius: 8; color: Qt.rgba(root.brass.r, root.brass.g, root.brass.b, 0.12); border.color: root.brass
-                ColumnLayout {
-                    id: reqCol
-                    anchors.fill: parent; anchors.margins: 10; spacing: 4
-                    Text { textFormat: Text.PlainText;
+                Repeater {
+                    model: root.requests
+                    Rectangle {
+                        required property var modelData
                         Layout.fillWidth: true
-                        text: Logic.requestTitle(modelData)
-                        color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(14); font.weight: Font.DemiBold
-                    }
-                    Repeater {
-                        model: Logic.changeLines(modelData.change)
-                        Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: root.dim; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
-                    }
-                    RowLayout {
-                        spacing: 8
-                        Action { label: "Approve and sign"; enabledNow: root.armed; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
-                        Action { label: "Refuse"; onPressed: root.answerRequest(modelData.request, false) }
+                        implicitHeight: reqCol.implicitHeight + 32
+                        radius: 8; color: look.card; border.color: look.brass
+                        ColumnLayout {
+                            id: reqCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16 }
+                            spacing: 6
+                            Text { textFormat: Text.PlainText;
+                                Layout.fillWidth: true
+                                text: Logic.requestTitle(modelData)
+                                color: look.ink; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16); font.weight: Font.DemiBold
+                            }
+                            Repeater {
+                                model: Logic.changeLines(modelData.change)
+                                Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(14) }
+                            }
+                            RowLayout {
+                                spacing: 8
+                                Layout.topMargin: 8
+                                Action { look: root.look; label: "Approve and sign"; enabledNow: root.armed; strong: true; grave: !!(modelData.change && modelData.change.summary && modelData.change.summary.irreversible); onPressed: root.answerRequest(modelData.request, true) }
+                                Action { look: root.look; label: "Reject request"; onPressed: root.answerRequest(modelData.request, false) }
+                            }
+                        }
                     }
                 }
-            }
-        }
             }
         }
 
         Text { textFormat: Text.PlainText;
             visible: root.notice !== ""
-            Layout.fillWidth: true
-            text: Logic.clean(root.notice); color: root.brass; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
+            text: Logic.clean(root.notice); color: look.alarm; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
         }
 
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 16
+            spacing: 40
 
-            // The list.
-            Rectangle {
-                Layout.preferredWidth: 420
+            // ── The index ───────────────────────────────────────────────
+            ColumnLayout {
+                visible: !(root.narrow && root.selected)
+                Layout.preferredWidth: root.narrow ? screen.columnWidth : look.indexWidth
+                Layout.maximumWidth: root.narrow ? screen.columnWidth : look.indexWidth
                 Layout.fillHeight: true
-                radius: 8; color: root.card; border.color: root.line
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 10; spacing: 6
+                spacing: 8
+                Field {
+                    id: searchField
+                    look: root.look
+                    Layout.fillWidth: true
+                    hint: "Search programs by name"
+                    glyph: "search"
+                    onAccepted: { root.query = text.trim(); root.loadList(false) }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
                     Text { textFormat: Text.PlainText;
-                        text: root.loading ? "Reading the registry…" : root.problem !== "" ? Logic.clean(root.problem)
-                              : (root.query !== "" ? root.items.length + " matching “" + root.query + "”" : root.items.length + " of " + root.total + " entries, newest first")
-                        color: root.problem !== "" ? root.alarm : root.dim
-                        wrapMode: Text.Wrap; Layout.fillWidth: true
-                        font.family: root.sans; font.pixelSize: root.px(13)
-                    }
-                    ListView {
-                        id: list
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 4
-                        model: root.items
-                        delegate: Rectangle {
-                            required property var modelData
-                            readonly property string kind: Logic.kindOf(modelData)
-                            width: list.width
-                            height: 58
-                            radius: 6
-                            color: root.selected && root.selected.address === modelData.address ? root.raised : rowArea.containsMouse ? Qt.rgba(root.raised.r, root.raised.g, root.raised.b, 0.6) : "transparent"
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 8; spacing: 2
-                                RowLayout {
-                                    spacing: 8
-                                    Text { textFormat: Text.PlainText;
-                                        text: Logic.clean(modelData.entry ? modelData.entry.name + "  v" + modelData.entry.version : modelData.link.name)
-                                        color: root.ink; font.family: root.sans; font.pixelSize: root.px(15); font.weight: Font.DemiBold
-                                    }
-                                    KindBadge { kind: parent.parent.parent.kind }
-                                    Text { textFormat: Text.PlainText; visible: !!(modelData.entry && modelData.entry.frozen); text: "frozen"; color: root.dim; font.pixelSize: root.px(12); font.family: root.sans }
-                                }
-                                Text { textFormat: Text.PlainText;
-                                    text: "program " + Logic.shortId(modelData.link.program) + "  ·  #" + modelData.seq
-                                    color: root.dim; font.family: root.mono; font.pixelSize: root.px(12)
-                                }
-                            }
-                            MouseArea { id: rowArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.open(modelData) }
+                        text: root.loading ? "Reading the registry…" : root.problem !== "" ? Logic.clean(root.problem)
+                              : root.query !== "" ? root.items.length + " matching “" + Logic.clean(root.query) + "”"
+                              : root.items.length < root.total ? root.items.length + " of " + root.total + " programs" : root.total + " program" + (root.total === 1 ? "" : "s")
+                        color: root.problem !== "" ? look.alarm : look.dim
+                        wrapMode: Text.Wrap
+                        font.family: look.sans; font.pixelSize: look.px(14)
+                    }
+                    Link { look: root.look; visible: root.query !== ""; text: "Show all programs"; font.pixelSize: look.px(14); onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
+                }
+                ListView {
+                    id: list
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 2
+                    model: root.rows
+                    boundsBehavior: Flickable.StopAtBounds
+                    delegate: Item {
+                        required property var modelData
+                        required property int index
+                        readonly property bool isHeading: modelData.type === "heading"
+                        width: list.width
+                        height: isHeading ? heading.implicitHeight + (index > 0 ? 24 : 14) : indexRow.implicitHeight
+                        SectionHeading {
+                            id: heading
+                            look: root.look
+                            visible: parent.isHeading
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; bottomMargin: 6 }
+                            text: parent.isHeading ? modelData.text : ""
+                        }
+                        IndexRow {
+                            id: indexRow
+                            look: root.look
+                            visible: !parent.isHeading
+                            width: parent.width
+                            title: parent.isHeading ? "" : modelData.title
+                            sentence: parent.isHeading ? "" : modelData.sentence
+                            publisher: parent.isHeading ? "" : modelData.publisher
+                            proven: parent.isHeading || modelData.proven
+                            note: parent.isHeading ? "" : modelData.note
+                            secondary: !parent.isHeading && modelData.secondary
+                            selected: !parent.isHeading && !!root.selected && root.selected.address === modelData.item.address
+                            onPressed: root.open(modelData.item)
                         }
                     }
-                    Action { visible: root.next !== "" && root.query === ""; label: "More"; onPressed: root.loadList(true) }
                 }
+                Text { textFormat: Text.PlainText;
+                    visible: root.rows.some(function(r) { return r.type === "entry" && !r.proven })
+                    Layout.fillWidth: true
+                    text: "Publishers in italics named themselves; nothing on the chain confirms those names."
+                    color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(13); font.italic: true
+                }
+                Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more programs"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
+                Item { Layout.preferredHeight: 16 }
             }
 
-            // The entry.
-            Rectangle {
+            // ── The guide page ──────────────────────────────────────────
+            Flickable {
+                id: guideFlick
+                visible: !root.narrow || !!root.selected
                 Layout.fillWidth: true
+                Layout.maximumWidth: look.pageWidth
                 Layout.fillHeight: true
-                radius: 8; color: root.card; border.color: root.line
+                clip: true
+                contentWidth: width
+                contentHeight: page.implicitHeight + 48
+                boundsBehavior: Flickable.StopAtBounds
+
                 Text { textFormat: Text.PlainText;
                     visible: !root.selected
-                    anchors.centerIn: parent
-                    text: "Pick an entry to see what the registry says about it."
-                    color: root.dim; font.family: root.sans; font.pixelSize: root.px(14)
+                    width: parent.width
+                    y: 56
+                    text: root.loading || root.items.length === 0 ? "" : "Pick a program to read what it does, who published it, and where its source is."
+                    color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(17)
                 }
-                Flickable {
-                    visible: !!root.selected
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    clip: true
-                    contentHeight: detail.implicitHeight
-                    ColumnLayout {
-                        id: detail
-                        width: parent.width
-                        spacing: 8
-                        readonly property var e: root.selected ? root.selected.entry : null
-                        readonly property string kind: root.selected ? Logic.kindOf(root.selected) : ""
 
-                        RowLayout {
-                            spacing: 10
-                            Text { textFormat: Text.PlainText; text: detail.e ? Logic.clean(detail.e.name) : ""; color: root.ink; font.family: root.sans; font.pixelSize: root.px(22); font.weight: Font.Bold }
-                            Text { textFormat: Text.PlainText; text: detail.e ? "v" + Logic.clean(detail.e.version) : ""; color: root.dim; font.family: root.sans; font.pixelSize: root.px(18) }
-                            KindBadge { kind: detail.kind }
-                            Text { textFormat: Text.PlainText;
-                                visible: !!(root.label && root.label.verified)
-                                text: "✓ verified here"
-                                color: root.good; font.family: root.sans; font.pixelSize: root.px(13); font.weight: Font.DemiBold
+                ColumnLayout {
+                    id: page
+                    visible: !!root.selected
+                    width: guideFlick.width
+                    spacing: 16
+
+                    GuideHeader {
+                        look: root.look
+                        backLabel: root.narrow ? "Programs" : ""
+                        onBack: root.selected = null
+                        section: root.guide ? root.guide.section : ""
+                        title: root.guide ? root.guide.title : ""
+                        sentence: root.guide ? root.guide.sentence : ""
+                        publisher: root.guide ? root.guide.publisher : ""
+                        proven: !root.guide || root.guide.proven
+                        publisherNote: root.guide && !root.guide.proven ? "a name they gave themselves" : ""
+                        // What a reader must know before trusting it: the program no longer runs
+                        // the code this entry describes, or nothing runs there at all.
+                        warning: {
+                            var f = Logic.freshnessText(root.resolved ? root.resolved.freshness : null)
+                            if (f.tone === "warn") return f.text
+                            if (root.label && root.label.stale) return "Stale: the program now runs other code than this entry describes"
+                            if (root.label && root.label.deployed === false) return "No program is deployed at this id"
+                            return ""
+                        }
+                        actions: {
+                            var a = []
+                            if (root.source) a.push({ key: "source", label: "View source", strong: true })
+                            if (root.entry) a.push({ key: "copy-id", label: "Copy program ID" })
+                            if (root.source) a.push({ key: "copy-source", label: "Copy source link" })
+                            return a
+                        }
+                        onActionPressed: function(key) { root.guideAction(key) }
+                    }
+                    Text { textFormat: Text.PlainText;
+                        visible: root.guideNote !== ""
+                        Layout.fillWidth: true
+                        text: Logic.clean(root.guideNote)
+                        color: look.dim; wrapMode: Text.WrapAnywhere; font.family: look.sans; font.pixelSize: look.px(15)
+                    }
+
+                    // About: the publisher's whole description, when it says more than the sentence.
+                    ColumnLayout {
+                        visible: !!(root.guide && root.guide.about !== "" && root.guide.about !== root.guide.sentence)
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        spacing: 8
+                        SectionHeading { look: root.look; Layout.fillWidth: true; text: "About" }
+                        Text { textFormat: Text.PlainText;
+                            Layout.fillWidth: true
+                            text: root.guide ? root.guide.about : ""
+                            color: look.ink; wrapMode: Text.Wrap; font.family: look.sans; font.weight: Font.Medium; font.pixelSize: look.px(16); lineHeight: 1.3
+                        }
+                    }
+
+                    // At a glance, in plain words.
+                    ColumnLayout {
+                        visible: !!root.entry
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        spacing: 10
+                        SectionHeading { look: root.look; Layout.fillWidth: true; text: "At a glance" }
+                        FactRow { look: root.look; key: "Version"; value: root.entry ? Logic.clean(root.entry.version) + (root.entry.frozen ? " (frozen: it never changes again)" : "") : "" }
+                        FactRow { look: root.look; key: "Source"; value: root.source ? root.source.text + (root.entry.source.commit ? " at " + Logic.clean(root.entry.source.commit).slice(0, 7) : "") : "an archive on Logos Storage (see Technical details)" }
+                        FactRow { look: root.look; key: "Listed"; value: root.entry ? Logic.day(root.entry.registered_at) + (root.entry.updated_at && Logic.day(root.entry.updated_at) !== Logic.day(root.entry.registered_at) ? ", updated " + Logic.day(root.entry.updated_at) : "") : "" }
+                        FactRow { look: root.look; key: "Listing"; value: Logic.listedBy(root.kind) }
+                    }
+
+                    // The rest of its family, newest first.
+                    ColumnLayout {
+                        visible: !!(root.guide && root.guide.family.length)
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        spacing: 10
+                        SectionHeading { look: root.look; Layout.fillWidth: true; text: "Other versions" }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 20
+                            Repeater {
+                                model: root.guide ? root.guide.family : []
+                                Link { required property var modelData; look: root.look; text: modelData.label; onPressed: root.openAddress(modelData.address) }
                             }
                         }
-                        Text { textFormat: Text.PlainText;
-                            Layout.fillWidth: true
-                            text: Logic.kindBadge(detail.kind).note
-                            color: root.dim; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(12)
-                        }
-                        Text { textFormat: Text.PlainText;
-                            Layout.fillWidth: true
-                            visible: !!(detail.e && detail.e.description)
-                            text: detail.e ? Logic.clean(detail.e.description) : ""
-                            color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(14)
-                        }
-                        // Is the entry still about the code that runs?
+                    }
+
+                    // ── Technical details: everything the registry holds, folded ──
+                    TechDetails {
+                        id: techDetails
+                        look: root.look
+                        Layout.topMargin: 8
+                        summary: root.entry ? "Program " + Logic.shortId(root.entry.program) + " · revision " + root.entry.revision
+                                 + (root.resolved && root.resolved.freshness && root.resolved.freshness.status === "fresh" ? " · runs the registered code" : "") : ""
+
                         Text { textFormat: Text.PlainText;
                             readonly property var f: Logic.freshnessText(root.resolved ? root.resolved.freshness : null)
                             visible: f.text !== ""
+                            Layout.fillWidth: true
                             text: f.text
-                            color: f.tone === "good" ? root.good : f.tone === "warn" ? root.brass : root.dim
-                            font.family: root.sans; font.pixelSize: root.px(13); font.weight: Font.DemiBold
+                            color: f.tone === "good" ? look.good : f.tone === "warn" ? look.alarm : look.dim
+                            wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16); font.weight: Font.DemiBold
                         }
-                        Row2 { key: "Program"; value: detail.e ? detail.e.program : ""; monospace: true }
-                        Row2 { key: "Entry"; value: root.selected ? root.selected.address : ""; monospace: true }
-                        Row2 { key: "Author (proven)"; value: detail.e ? detail.e.author : ""; monospace: true }
-                        Row2 { key: "Author label"; visible: !!(detail.e && detail.e.author_label); value: detail.e ? detail.e.author_label + "  (unproven text)" : ""; tone: root.dim }
-                        Row2 { key: "Tags"; visible: !!(detail.e && detail.e.tags.length); value: detail.e ? detail.e.tags.join(", ") : "" }
-                        Row2 { key: "Revision"; value: detail.e ? detail.e.revision + (detail.e.frozen ? "  (frozen)" : "") + (detail.e.born_with_deploy ? "  · born with its deploy" : "") : "" }
-                        Row2 { key: "Registered"; value: detail.e ? Logic.when(detail.e.registered_at) : "" }
-                        Row2 { key: "Updated"; value: detail.e ? Logic.when(detail.e.updated_at) : "" }
-                        Row2 {
+                        FactRow { look: root.look; key: "Program"; value: root.entry ? root.entry.program : ""; monospace: true }
+                        FactRow { look: root.look; key: "Entry"; value: root.selected ? root.selected.address : ""; monospace: true }
+                        FactRow { look: root.look; key: "Author (proven)"; value: root.entry ? root.accountLine(root.entry.author) : ""; monospace: true }
+                        FactRow { look: root.look; key: "Author label"; visible: !!(root.entry && root.entry.author_label); tone: look.dim
+                                  value: root.entry ? Logic.clean(root.entry.author_label) + (root.entry.author_label_proven ? "" : "  (their own words, not checked)") : "" }
+                        FactRow { look: root.look; key: "Kind"; value: Logic.kindBadge(root.kind).text + ": " + Logic.kindBadge(root.kind).note; tone: look.dim }
+                        FactRow { look: root.look; key: "Name, version"; value: root.entry ? Logic.clean(root.entry.name) + " " + Logic.clean(root.entry.version) : "" }
+                        FactRow { look: root.look; key: "Tags"; visible: !!(root.entry && root.entry.tags.length); value: root.entry ? root.entry.tags.map(Logic.clean).join(", ") : "" }
+                        FactRow { look: root.look; key: "Revision"; value: root.entry ? root.entry.revision + (root.entry.frozen ? "  (frozen)" : "") + (root.entry.born_with_deploy ? "  · born with its deploy" : "") + "  · #" + root.selected.seq + " in the registry" : "" }
+                        FactRow { look: root.look; key: "Registered"; value: root.entry ? Logic.when(root.entry.registered_at) : "" }
+                        FactRow { look: root.look; key: "Updated"; value: root.entry ? Logic.when(root.entry.updated_at) : "" }
+                        FactRow {
+                            look: root.look
                             key: "Code"
-                            value: root.resolved && root.resolved.header ? (root.resolved.header.immutable ? "immutable" : "upgradeable by its header key") + ", image " + root.resolved.header.image_id.slice(0, 16) + "…" : "no program deployed"
-                            monospace: false
+                            value: root.resolved && root.resolved.header ? (root.resolved.header.immutable ? "immutable" : "upgradeable by its header key") + ", image " + root.resolved.header.image_id.slice(0, 16) + "…" : root.resolved ? "no program deployed" : "…"
                         }
-                        Row2 { key: "Source"; value: detail.e ? (detail.e.source.repo || "archive on Storage") + (detail.e.source.commit ? " @ " + detail.e.source.commit.slice(0, 12) : "") : ""; monospace: true }
-                        Row2 {
+                        FactRow { look: root.look; key: "Source"; value: root.entry ? Logic.clean(root.entry.source.repo || "archive on Storage") + (root.entry.source.commit ? " @ " + Logic.clean(root.entry.source.commit) : "") : ""; monospace: true }
+                        FactRow { look: root.look; key: "Build"; visible: !!(root.entry && root.entry.build); value: root.entry && root.entry.build ? Logic.clean(root.entry.build.binary) + " from " + Logic.clean(root.entry.build.manifest_path) + ", builder " + Logic.clean(root.entry.build.image_tag) + ", risc0-build " + Logic.clean(root.entry.build.risc0_build) : "" }
+                        FactRow {
+                            look: root.look
                             key: "Verified here"
-                            value: root.label ? (root.label.verified ? "yes: this machine rebuilt the running code from its source" : "no (run `lezreg verify " + Logic.shortId(detail.e ? detail.e.program : "") + " --mark`)") : "…"
-                            tone: root.label && root.label.verified ? root.good : root.dim
+                            value: root.label ? (root.label.verified ? "yes: this machine rebuilt the running code from its source" : "no (run `lezreg verify " + Logic.shortId(root.entry ? root.entry.program : "") + " --mark`)") : "…"
+                            tone: root.label && root.label.verified ? look.good : look.dim
                         }
-                        Row2 {
+                        FactRow {
+                            look: root.look
                             key: "Community"
-                            visible: detail.kind === "deployer"
+                            visible: root.kind === "deployer"
                             value: root.community.length ? root.community.length + " community entr" + (root.community.length === 1 ? "y" : "ies") + " for this program" : "none"
-                            tone: root.dim
+                            tone: look.dim
                         }
 
                         // The IDL, or why it can't be shown.
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: idlCol.implicitHeight + 16
-                            radius: 6; color: root.slate; border.color: root.line
+                            implicitHeight: idlCol.implicitHeight + 28
+                            radius: 6; color: look.slate; border.color: look.line
                             readonly property var s: Logic.idlSummary(root.idl)
                             ColumnLayout {
                                 id: idlCol
-                                anchors.fill: parent; anchors.margins: 8; spacing: 4
+                                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
+                                spacing: 6
                                 Text { textFormat: Text.PlainText;
                                     Layout.fillWidth: true
                                     text: root.idl ? parent.parent.s.text : "Fetching the IDL from Logos Storage…"
-                                    color: parent.parent.s.ok ? root.ink : root.dim
-                                    wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
+                                    color: parent.parent.s.ok ? look.ink : look.dim
+                                    wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(14)
                                 }
                                 Text { textFormat: Text.PlainText;
                                     Layout.fillWidth: true
                                     visible: parent.parent.s.instructions.length > 0
-                                    text: parent.parent.s.instructions.join("  ·  ")
-                                    color: root.dim; wrapMode: Text.Wrap; font.family: root.mono; font.pixelSize: root.px(12)
+                                    text: parent.parent.s.instructions.map(Logic.clean).join("  ·  ")
+                                    color: look.dim; wrapMode: Text.Wrap; font.family: look.mono; font.pixelSize: look.px(13)
                                 }
                             }
                         }
 
-                        // Spending on a sequencer that is not on this machine needs an explicit yes.
-                        Rectangle {
-                            visible: root.remote
-                            Layout.fillWidth: true
-                            implicitHeight: remoteRow.implicitHeight + 12
-                            radius: 6; color: "transparent"; border.color: root.remoteOk ? root.alarm : root.line
-                            RowLayout {
-                                id: remoteRow
-                                anchors.fill: parent; anchors.margins: 6; spacing: 8
-                                Rectangle {
-                                    width: 18; height: 18; radius: 4; border.color: root.ink; color: root.remoteOk ? root.alarm : "transparent"
-                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.remoteOk = !root.remoteOk }
-                                }
-                                Text { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.ink; font.family: root.sans; font.pixelSize: root.px(13)
-                                       text: "Changes here spend real funds on " + Logic.clean(root.config ? root.config.sequencer : "") }
-                            }
-                        }
-
-                        // Author tools: prepared by the module, signed by your lezreg wallet.
-                        Text { textFormat: Text.PlainText; text: "If your lezreg wallet is this entry's author"; color: root.ink; font.family: root.sans; font.pixelSize: root.px(15); font.weight: Font.DemiBold; Layout.topMargin: 8 }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            Field { id: versionField; Layout.preferredWidth: 120; text: root.editVersion; placeholder: "version" }
-                            Field { id: descField; Layout.fillWidth: true; text: root.editDescription; placeholder: "description" }
-                            Action {
-                                label: "Update…"
-                                enabledNow: !!detail.e && !detail.e.frozen
-                                onPressed: root.prepare("prepare_update", { version: versionField.text.trim(), description: descField.text })
-                            }
-                            Action { label: "Freeze…"; grave: true; enabledNow: !!detail.e && !detail.e.frozen; onPressed: root.prepare("prepare_freeze", {}) }
-                        }
-
-                        // The confirm sheet.
-                        Rectangle {
-                            visible: !!root.change
-                            Layout.fillWidth: true
-                            implicitHeight: sheet.implicitHeight + 20
-                            radius: 8; color: Qt.rgba(root.brass.r, root.brass.g, root.brass.b, 0.12); border.color: root.brass
-                            ColumnLayout {
-                                id: sheet
-                                anchors.fill: parent; anchors.margins: 10; spacing: 4
-                                Repeater {
-                                    model: Logic.changeLines(root.change)
-                                    Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: root.ink; wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13) }
-                                }
-                                RowLayout {
-                                    spacing: 8
-                                    Action { label: "Sign and send"; enabledNow: root.armed; strong: true; grave: !!(root.change && root.change.summary && root.change.summary.irreversible); onPressed: root.submitChange() }
-                                    Action { label: "Cancel"; onPressed: root.change = null }
-                                }
-                            }
-                        }
-                        Text { textFormat: Text.PlainText;
-                            visible: !!root.job
-                            Layout.fillWidth: true
-                            text: Logic.jobText(root.job)
-                            color: root.job && root.job.state === "failed" ? root.alarm : root.job && root.job.state === "applied" ? root.good : root.dim
-                            wrapMode: Text.Wrap; font.family: root.sans; font.pixelSize: root.px(13)
-                        }
                         // The reusable label, as another module would show this program.
                         RowLayout {
                             spacing: 8
-                            Layout.topMargin: 8
-                            Text { textFormat: Text.PlainText; text: "As other apps show it:"; color: root.dim; font.family: root.sans; font.pixelSize: root.px(12) }
+                            Text { textFormat: Text.PlainText; text: "As other apps show it:"; color: look.dim; font.family: look.sans; font.pixelSize: look.px(14) }
                             RegistryLabel {
                                 bridge: root.bridgeReady ? logos : null
-                                programId: detail.e ? detail.e.program : ""
-                                pixelSize: root.px(13)
-                                fontFamily: root.sans
-                                textColor: root.ink
-                                quietColor: root.dim
-                                verifiedColor: root.good
-                                warnColor: root.brass
+                                programId: root.entry ? root.entry.program : ""
+                                pixelSize: look.px(14)
+                                fontFamily: look.sans
+                                textColor: look.ink
+                                quietColor: look.dim
+                                verifiedColor: look.good
+                                warnColor: look.alarm
+                            }
+                        }
+
+                        // ── For the entry's author: prepared by the module, signed by your lezreg wallet ──
+                        TechDetails {
+                            id: authorTools
+                            look: root.look
+                            title: "Update or freeze this entry"
+                            summary: "for its author"
+                            color: look.slate
+
+                            Text { textFormat: Text.PlainText;
+                                Layout.fillWidth: true
+                                text: "Only works when your lezreg wallet holds this entry's author key. Nothing is signed until you confirm the change below."
+                                color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(15)
+                            }
+                            // Spending on a sequencer that is not on this machine needs an explicit yes.
+                            Tick {
+                                look: root.look
+                                visible: root.remote
+                                checked: root.remoteOk
+                                text: "Changes here spend real funds on " + Logic.clean(root.config ? root.config.sequencer : "")
+                                onToggled: root.remoteOk = !root.remoteOk
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Field { id: versionField; look: root.look; Layout.preferredWidth: 120; text: root.editVersion; hint: "version" }
+                                Field { id: descField; look: root.look; Layout.fillWidth: true; text: root.editDescription; hint: "description" }
+                            }
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Action {
+                                    look: root.look
+                                    label: "Update entry"
+                                    busyLabel: "Preparing…"
+                                    changes: true; busy: root.busy; working: root.workingOn === "prepare_update"
+                                    enabledNow: !!root.entry && !root.entry.frozen
+                                    onPressed: root.prepare("prepare_update", { version: versionField.text.trim(), description: descField.text })
+                                }
+                                Action {
+                                    look: root.look
+                                    label: "Freeze entry"
+                                    busyLabel: "Preparing…"
+                                    grave: true
+                                    changes: true; busy: root.busy; working: root.workingOn === "prepare_freeze"
+                                    enabledNow: !!root.entry && !root.entry.frozen
+                                    onPressed: root.prepare("prepare_freeze", {})
+                                }
+                            }
+
+                            // The confirm sheet.
+                            Rectangle {
+                                visible: !!root.change
+                                Layout.fillWidth: true
+                                implicitHeight: sheet.implicitHeight + 32
+                                radius: 8; color: look.card; border.color: look.brass
+                                ColumnLayout {
+                                    id: sheet
+                                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16 }
+                                    spacing: 6
+                                    Repeater {
+                                        model: Logic.changeLines(root.change)
+                                        Text { textFormat: Text.PlainText; required property var modelData; Layout.fillWidth: true; text: modelData; color: look.ink; wrapMode: Text.WrapAnywhere; font.family: look.sans; font.pixelSize: look.px(14) }
+                                    }
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.topMargin: 8
+                                        Action { look: root.look; label: "Sign and send change"; busyLabel: "Sending…"; enabledNow: root.armed; strong: true; changes: true; busy: root.busy; working: root.workingOn === "submit"
+                                                 grave: !!(root.change && root.change.summary && root.change.summary.irreversible); onPressed: root.submitChange() }
+                                        Action { look: root.look; label: "Discard change"; onPressed: root.change = null }
+                                    }
+                                }
+                            }
+                            Text { textFormat: Text.PlainText;
+                                visible: !!root.job
+                                Layout.fillWidth: true
+                                text: Logic.jobText(root.job)
+                                color: root.job && root.job.state === "failed" ? look.alarm : root.job && root.job.state === "applied" ? look.good : look.dim
+                                wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
                             }
                         }
                     }

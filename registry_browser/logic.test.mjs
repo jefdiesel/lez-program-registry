@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 // Checks the browser's own logic (qml/logic.mjs, which qml/Main.qml imports) without a QML
 // engine. Run with: node registry_browser/logic.test.mjs
-import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText } from "./qml/logic.mjs";
+import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText,
+  titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -80,9 +81,65 @@ check("jobText cleans", jobText({ what: "Freeze\u2028x", state: "failed", error:
 // A QML model hands arrays over as array-likes (not Array.isArray): still shown as lists.
 const arrayLike = { 0: "defi", 1: "token", length: 2 };
 check("tags from a QML model show as a list", changeLines({ what: "RegisterDeployer", entry: P, signers: { 0: P, length: 1 }, sequencer: "s", summary: { values: { tags: arrayLike } } }).filter((l) => l === "tags: defi, token" || l === `Signed by ${P} with your lezreg wallet`).length, 2);
+
+// ── The index (guidebook list), on the 8 entries of the live rc3 registry (tools/live-rc3.json) ──
+const live = JSON.parse(readFileSync(new URL("tools/live-rc3.json", import.meta.url), "utf8")).items;
+const byName = (n) => live.find((i) => i.entry.name === n);
+check("titleCase keeps acronyms and versions", ["lez-token", "names-evm-bridge-v7", "lez_program_registry", "logos-names", "lez-nft", "my-idl-tool", "rpc  api"].map(titleCase),
+  ["LEZ Token", "Names EVM Bridge v7", "LEZ Program Registry", "Logos Names", "LEZ NFT", "My IDL Tool", "RPC API"]);
+check("titles of the live entries", live.map((i) => guideText(i.entry).title),
+  ["LEZ Token", "Vest", "Logos Names", "Names EVM Bridge v7", "Names EVM Bridge v6", "Names EVM Bridge Token", "LEZ NFT", "LEZ Program Registry"]);
+check("Vest: the text before the colon is the title, the rest one sentence", guideText(byName("vest").entry),
+  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", about: byName("vest").entry.description });
+check("a long lead is not a title (LNS (Logos Name Service) registry: …)", guideText(byName("logos-names").entry).sentence,
+  "LNS registry: private names, sealed profiles and pages, optional name NFTs.");
+check("a lead that restates the title is dropped", guideText(byName("lez_program_registry").entry).sentence,
+  "On-chain registry of LEZ 0.4 programs with proven deployer entries.");
+check("asides dropped, first sentence only, \"LEZ 0.4\" not a sentence end", guideText(byName("names-evm-bridge-v7").entry).sentence,
+  "Private ETH bridge, instance for Sepolia vault v7.");
+check("no description: title from the name, no sentence", guideText({ name: "my-dex", description: "" }), { title: "My DEX", sentence: "", about: "" });
+check("a long sentence is cut at a word with …", guideText({ name: "x", description: "word ".repeat(60) }).sentence.length <= 150 && guideText({ name: "x", description: "word ".repeat(60) }).sentence.endsWith("…"), true);
+check("chain text is cleaned before anything is derived", guideText({ name: "to‮ken", description: "Evil : line​ two" }), { title: "Evil", sentence: "Line two.", about: "Evil : line two" });
+check("a colon lead with markup-ish or punctuation is not a title", guideText({ name: "abc", description: "Hi, there: x" }).title, "Abc");
+check("publisher: lns label without its prefix, unproven", publisherOf(byName("vest").entry), { text: "jefdiesel", proven: false, account: false });
+check("publisher: no label is the short account (proven by the chain)", publisherOf({ author: P, author_label: "" }), { text: "6YWH…VayN", proven: true, account: true });
+check("publisher: a proven label", publisherOf({ author: P, author_label: "lns:alice", author_label_proven: true }).proven, true);
+check("sections from tags", [["token", "vesting"], ["vesting", "token"], ["lns", "names"], ["nft", "lns"], ["bridge", "eth"], ["registry", "infrastructure"], ["games"], [], { 0: "dao", length: 1 }].map(sectionOf),
+  ["Tokens", "Tokens", "Names", "NFTs", "Bridges", "Tools", "Games", "Other", "DAO"]);
+const rows = indexRows(live);
+const shown = rows.map((r) => r.type === "heading" ? "# " + r.text : (r.secondary ? "  - " : "") + r.title + (r.note ? " [" + r.note + "]" : ""));
+check("the live index: sections in order, families together, A–Z", shown,
+  ["# Tokens", "LEZ Token", "Vest", "# Names", "Logos Names", "# NFTs", "LEZ NFT", "# Bridges", "Names EVM Bridge [v7, the newest of 3]", "  - v6", "  - Token", "# Tools", "LEZ Program Registry"]);
+check("every live entry appears exactly once", rows.filter((r) => r.type === "entry").map((r) => r.item.address).sort(), live.map((i) => i.address).sort());
+check("index rows carry no ids, numbers or versions", rows.filter((r) => r.type === "entry").some((r) => /[1-9A-HJ-NP-Za-km-z]{32,}|#\d|v0\.1\.0|Community|Deployer/.test(r.title + r.sentence + r.publisher + r.note)), false);
+check("the family lead is the newest (highest seq)", rows.find((r) => r.family && !r.secondary).item.entry.name, "names-evm-bridge-v7");
+// A family is one author's: someone else's "names-evm-bridge-v8" must not lead it.
+const intruder = JSON.parse(JSON.stringify(byName("names-evm-bridge-v7")));
+Object.assign(intruder, { address: "Intruder1111111111111111111111111111111111", seq: 9 });
+Object.assign(intruder.entry, { name: "names-evm-bridge-v8", author: Q, description: "Evil: steals funds." });
+const mixed = indexRows(live.concat([intruder]));
+check("another author's look-alike stays out of the family", [mixed.find((r) => r.note).item.entry.name, mixed.find((r) => r.item && r.item.address === intruder.address).secondary,
+  mixed.find((r) => r.item && r.item.address === intruder.address).title], ["names-evm-bridge-v7", false, "Evil"]);
+check("names sharing only a first word are not a family", indexRows([byName("lez-token"), byName("lez-nft")]).filter((r) => r.secondary).length, 0);
+check("a search result goes through the same index", indexRows([byName("names-evm-bridge-v6")]).map((r) => r.type === "heading" ? r.text : r.title), ["Bridges", "Names EVM Bridge v6"]);
+check("an empty list is an empty index", [indexRows([]), indexRows(null)], [[], []]);
+check("a link-only item still shows", indexRows([{ address: "A", seq: 1, kind: "unverified", link: { name: "odd-one", registrant: P } }]).map((r) => r.text || r.title), ["Other", "Odd One"]);
+const g6 = guideOf(byName("names-evm-bridge-v6"), live);
+check("detail of a family member: full title, the others by variant", [g6.title, g6.family.map((f) => f.label)], ["Names EVM Bridge v6", ["v7 (newest)", "Token"]]);
+check("detail of a single entry", (({ title, sentence, publisher, proven, family, section }) => ({ title, sentence, publisher, proven, family, section }))(guideOf(byName("vest"), live)),
+  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", publisher: "jefdiesel", proven: false, family: [], section: "Tokens" });
+check("sourceLink: GitHub at the commit", sourceLink(byName("vest").entry.source),
+  { url: "https://github.com/jefdiesel/vest/tree/c230c15744e3e23120b8b5ec2d72dbcbf7db6416", text: "github.com/jefdiesel/vest" });
+check("sourceLink: only https, nothing odd", [sourceLink({ repo: "http://x.org/a", commit: "" }), sourceLink({ repo: "javascript:alert(1)" }), sourceLink({ repo: "https://a b" }), sourceLink(null),
+  sourceLink({ repo: "https://git.example/a.git", commit: "abc1234" })], [null, null, null, null, { url: "https://git.example/a", text: "git.example/a" }]);
+check("listedBy", ["deployer", "community", "unverified"].map((k) => listedBy(k).split(":")[0].split(" ").slice(0, 3).join(" ")), ["Listed by the", "A community listing", "This record is"]);
+check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
+check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
+check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),
+  reverseName(""), reverseName(JSON.stringify({ success: false, error: "no" })), reverseName(JSON.stringify({ success: true, value: { name: "<b>x</b>" } }))], ["jefdiesel", "", "", "", ""]);
 // Every Text in the QML shows plain text: no markup from the chain renders as a fake mark,
 // a link or a fetched image (M6 review C). A Text without it fails here.
-for (const f of ["qml/Main.qml", "qml/RegistryLabel.qml"]) {
+for (const f of ["qml/Main.qml", "qml/RegistryLabel.qml", ...readdirSync(new URL("qml/kit/", import.meta.url)).filter((n) => n.endsWith(".qml")).map((n) => "qml/kit/" + n)]) {
   const src = readFileSync(new URL(f, import.meta.url), "utf8");
   const texts = [...src.matchAll(/(?<![A-Za-z.])Text\s*\{/g)];
   const plain = [...src.matchAll(/(?<![A-Za-z])Text\s*\{\s*textFormat:\s*Text\.PlainText/g)].length;
