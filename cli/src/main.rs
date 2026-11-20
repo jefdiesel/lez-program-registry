@@ -55,7 +55,7 @@ use crate::{
         its address alone, and compares its claimed image id with the live program (fresh/stale).\n\n\
         Networks: `local` (a standalone sequencer on 127.0.0.1:3062; set its registry id with \
         `lezreg network set local --registry <id>`, which chain/deploy.sh does) and `testnet` \
-        (LEZ testnet 0.4: not launched yet)."
+        (its RPC, chain id and program ids come from the embedded names-network/2 file)."
 )]
 struct Cli {
     /// Network: `local` or `testnet` (or any name set with `lezreg network set`).
@@ -544,7 +544,11 @@ enum IdlCmd {
 #[derive(Subcommand)]
 enum NetworkCmd {
     /// Print the network in use (and where its settings come from).
-    Show,
+    Show {
+        /// Ask the RPC for `getChannelId` and compare it with the file's chain id.
+        #[arg(long)]
+        check_chain: bool,
+    },
     /// Save a network's RPC and/or registry id in the lezreg config file. A registry id is
     /// checked first (a program with the self-entry `lez_program_registry`).
     Set {
@@ -557,6 +561,15 @@ enum NetworkCmd {
         /// calls only for the committed reproducible build unless you pin another image here.
         #[arg(long)]
         registry_image: Option<String>,
+        /// The chain id (`getChannelId`) this network belongs to, from a v2 network file.
+        #[arg(long)]
+        chain_id: Option<String>,
+        /// The LNS registry id (`programs.lns_registry.id` in the v2 file).
+        #[arg(long)]
+        lns: Option<String>,
+        /// Use one whole `names-network/2` file for this network (no field merging).
+        #[arg(long)]
+        network_file: Option<String>,
         /// Save the registry id even if it cannot be checked or does not look like a registry.
         #[arg(long)]
         force: bool,
@@ -923,23 +936,42 @@ fn check_registry(rpc: &str, registry: &lezreg_types::AccountId) -> Result<()> {
 }
 
 async fn run(cli: Cli, out: &mut Out) -> Result<()> {
-    let net = config::resolve(&cli.network, cli.rpc.as_deref(), cli.registry.as_deref())?;
+    let net = config::resolve(
+        &cli.network,
+        cli.rpc.as_deref(),
+        cli.registry.as_deref(),
+        cli.lns.as_deref(),
+    )?;
     let lns = cli.lns.clone();
     match cli.command {
         Command::Wallet { .. } => unreachable!("handled in main"),
-        Command::App { cmd } => app_cmd::run(out, cmd, net.rpc().ok(), reader(&net).ok(), lns.as_deref())?,
+        Command::App { cmd } => {
+            app_cmd::run(out, cmd, net.rpc().ok(), reader(&net).ok(), lns.as_deref())?
+        }
         Command::Network { cmd } => match cmd {
-            NetworkCmd::Show => {
+            NetworkCmd::Show { check_chain } => {
+                if check_chain {
+                    let rpc = net.rpc()?;
+                    let chain = net
+                        .chain_id
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("this network has no chain_id in a v2 file"))?;
+                    config::check_chain(&rpc, chain)?;
+                    out.text(&format!("chain check   ok ({chain})"));
+                }
                 out.text(&format!(
-                    "network  {}\nrpc      {}\nregistry {}\nconfig   {}",
+                    "network  {}\nrpc      {}\nchain   {}\nregistry {}\nlns      {}\nconfig   {}",
                     net.name,
                     net.rpc.as_deref().unwrap_or("(none)"),
+                    net.chain_id.as_deref().unwrap_or("(none)"),
                     net.registry
                         .map_or_else(|| "(none)".to_owned(), |r| r.to_base58()),
+                    net.lns
+                        .map_or_else(|| "(none)".to_owned(), |l| l.to_base58()),
                     config::path()
                         .map_or_else(|| "(no config dir)".into(), |p| p.display().to_string())
                 ));
-                out.json(json!({"network": net.name, "rpc": net.rpc, "registry": net.registry.map(|r| r.to_base58()),
+                out.json(json!({"network": net.name, "rpc": net.rpc, "chain_id": net.chain_id, "lns": net.lns.map(|l| l.to_base58()), "registry": net.registry.map(|r| r.to_base58()),
                                 "trusted_registry_images": std::iter::once(lezreg_sdk::REGISTRY_IMAGE).chain(net.registry_images.iter().copied()).map(hex::encode).collect::<Vec<_>>()}));
             }
             NetworkCmd::Set {
@@ -947,20 +979,31 @@ async fn run(cli: Cli, out: &mut Out) -> Result<()> {
                 rpc,
                 registry,
                 registry_image,
+                chain_id,
+                lns,
+                network_file,
                 force,
             } => {
                 if let Some(reg) = &registry
                     && !force
                 {
                     let reg = config::parse_registry(reg)?;
-                    let target = config::resolve(&name, rpc.as_deref(), None)
+                    let target = config::resolve(&name, rpc.as_deref(), None, None)
                         .ok()
                         .and_then(|n| n.rpc)
                         .or_else(|| rpc.clone());
                     let target = target.ok_or_else(|| anyhow!("network '{name}' has no RPC to check the registry on: pass --rpc (or --force)"))?;
                     check_registry(&target, &reg)?;
                 }
-                let p = config::set(&name, rpc.as_deref(), registry.as_deref(), registry_image.as_deref())?;
+                let p = config::set(
+                    &name,
+                    rpc.as_deref(),
+                    registry.as_deref(),
+                    registry_image.as_deref(),
+                    chain_id.as_deref(),
+                    lns.as_deref(),
+                    network_file.as_deref(),
+                )?;
                 out.text(&format!("saved network '{name}' in {}", p.display()));
                 out.json(json!({"saved": name, "file": p.display().to_string()}));
             }
@@ -1474,7 +1517,12 @@ async fn main() {
     }
     let cli = Cli::parse();
     if let Command::Wallet { args } = &cli.command {
-        let net = config::resolve(&cli.network, cli.rpc.as_deref(), cli.registry.as_deref());
+        let net = config::resolve(
+            &cli.network,
+            cli.rpc.as_deref(),
+            cli.registry.as_deref(),
+            None,
+        );
         if let Err(e) = run_wallet(args.clone(), net).await {
             eprintln!("error: {e:#}");
             std::process::exit(1);
@@ -1556,15 +1604,15 @@ mod tests {
             name: "testnet".into(),
             rpc: None,
             registry: None,
+            chain_id: None,
+            lns: None,
+            storage_api: None,
             registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["check-health".into()], Ok(net))
             .await
             .unwrap_err();
-        assert!(
-            e.to_string().contains("testnet 0.4 has not launched"),
-            "{e}"
-        );
+        assert!(e.to_string().contains("no RPC URL"), "{e}");
         let e = run_wallet(
             vec!["check-health".into()],
             Err(anyhow!("unknown network 'bogus'")),
@@ -1576,6 +1624,9 @@ mod tests {
             name: "local".into(),
             rpc: Some("http://127.0.0.1:3062".into()),
             registry: None,
+            chain_id: None,
+            lns: None,
+            storage_api: None,
             registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["change-network".into(), "testnet".into()], Ok(net))
@@ -1586,6 +1637,9 @@ mod tests {
             name: "x".into(),
             rpc: Some("http://192.168.1.50:3062".into()),
             registry: None,
+            chain_id: None,
+            lns: None,
+            storage_api: None,
             registry_images: Vec::new(),
         };
         let e = run_wallet(vec!["auth-transfer".into(), "send".into()], Ok(net))

@@ -34,9 +34,10 @@ pub mod idl;
 pub mod idl_codec;
 pub mod idl_format;
 pub mod jcs;
-pub mod lgx;
 pub mod json;
+pub mod lgx;
 pub mod lns;
+pub mod network_file;
 pub mod read;
 pub mod rpc;
 pub mod storage;
@@ -62,7 +63,8 @@ pub use storage::StorageClient;
 /// (`artifacts/lez_program_registry.imageid`; `tests/registry_image.rs` keeps them equal): the
 /// code a writer signs registry calls for by default. A literal, not `include_str!`: crates that
 /// take this SDK by git rev get only its own directory.
-pub const REGISTRY_IMAGE_HEX: &str = "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc";
+pub const REGISTRY_IMAGE_HEX: &str =
+    "5ffbf8f5a8efa74ab8c1bb02396c9448daf4db2fba3a526150f9da411baf6bdc";
 pub const REGISTRY_IMAGE: [u8; 32] = parse_image(REGISTRY_IMAGE_HEX);
 
 const fn parse_image(text: &str) -> [u8; 32] {
@@ -74,7 +76,10 @@ const fn parse_image(text: &str) -> [u8; 32] {
         }
     }
     let b = text.as_bytes();
-    assert!(b.len() >= 64, "artifacts/lez_program_registry.imageid is not 64 hex characters");
+    assert!(
+        b.len() >= 64,
+        "artifacts/lez_program_registry.imageid is not 64 hex characters"
+    );
     let mut out = [0u8; 32];
     let mut i = 0;
     while i < 32 {

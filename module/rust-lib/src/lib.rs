@@ -16,6 +16,7 @@
 use std::path::PathBuf;
 
 mod bridge;
+mod network_file;
 pub mod writes;
 
 use lezreg_sdk::{
@@ -28,8 +29,8 @@ use lezreg_sdk::{
 };
 use serde_json::{Value, json};
 
-/// Until LEZ testnet 0.4 launches the only registry is a local one, so there is no default id:
-/// `config_set` names it.
+/// Fallback only: normal builds take their RPC and program ids from the embedded
+/// `names-network/2` profile (audit row 440).
 const DEFAULT_SEQUENCER: &str = "http://127.0.0.1:3062";
 /// Most entries a list or search call returns.
 const MAX_LIMIT: i64 = 200;
@@ -201,7 +202,19 @@ impl ProgramRegistry {
 
 impl Default for ProgramRegistry {
     fn default() -> Self {
-        let mut me = Self::with_settings(DEFAULT_SEQUENCER.to_owned(), None, lezreg_sdk::storage::DEFAULT_API.to_owned(), None, None);
+        let profile = network_file::builtin().ok();
+        let sequencer = profile.as_ref().map(|p| p.rpc.clone()).unwrap_or_else(|| DEFAULT_SEQUENCER.to_owned());
+        let storage = profile.as_ref().and_then(|p| p.storage_api.clone()).unwrap_or_else(|| lezreg_sdk::storage::DEFAULT_API.to_owned());
+        let mut me = Self::with_settings(
+            sequencer,
+            profile.as_ref().and_then(|p| p.registry),
+            storage,
+            profile.as_ref().and_then(|p| p.lns),
+            None,
+        );
+        if let Some(image) = profile.as_ref().and_then(|p| p.registry_image) {
+            me.registry_images.push(image);
+        }
         if let Some(saved) = config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
             let _ = me.apply(&saved);
         }
@@ -299,15 +312,6 @@ pub fn clean(s: &str) -> String {
             c => Some(c),
         })
         .collect()
-}
-
-/// The LNS program the app checks read by default on a network the module knows: the LNS
-/// registry on the public LEZ testnet. A local chain has none (set `lns`).
-const TESTNET_SEQUENCER: &str = "https://testnet.lez.logos.co";
-const TESTNET_LNS: &str = "38jEfVV1RCyMzu1FGbYcCn5FqxCxKyY58VgzjruAh2gq";
-
-fn default_lns(sequencer: &str) -> Option<AccountId> {
-    (sequencer.trim_end_matches('/') == TESTNET_SEQUENCER).then(|| AccountId::from_base58(TESTNET_LNS).expect("a valid id"))
 }
 
 /// The registry code this module builds changes for: the committed reproducible build
@@ -507,7 +511,7 @@ impl ProgramRegistry {
 
     fn shown(&self) -> Value {
         json!({"sequencer": self.sequencer, "registry": self.registry.map(|r| r.to_base58()), "storage_api": self.storage_api,
-               "lns": self.lns.or_else(|| default_lns(&self.sequencer)).map(|l| l.to_base58()), "lns_is_default": self.lns.is_none() && default_lns(&self.sequencer).is_some(), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
+               "lns": self.lns.map(|l| l.to_base58()), "basecamp_data": self.basecamp_data.as_ref().map(|d| d.display().to_string()),
                "cli": self.cli.as_ref().map(|d| d.display().to_string()),
                "registry_images": KNOWN_REGISTRY_IMAGES.iter().map(|i| (*i).to_owned()).chain(self.registry_images.iter().map(hex::encode)).collect::<Vec<_>>()})
     }
@@ -682,7 +686,7 @@ impl ProgramRegistry {
 
     /// LNS reads for the configured sequencer and LNS program, kept across calls.
     fn names(&mut self) -> Result<&mut Names<HttpRpc>, String> {
-        let lns = self.lns.or_else(|| default_lns(&self.sequencer)).ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
+        let lns = self.lns.ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
         let current = matches!(&self.names, Some((seq, l, _)) if *seq == self.sequencer && *l == lns);
         if !current {
             self.names = Some((self.sequencer.clone(), lns, Names::new(HttpRpc::new(&self.sequencer), lns)));
@@ -1317,14 +1321,16 @@ mod tests {
     }
 
     #[test]
-    fn the_testnet_has_a_default_lns_program_that_is_never_saved() {
+    fn defaults_come_from_the_network_file_and_are_not_keyed_by_url() {
+        let profile = network_file::builtin().unwrap();
+        let m = ProgramRegistry::default();
+        assert_eq!(m.shown()["sequencer"], json!(profile.rpc));
+        assert_eq!(m.shown()["lns"], json!(profile.lns.unwrap().to_base58()));
+        assert_eq!(m.shown()["registry"], json!(profile.registry.unwrap().to_base58()));
+        // An old 0.3 URL must not silently select the 0.3 LNS registry.
         let mut m = fresh();
-        assert_eq!(m.shown()["lns"], Value::Null, "a local chain has none");
         assert!(m.apply(&json!({"sequencer": "https://testnet.lez.logos.co"})).is_ok());
-        assert_eq!((m.shown()["lns"].as_str(), m.shown()["lns_is_default"].as_bool()), (Some(TESTNET_LNS), Some(true)));
-        assert_eq!(m.settings()["lns"], Value::Null, "a default is not pinned into the settings file");
-        assert!(m.apply(&json!({"lns": "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN"})).is_ok());
-        assert_eq!(m.shown()["lns_is_default"], false);
+        assert_eq!(m.shown()["lns"], Value::Null);
     }
 
     /// Chain text that reorders or hides what a reader sees is cleaned out of labels (C).
