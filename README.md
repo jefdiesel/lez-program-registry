@@ -4,6 +4,9 @@ An on-chain registry of programs on the Logos Execution Zone (LEZ 0.4), with a R
 `lezreg` command line. It is built for λPrize LP-0023. The full design is in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
+For the Basecamp app that reads this registry as a guidebook of apps, see
+[`registry_browser/README.md`](registry_browser/README.md).
+
 - A **deployer entry** for program `X` is stored on `X`'s own account. It can only be written
   with the authorization the loader requires to deploy or upgrade `X`. A client therefore
   recognises a deployer entry from its address alone, and **one `getAccount(X)` call** returns
