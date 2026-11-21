@@ -1,4 +1,4 @@
-// Program Registry for Basecamp: an index of the programs on this network, read like a
+// Apps (the Program Registry browser) for Basecamp: an index of the programs on this network, read like a
 // guidebook. Each entry has a title, one plain sentence and its publisher; open one for its guide
 // page (what it is, who published it, its source, what you can do), with everything technical
 // (ids, revisions, code, IDL, this machine's verify mark) folded under "Technical details". An
@@ -255,8 +255,8 @@ Item {
             spacing: 16
             PageHeader {
                 look: root.look
-                title: "Program Registry"
-                sentence: "What each program on this network does, who published it, and where its source is."
+                title: "Apps"
+                sentence: "Apps on this network: what each one does, who published it, and where its source is."
                 runsOnPrefix: "Reads"
                 network: root.config ? Logic.clean(root.config.network && root.config.network.name ? root.config.network.name : Logic.hostOf(root.config.sequencer)) : ""
                 networkDetail: root.config && root.config.network && root.config.network.name ? Logic.hostOf(root.config.sequencer) : ""
@@ -375,7 +375,7 @@ Item {
                     id: searchField
                     look: root.look
                     Layout.fillWidth: true
-                    hint: "Search programs by name"
+                    hint: "Search apps by name"
                     glyph: "search"
                     onAccepted: { root.query = text.trim(); root.loadList(false) }
                 }
@@ -386,12 +386,12 @@ Item {
                         Layout.fillWidth: true
                         text: root.loading ? "Reading the registry…" : root.problem !== "" ? Logic.clean(root.problem)
                               : root.query !== "" ? root.items.length + " matching “" + Logic.clean(root.query) + "”"
-                              : root.items.length < root.total ? root.items.length + " of " + root.total + " programs" : root.total + " program" + (root.total === 1 ? "" : "s")
+                              : root.items.length < root.total ? root.items.length + " of " + root.total + " apps" : root.total + " app" + (root.total === 1 ? "" : "s")
                         color: root.problem !== "" ? look.alarm : look.dim
                         wrapMode: Text.Wrap
                         font.family: look.sans; font.pixelSize: look.px(14)
                     }
-                    Link { look: root.look; visible: root.query !== ""; text: "Show all programs"; font.pixelSize: look.px(14); onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
+                    Link { look: root.look; visible: root.query !== ""; text: "Show all apps"; font.pixelSize: look.px(14); onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
                 }
                 ListView {
                     id: list
@@ -407,7 +407,7 @@ Item {
                         topPadding: 16
                         bottomPadding: 24
                         spacing: 12
-                        Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more programs"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
+                        Action { look: root.look; visible: root.next !== "" && root.query === ""; label: "Show more apps"; busyLabel: "Reading…"; working: root.loading; onPressed: root.loadList(true) }
                     }
                     delegate: Item {
                         required property var modelData
@@ -453,7 +453,7 @@ Item {
                     visible: !root.selected
                     width: parent.width
                     y: 56
-                    text: root.loading || root.items.length === 0 ? "" : "Pick a program to read what it does, who published it, and where its source is."
+                    text: root.loading || root.items.length === 0 ? "" : "Pick an app to read what it does, who published it, and where its source is."
                     color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(17)
                 }
 
@@ -465,7 +465,7 @@ Item {
 
                     GuideHeader {
                         look: root.look
-                        backLabel: root.narrow ? "Programs" : ""
+                        backLabel: root.narrow ? "Apps" : ""
                         onBack: root.selected = null
                         section: root.guide ? root.guide.section : ""
                         title: root.guide ? root.guide.title : ""

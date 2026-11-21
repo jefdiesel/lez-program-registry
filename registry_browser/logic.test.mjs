@@ -151,6 +151,9 @@ check("About is what follows the first sentence; nothing left, no About", ["vest
    "Private ETH bridge (RFP-022) for Sepolia vault v7. Guest image 0dabbd6c. Native build, not reproducible.", ""]);
 check("About keeps \"LEZ 0.4\" whole and a one-sentence description has none", [guideText({ name: "x", description: "X: runs on LEZ 0.4 only. Second one." }).more, guideText({ name: "x", description: "Just one sentence." }).more],
   ["Second one.", ""]);
+// The person sees "Apps"; the package and module ids stay, so an install upgrades in place.
+const meta = JSON.parse(readFileSync(new URL("metadata.json", import.meta.url), "utf8"));
+check("package: shown as Apps, ids unchanged", [meta.display_name, meta.name, meta.dependencies[0].name], ["Apps", "registry_browser", "program_registry"]);
 check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
 check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
 check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),

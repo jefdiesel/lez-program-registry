@@ -1,11 +1,11 @@
 {
   "name": "registry_browser",
-  "display_name": "Program Registry",
-  "version": "0.1.6",
+  "display_name": "Apps",
+  "version": "0.1.7",
   "author": "lns:jefdiesel",
   "type": "ui_qml",
   "category": "developer",
-  "description": "An index of the programs on LEZ, read like a guidebook: what each one does, who published it, where its source is; technical details (proven author, freshness, IDL) and updating your own entries one fold down",
+  "description": "Apps on LEZ, read like a guidebook (the LEZ Program Registry): what each one does, who published it, where its source is; technical details (proven author, freshness, IDL) and updating your own entries one fold down",
   "view": "qml/Main.qml",
   "icon": "src/icons/icon.png",
   "dependencies": [
