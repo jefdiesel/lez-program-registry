@@ -71,16 +71,74 @@ Item {
 
     // ── The module ──────────────────────────────────────────────────────
     /// Asks program_registry; exactly one of done(value) and failed(message, code) runs, later.
+    /// A read the network is too busy for (a rate limit) is asked again by itself, on one ladder
+    /// shared by every call (2, 4, 8, 16 s, or the sequencer's Retry-After), at most
+    /// Logic.MAX_RETRIES times; then "Still busy" and a Try again link. Changes are never retried.
+    /// Failures carry plain words; their cause, without any response body, goes to netDetail.
     function ask(method, args, done, failed, patience) {
         if (!bridgeReady) {
             Qt.callLater(function() { failed("This screen needs to run inside Basecamp.", "no_bridge") })
             return
         }
-        logos.callModuleAsync("program_registry", method, args, function(reply) {
-            var a = Logic.answer(reply)
-            if (a.ok) done(a.value)
-            else failed(a.error, a.code)
-        }, patience || 20000)
+        var go = function() {
+            logos.callModuleAsync("program_registry", method, args, function(reply) {
+                var a = Logic.answer(reply)
+                if (a.ok) {
+                    if (root.busyTries > 0 || root.busyLine !== "") { root.busyTries = 0; root.busyLine = "" }
+                    done(a.value)
+                    return
+                }
+                if (a.detail) root.netDetail = a.detail
+                if (a.code === "rate_limited" && root.gaveUp) { failed(Logic.STILL_BUSY_WORDS, a.code); return }
+                if (a.code === "rate_limited" && Logic.retryable(method)) {
+                    var now = Date.now()
+                    if (now >= root.busyUntil) {
+                        if (root.busyTries >= Logic.MAX_RETRIES) {
+                            root.gaveUp = true
+                            root.busyLine = Logic.STILL_BUSY_WORDS
+                            failed(Logic.STILL_BUSY_WORDS, a.code)
+                            return
+                        }
+                        root.busyUntil = now + Logic.retryDelay(root.busyTries, a.retryAfterMs)
+                        root.busyTries += 1
+                    }
+                    root.busyLine = Logic.BUSY_WORDS
+                    later(root.busyUntil - now, go)
+                    return
+                }
+                failed(a.error, a.code)
+            }, patience || 20000)
+        }
+        go()
+    }
+
+    // The shared ladder for a busy network (see ask).
+    property real busyUntil: 0
+    property int busyTries: 0
+    property bool gaveUp: false
+    property string busyLine: ""       // "The network is busy…" / "Still busy…": shown under the header
+    property string netDetail: ""      // the last network failure's cause, for Technical details
+
+    /// Runs `fn` after `ms` milliseconds.
+    function later(ms, fn) {
+        var t = Qt.createQmlObject("import QtQuick; Timer { repeat: false }", root)
+        t.interval = Math.max(0, ms)
+        t.triggered.connect(function() { fn(); t.destroy() })
+        t.start()
+    }
+
+    /// Try again after "Still busy", and Refresh: the module drops what it keeps, then the list
+    /// and the open entry are read again.
+    function refresh() {
+        gaveUp = false; busyTries = 0; busyUntil = 0; busyLine = ""; notice = ""
+        var again = function() {
+            if (!config) { loadConfig(); return }
+            loadList(false)
+            if (selected) open(selected, true)
+        }
+        if (!bridgeReady) { again(); return }
+        // program_registry before 0.3.3 has no forget_reads: its answer is ignored either way.
+        logos.callModuleAsync("program_registry", "forget_reads", [], function(reply) { again() }, 5000)
     }
 
     function loadConfig() {
@@ -105,7 +163,7 @@ Item {
                     if (v.items.length === 0 && n + 1 < forms.length) { tryForm(n + 1); return }
                     items = v.items; next = ""; total = v.items.length; loading = false
                     if (v.truncated) notice = "The search looked at the newest " + v.scanned + " entries."
-                }, function(e) { problem = e; loading = false })
+                }, function(e, code) { problem = code === "rate_limited" ? "" : e; loading = false })
             }
             tryForm(0)
             return
@@ -115,11 +173,13 @@ Item {
             next = v.next || ""
             total = v.total
             loading = false
-        }, function(e) { problem = e; loading = false })
+        }, function(e, code) { problem = code === "rate_limited" ? "" : e; loading = false })
     }
 
     function open(item, keepDetails) {
         selected = item
+        var mine = item.address
+        var current = function() { return !!root.selected && root.selected.address === mine }
         resolved = null; idl = null; label = null; community = []
         change = null
         guideNote = ""
@@ -128,10 +188,11 @@ Item {
         var program = item.entry ? item.entry.program : item.link.program
         editVersion = item.entry ? item.entry.version : ""
         editDescription = item.entry ? item.entry.description : ""
-        ask("resolve_program", [program], function(v) { resolved = v }, function(e) { notice = e })
-        ask("program_label", [program], function(v) { label = v }, function(e) {})
-        ask("third_party_entries", [program], function(v) { community = v }, function(e) {})
-        ask("get_idl", [program], function(v) { idl = v }, function(e) { idl = { status: "unavailable: " + e, idl: null } }, 30000)
+        // Answers for an entry that is no longer open are dropped.
+        ask("resolve_program", [program], function(v) { if (current()) resolved = v }, function(e, code) { if (current() && code !== "rate_limited") notice = e })
+        ask("program_label", [program], function(v) { if (current()) label = v }, function(e) {})
+        ask("third_party_entries", [program], function(v) { if (current()) community = v }, function(e) {})
+        ask("get_idl", [program], function(v) { if (current()) idl = v }, function(e) { if (current()) idl = { status: "unavailable: " + e, idl: null } }, 30000)
         lookUpName(item.entry ? item.entry.author : item.link.registrant)
     }
 
@@ -142,10 +203,17 @@ Item {
 
     /// The LNS name an account goes by, from the Names app's own lookup (`names.reverse`), shown
     /// beside the account in Technical details. No Names app, no name, or no answer: nothing shown.
-    function lookUpName(account) {
-        if (!account || !bridgeReady || accountNames[account] !== undefined) return
-        var pending = Object.assign({}, accountNames); pending[account] = ""; accountNames = pending
+    /// A busy or unreachable network is asked again quietly (2, 4, 8, 16 s), at most
+    /// Logic.MAX_RETRIES times; nothing from its reply but a name is ever shown.
+    function lookUpName(account, attempt) {
+        attempt = attempt || 0
+        if (!account || !bridgeReady || (attempt === 0 && accountNames[account] !== undefined)) return
+        if (attempt === 0) { var pending = Object.assign({}, accountNames); pending[account] = ""; accountNames = pending }
         logos.callModuleAsync("names", "reverse", [account], function(reply) {
+            if (Logic.reverseRetry(reply) && attempt + 1 < Logic.MAX_RETRIES) {
+                later(Logic.retryDelay(attempt, Logic.answer(reply).retryAfterMs), function() { root.lookUpName(account, attempt + 1) })
+                return
+            }
             var name = Logic.reverseName(reply)
             if (name === "") return
             var known = Object.assign({}, root.accountNames); known[account] = name; root.accountNames = known
@@ -282,6 +350,7 @@ Item {
                 spacing: 14
                 FactRow { look: root.look; key: "Sequencer"; value: Logic.clean(root.config ? root.config.sequencer : ""); monospace: true }
                 FactRow { look: root.look; key: "Registry"; value: Logic.clean(root.config && root.config.registry ? root.config.registry : "(none)"); monospace: true }
+                FactRow { look: root.look; key: "Last failure"; visible: root.netDetail !== ""; tone: look.dim; value: Logic.plainText(root.netDetail, 200) }
                 FactRow {
                     look: root.look
                     visible: !!(root.config && root.config.network && root.config.network.chain_id)
@@ -349,6 +418,15 @@ Item {
             Layout.maximumWidth: screen.columnWidth
             text: Logic.clean(root.notice); color: look.alarm; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16)
         }
+        // A busy network: being retried, or given up on with a way to try again.
+        RowLayout {
+            visible: root.busyLine !== ""
+            Layout.preferredWidth: screen.columnWidth
+            Layout.maximumWidth: screen.columnWidth
+            spacing: 12
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.busyLine; color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16) }
+            Link { look: root.look; visible: root.gaveUp; text: "Try again"; font.pixelSize: look.px(16); onPressed: root.refresh() }
+        }
         // The last change sent (yours, or another app's you approved): sending, applied or failed.
         Text { textFormat: Text.PlainText;
             visible: !!root.job
@@ -386,12 +464,14 @@ Item {
                         Layout.fillWidth: true
                         text: root.loading ? "Reading the registry…" : root.problem !== "" ? Logic.clean(root.problem)
                               : root.query !== "" ? root.items.length + " matching “" + Logic.clean(root.query) + "”"
-                              : root.items.length < root.total ? root.items.length + " of " + root.total + " apps" : root.total + " app" + (root.total === 1 ? "" : "s")
+                              : root.items.length === 0 && root.gaveUp ? ""
+                              : root.rows.length + " app" + (root.rows.length === 1 ? "" : "s") + (root.next !== "" ? " so far" : "")
                         color: root.problem !== "" ? look.alarm : look.dim
                         wrapMode: Text.Wrap
                         font.family: look.sans; font.pixelSize: look.px(14)
                     }
                     Link { look: root.look; visible: root.query !== ""; text: "Show all apps"; font.pixelSize: look.px(14); onPressed: { searchField.text = ""; root.query = ""; root.loadList(false) } }
+                    Link { look: root.look; visible: root.query === "" && !root.loading; text: "Refresh"; font.pixelSize: look.px(14); onPressed: root.refresh() }
                 }
                 ListView {
                     id: list
@@ -430,7 +510,8 @@ Item {
                             title: parent.isHeading ? "" : modelData.title
                             // Names only: the sentence and the publisher are on the guide page.
                             secondary: !parent.isHeading && modelData.secondary
-                            selected: !parent.isHeading && !!root.selected && root.selected.address === modelData.item.address
+                            selected: !parent.isHeading && !!root.selected && (root.selected.address === modelData.item.address
+                                      || modelData.older.some(function(o) { return o.address === root.selected.address }))
                             onPressed: root.open(modelData.item)
                         }
                     }
@@ -467,7 +548,7 @@ Item {
                         look: root.look
                         backLabel: root.narrow ? "Apps" : ""
                         onBack: root.selected = null
-                        section: root.guide ? root.guide.section : ""
+                        section: ""   // no category kicker over the title
                         title: root.guide ? root.guide.title : ""
                         sentence: root.guide ? root.guide.sentence : ""
                         publisher: root.guide ? root.guide.publisher : ""
@@ -526,20 +607,15 @@ Item {
                         FactRow { look: root.look; key: "Listing"; value: Logic.listedBy(root.kind) }
                     }
 
-                    // The rest of its family, newest first.
-                    ColumnLayout {
-                        visible: !!(root.guide && root.guide.family.length)
+                    // Other versions of the same app (not in the index): one small line of links.
+                    Flow {
+                        visible: !!(root.guide && root.guide.versions.length)
                         Layout.fillWidth: true
-                        Layout.topMargin: 8
-                        spacing: 10
-                        SectionHeading { look: root.look; Layout.fillWidth: true; text: "Other versions" }
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: 20
-                            Repeater {
-                                model: root.guide ? root.guide.family : []
-                                Link { required property var modelData; look: root.look; text: modelData.label; onPressed: root.openAddress(modelData.address) }
-                            }
+                        spacing: 14
+                        Text { textFormat: Text.PlainText; text: root.guide && root.guide.newest ? "Older versions:" : "Other versions:"; color: look.dim; font.family: look.sans; font.pixelSize: look.px(15) }
+                        Repeater {
+                            model: root.guide ? root.guide.versions : []
+                            Link { required property var modelData; look: root.look; font.pixelSize: look.px(15); text: modelData.label + (modelData.newest ? " (newest)" : ""); onPressed: root.openAddress(modelData.address) }
                         }
                     }
 
@@ -590,6 +666,8 @@ Item {
                             value: root.community.length ? root.community.length + " community entr" + (root.community.length === 1 ? "y" : "ies") + " for this program" : "none"
                             tone: look.dim
                         }
+
+                        FactRow { look: root.look; key: "Network"; visible: root.netDetail !== ""; tone: look.dim; value: "Last failure: " + Logic.plainText(root.netDetail, 200) }
 
                         // The IDL, or why it can't be shown.
                         Rectangle {

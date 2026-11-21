@@ -14,8 +14,9 @@ detail-family (an older member of a family), detail-registry (a deployer entry),
 (Technical details open), detail-author (the author's update form, as far down as it goes),
 search (a name search), basecamp-list and basecamp-end (1250x700, the test Basecamp's
 window; -end scrolled to the bottom), narrow-list, narrow-end and narrow-detail (a window too narrow for both: the guide
-page replaces the index), small (a small window with both), freeze-confirm (the confirm sheet
-for Freeze; needs a recorded prepare_freeze), nomodule (no program_registry at all).
+page replaces the index), small (a small window with both), busy and still-busy (the list rate-limited: retrying, then given up),
+busy and still-busy (the list rate-limited: retrying, then given up), freeze-confirm (the
+confirm sheet for Freeze; needs a recorded prepare_freeze), nomodule (no program_registry at all).
 Answers can come from tools/record.py (logosctl) or tools/answers_from_lezreg.py (lezreg reads).
 """
 import json, os, subprocess, sys, tempfile
@@ -30,9 +31,12 @@ BRIDGE = r"""
     }
     property var recorded: %(answers)s
     property bool absent: %(absent)s
+    property bool fakeBusy: %(busy)s
     property var logos: QtObject {
         function callModuleAsync(module, method, args, callback, timeout) {
             if (root.absent) { Qt.callLater(function() { callback("") }); return }
+            // A rate-limited public sequencer, as a program_registry before 0.3.3 reported it.
+            if (root.fakeBusy && method === "list_entries") { Qt.callLater(function() { callback(JSON.stringify({ success: false, value: null, error: "cannot reach the sequencer at https://lez.nameswallet.app/: HTTP 429: <!doctype html><!--[if lt IE 7]> <html class=no-js> <![endif]--><head><title>Access denied | lez.nameswallet.app used Cloudflare to restrict access</title></head><body><h1>Error 1015</h1></body></html>" })) }); return }
             var key = method + " " + JSON.stringify(args)
             var reply = root.recorded[key] !== undefined ? root.recorded[key] : root.recorded[method]
             if (reply === undefined) { console.log("unrecorded call: " + key); return }
@@ -70,6 +74,8 @@ SCENARIOS = {
     "search": 'root.query = "%(search)s"; root.loadList(false)',
     "freeze-confirm": 'if (root.items.length) { root.open(root.items[0]); root.prepare("prepare_freeze", {}) }',
     "nomodule": "",
+    "busy": "",
+    "still-busy": "root.busyTries = 4; root.busyUntil = 0; root.loadList(false)",
 }
 
 
@@ -95,7 +101,7 @@ def main():
         out = os.path.abspath(os.path.join(out_dir, scenario + ".png"))
         if os.path.exists(out):
             os.unlink(out)
-        bridge = BRIDGE % {"answers": json.dumps(answers), "absent": "true" if scenario == "nomodule" else "false",
+        bridge = BRIDGE % {"answers": json.dumps(answers), "absent": "true" if scenario == "nomodule" else "false", "busy": "true" if scenario in ("busy", "still-busy") else "false",
                            "scenario": SCENARIOS[scenario] % {"search": search}, "out": out,
                            "width": SIZES.get(scenario, (1280, 900))[0], "height": SIZES.get(scenario, (1280, 900))[1]}
         # Beside Main.qml, so its relative imports (logic.mjs, RegistryLabel.qml) resolve.

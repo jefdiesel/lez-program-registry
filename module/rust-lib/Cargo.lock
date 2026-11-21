@@ -444,6 +444,7 @@ dependencies = [
  "lezreg-sdk",
  "logos-rust-sdk",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]

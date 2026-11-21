@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 // Checks the browser's own logic (qml/logic.mjs, which qml/Main.qml imports) without a QML
 // engine. Run with: node registry_browser/logic.test.mjs
 import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText,
-  titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName, searchForms } from "./qml/logic.mjs";
+  titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName, searchForms,
+  fallbackTitle, plainText, networkError, retryDelay, retryable, reverseRetry, MAX_RETRIES, BUSY_WORDS, UNREACHABLE_WORDS } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -13,8 +14,8 @@ const check = (label, got, want) => {
 
 const P = "6YWH8dnosbBhXQqpmA6GNy4oG93i2vVSxJm18A32VayN";
 check("shortId", [shortId(P), shortId("abc"), shortId(null)], ["6YWH…VayN", "abc", ""]);
-check("answer ok", answer(JSON.stringify({ success: true, value: 3, error: null })), { ok: true, value: 3, error: "", code: "" });
-check("answer coded", answer(JSON.stringify({ success: false, value: null, error: "no", code: "frozen" })), { ok: false, value: null, error: "no", code: "frozen" });
+check("answer ok", answer(JSON.stringify({ success: true, value: 3, error: null })), { ok: true, value: 3, error: "", code: "", detail: "", retryAfterMs: 0 });
+check("answer coded", answer(JSON.stringify({ success: false, value: null, error: "no", code: "frozen" })), { ok: false, value: null, error: "no", code: "frozen", detail: "", retryAfterMs: 0 });
 check("answer double-wrapped", answer(JSON.stringify(JSON.stringify({ success: true, value: 1 }))).value, 1);
 check("answer timeout", answer("").code, "timeout");
 check("answer no module", answer("{}").code, "no_module");
@@ -91,7 +92,7 @@ const now = JSON.parse(readFileSync(new URL("tools/live-rc3.json", import.meta.u
 check("titleCase keeps acronyms and versions", ["lez-token", "names-evm-bridge-v7", "lez_program_registry", "logos-names", "lez-nft", "my-idl-tool", "rpc  api"].map(titleCase),
   ["LEZ Token", "Names EVM Bridge v7", "LEZ Program Registry", "Logos Names", "LEZ NFT", "My IDL Tool", "RPC API"]);
 check("titles of the live entries", live.map((i) => guideText(i.entry).title),
-  ["LEZ Token", "Vest", "Logos Names", "Names EVM Bridge v7", "Names EVM Bridge v6", "Names EVM Bridge Token", "LEZ NFT", "LEZ Program Registry"]);
+  ["Token", "Vest", "Names", "Names EVM Bridge v7", "Names EVM Bridge v6", "Names EVM Bridge Token", "NFT", "Program Registry"]);
 check("Vest: the text before the colon is the title, the rest one sentence", guideText(byName("vest").entry),
   { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", about: byName("vest").entry.description, more: "Native build, not reproducible yet." });
 check("a long lead is not a title (LNS (Logos Name Service) registry: …)", guideText(byName("logos-names").entry).sentence,
@@ -110,50 +111,79 @@ check("publisher: a proven label", publisherOf({ author: P, author_label: "lns:a
 check("sections from tags", [["token", "vesting"], ["vesting", "token"], ["lns", "names"], ["nft", "lns"], ["bridge", "eth"], ["registry", "infrastructure"], ["games"], [], { 0: "dao", length: 1 }].map(sectionOf),
   ["Tokens", "Tokens", "Names", "NFTs", "Bridges", "Tools", "Games", "Other", "DAO"]);
 const rows = indexRows(live);
-const shown = rows.map((r) => r.type === "heading" ? "# " + r.text : (r.secondary ? "  - " : "") + r.title + (r.note ? " [" + r.note + "]" : ""));
-check("the live index: sections in order, families together, A–Z", shown,
-  ["# Tokens", "LEZ Token", "Vest", "# Names", "Logos Names", "# NFTs", "LEZ NFT", "# Bridges", "Names EVM Bridge [v7, the newest of 3]", "  - v6", "  - Token", "# Tools", "LEZ Program Registry"]);
-check("every live entry appears exactly once", rows.filter((r) => r.type === "entry").map((r) => r.item.address).sort(), live.map((i) => i.address).sort());
-check("index rows carry no ids, numbers or versions", rows.filter((r) => r.type === "entry").some((r) => /[1-9A-HJ-NP-Za-km-z]{32,}|#\d|v0\.1\.0|Community|Deployer/.test(r.title + r.sentence + r.publisher + r.note)), false);
-check("the family lead is the newest (highest seq)", rows.find((r) => r.family && !r.secondary).item.entry.name, "names-evm-bridge-v7");
-// A family is one author's: someone else's "names-evm-bridge-v8" must not lead it.
+const shown = rows.map((r) => r.title + (r.note ? " [" + r.note + "]" : ""));
+check("the index (seeded wording): one flat A–Z list, no headings, one line per app", shown,
+  ["Names", "Names EVM Bridge [the newest of 2 versions]", "Names EVM Bridge Token", "NFT", "Program Registry", "Token", "Vest"]);
+check("no headings, nothing indented", rows.some((r) => r.type !== "entry" || r.secondary), false);
+check("every live entry is listed once, older versions under their newest", rows.flatMap((r) => [r.item].concat(r.older)).map((i) => i.address).sort(), live.map((i) => i.address).sort());
+check("index rows carry no ids, numbers or versions", rows.some((r) => /[1-9A-HJ-NP-Za-km-z]{32,}|#\d|v0\.1\.0|Community|Deployer/.test(r.title + r.sentence + r.publisher + r.note)), false);
+check("of several versions, the newest (highest seq) is listed, the others only on its page", [rows.find((r) => r.older.length).item.entry.name, rows.find((r) => r.older.length).older.map((i) => i.entry.name)],
+  ["names-evm-bridge-v7", ["names-evm-bridge-v6"]]);
+// Versions are one author's: someone else's "names-evm-bridge-v8" must not take the line.
 const intruder = JSON.parse(JSON.stringify(byName("names-evm-bridge-v7")));
 Object.assign(intruder, { address: "Intruder1111111111111111111111111111111111", seq: 9 });
 Object.assign(intruder.entry, { name: "names-evm-bridge-v8", author: Q, description: "Evil: steals funds." });
 const mixed = indexRows(live.concat([intruder]));
-check("another author's look-alike stays out of the family", [mixed.find((r) => r.note).item.entry.name, mixed.find((r) => r.item && r.item.address === intruder.address).secondary,
-  mixed.find((r) => r.item && r.item.address === intruder.address).title], ["names-evm-bridge-v7", false, "Evil"]);
-check("names sharing only a first word are not a family", indexRows([byName("lez-token"), byName("lez-nft")]).filter((r) => r.secondary).length, 0);
-check("a search result goes through the same index", indexRows([byName("names-evm-bridge-v6")]).map((r) => r.type === "heading" ? r.text : r.title), ["Bridges", "Names EVM Bridge v6"]);
+check("another author's look-alike is its own line, not a newer version", [mixed.find((r) => r.older.length).item.entry.name, mixed.find((r) => r.item.address === intruder.address).title],
+  ["names-evm-bridge-v7", "Evil"]);
+check("a name that extends another is a different app", indexRows([byName("names-evm-bridge-v7"), byName("names-evm-bridge-token")]).map((r) => r.older.length), [0, 0]);
+check("names sharing only a first word are separate", indexRows([byName("lez-token"), byName("lez-nft")]).length, 2);
+check("a search result goes through the same index", indexRows([byName("names-evm-bridge-v6")]).map((r) => r.title), ["Names EVM Bridge v6"]);
 check("an empty list is an empty index", [indexRows([]), indexRows(null)], [[], []]);
-check("a link-only item still shows", indexRows([{ address: "A", seq: 1, kind: "unverified", link: { name: "odd-one", registrant: P } }]).map((r) => r.text || r.title), ["Other", "Odd One"]);
+check("a link-only item still shows", indexRows([{ address: "A", seq: 1, kind: "unverified", link: { name: "odd-one", registrant: P } }]).map((r) => r.title), ["Odd One"]);
 const g6 = guideOf(byName("names-evm-bridge-v6"), live);
-check("detail of a family member: full title, the others by variant", [g6.title, g6.family.map((f) => f.label)], ["Names EVM Bridge v6", ["v7 (newest)", "Token"]]);
-check("detail of a single entry", (({ title, sentence, publisher, proven, family, section }) => ({ title, sentence, publisher, proven, family, section }))(guideOf(byName("vest"), live)),
-  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", publisher: "jefdiesel", proven: false, family: [], section: "Tokens" });
+check("an older version's page: its own title, the newest linked", [g6.title, g6.newest, g6.versions.map((f) => [f.label, f.newest])], ["Names EVM Bridge v6", false, [["Names EVM Bridge v7", true]]]);
+check("detail of a single entry", (({ title, sentence, publisher, proven, versions, newest }) => ({ title, sentence, publisher, proven, versions, newest }))(guideOf(byName("vest"), live)),
+  { title: "Vest", sentence: "Privacy-preserving token vesting on LEZ 0.4: schedules, cliffs, private claims, batch, cancel.", publisher: "jefdiesel", proven: false, versions: [], newest: true });
 check("sourceLink: GitHub at the commit", sourceLink(byName("vest").entry.source),
   { url: "https://github.com/jefdiesel/vest/tree/c230c15744e3e23120b8b5ec2d72dbcbf7db6416", text: "github.com/jefdiesel/vest" });
 check("sourceLink: only https, nothing odd", [sourceLink({ repo: "http://x.org/a", commit: "" }), sourceLink({ repo: "javascript:alert(1)" }), sourceLink({ repo: "https://a b" }), sourceLink(null),
   sourceLink({ repo: "https://git.example/a.git", commit: "abc1234" })], [null, null, null, null, { url: "https://git.example/a", text: "git.example/a" }]);
 check("listedBy", ["deployer", "community", "unverified"].map((k) => listedBy(k).split(":")[0].split(" ").slice(0, 3).join(" ")), ["Listed by the", "A community listing", "This record is"]);
-check("the live index now (guidebook descriptions on chain)", indexRows(now).map((r) => r.type === "heading" ? "# " + r.text : (r.secondary ? "  - " : "") + r.title + ": " + r.sentence),
-  ["# Tokens", "LEZ Token: Create your own fungible token, then mint, send and burn it.",
-   "Vest: Lock tokens for someone on a cliff, linear or milestone schedule, and they claim what has vested, even to a private account.",
-   "# Names", "Logos Names: Claim an LNS name for your account, with a sealed profile and page and an optional NFT deed.",
-   "# NFTs", "LEZ NFT: Create an NFT collection, then print, send and burn its NFTs.",
-   "# Bridges", "Names EVM Bridge: Bring ETH from Sepolia into LEZ privately, and send it back out once 2 of 3 signers approve.",
-   "  - v6: Bring ETH from Sepolia into LEZ privately, through Sepolia vault v6.", "  - Token: The wrapped tokens the ETH bridge mints when you bring ETH into LEZ.",
-   "# Tools", "LEZ Program Registry: On-chain registry of LEZ 0.4 programs with proven deployer entries."]);
+check("the live index now: App Registry, Bridge, Bridged ETH, Names, NFTs, Tokens, Vest", indexRows(now).map((r) => r.title + ": " + r.sentence),
+  ["App Registry: The list Apps reads; anyone can add a program with its source and interface.",
+   "Bridge: Bring ETH from Sepolia in privately, and send it back out once 2 of 3 signers approve.",
+   "Bridged ETH: The tokens the bridge mints when you bring ETH in.",
+   "Names: Claim a name for your account, with a sealed profile and page and an optional NFT deed.",
+   "NFTs: Make a collection, then print, send and burn its NFTs.",
+   "Tokens: Make your own token, then mint, send and burn it.",
+   "Vest: Pay tokens out to someone over time on a cliff, linear or milestone schedule, and they claim what has vested, even to a private account."]);
+check("no app title says LEZ (the coin) or Logos (the network)", now.concat(live).map((i) => guideOf(i, now.some((x) => x === i) ? now : live).title).filter((x) => /\b(LEZ|Logos)\b/i.test(x)), []);
+check("fallback titles drop a leading LEZ or Logos", ["lez-token", "logos-names", "lez_program_registry", "lez", "my-lez-tool"].map(fallbackTitle), ["Token", "Names", "Program Registry", "LEZ", "My LEZ Tool"]);
+check("Bridge's page links Bridge v6 as an older version, and back", [guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v7"), now).versions.map((f) => [f.label, f.newest]),
+  guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v6"), now).versions.map((f) => [f.label, f.newest]),
+  guideOf(now.find((i) => i.entry.name === "names-evm-bridge-token"), now).versions], [[["Bridge v6", false]], [["Bridge", true]], []]);
 const nowBy = (n) => now.find((i) => i.entry.name === n);
 check("About is what follows the first sentence; nothing left, no About", ["vest", "lez-nft", "names-evm-bridge-v7", "lez_program_registry"].map((n) => guideOf(nowBy(n), now).more),
-  ["Built for Logos RFP-017 on LEZ 0.4; schedules can be created in batches and cancelled. Native build, not reproducible yet.",
-   "Logos's NFT program (logos-blockchain/lez-programs), deployed here on our LEZ 0.4 test network. LNS name deeds are 1-of-1 NFTs of it.",
-   "Private ETH bridge (RFP-022) for Sepolia vault v7. Guest image 0dabbd6c. Native build, not reproducible.", ""]);
+  ["Built for RFP-017; schedules can be created in batches and cancelled. Native build, not reproducible yet.",
+   "The network's standard NFT program (lez-programs). Name deeds are 1-of-1 NFTs of it.",
+   "Private ETH bridge (RFP-022), Sepolia vault v7. Guest image 0dabbd6c. Native build, not reproducible.", ""]);
 check("About keeps \"LEZ 0.4\" whole and a one-sentence description has none", [guideText({ name: "x", description: "X: runs on LEZ 0.4 only. Second one." }).more, guideText({ name: "x", description: "Just one sentence." }).more],
   ["Second one.", ""]);
 // The person sees "Apps"; the package and module ids stay, so an install upgrades in place.
 const meta = JSON.parse(readFileSync(new URL("metadata.json", import.meta.url), "utf8"));
 check("package: shown as Apps, ids unchanged", [meta.display_name, meta.name, meta.dependencies[0].name], ["Apps", "registry_browser", "program_registry"]);
+// ── The network: a rate limit (Cloudflare's 429 page) is plain words, never the page ──
+const CF = '<!doctype html><!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--><head><title>Access denied | lez.nameswallet.app used Cloudflare to restrict access</title><style>body{color:red}</style><script>var a=1;</script></head><body><h1>Error 1015</h1><p>You are being rate limited</p></body></html>';
+const old032 = answer(JSON.stringify({ success: false, value: null, error: "cannot reach the sequencer at https://lez.nameswallet.app/: HTTP 429: " + CF }));
+check("an old module's raw 429 is plain words", [old032.error, old032.code, old032.detail],
+  [BUSY_WORDS, "rate_limited", "HTTP 429: Access denied | lez.nameswallet.app used Cloudflare to restrict access Error 1015 You are being rate limited"]);
+check("no markup anywhere in what a 429 shows", /[<>]|doctype|script|color:red/i.test(old032.error + old032.detail), false);
+const new033 = answer(JSON.stringify({ success: false, value: null, error: BUSY_WORDS, code: "rate_limited", detail: "HTTP 429: Access denied", retry_after_ms: 7000 }));
+check("a 0.3.3 module's 429", [new033.code, new033.error, new033.retryAfterMs], ["rate_limited", BUSY_WORDS, 7000]);
+check("a 5xx or no connection", [answer(JSON.stringify({ success: false, error: "cannot reach the sequencer at https://x/: HTTP 502: <html><body>Bad gateway</body></html>" })),
+  answer(JSON.stringify({ success: false, error: "Can't reach the network right now.", code: "unreachable", detail: "io: Connection refused" }))].map((a) => [a.code, a.error, a.detail]),
+  [["unreachable", UNREACHABLE_WORDS, "HTTP 502: Bad gateway"], ["unreachable", UNREACHABLE_WORDS, "io: Connection refused"]]);
+check("other errors keep their words, without markup", answer(JSON.stringify({ success: false, error: "no entry <b>here</b>", code: "no_entry" })).error, "no entry here");
+check("backoff: 2, 4, 8, 16 s, longer when asked, at most a minute", [0, 1, 2, 3].map((n) => retryDelay(n, 0)).concat([retryDelay(0, 7000), retryDelay(3, 600000)]), [2000, 4000, 8000, 16000, 7000, 60000]);
+check("four automatic tries", MAX_RETRIES, 4);
+check("only reads retry by themselves", ["list_entries", "resolve_program", "get_idl", "submit", "approve_request", "deny_request", "prepare_freeze", "config_set"].map(retryable),
+  [true, true, true, false, false, false, false, false]);
+check("a failed change never shows a page", jobText({ what: "Freeze", state: "failed", error: "cannot reach the sequencer at https://x/: HTTP 429: " + CF }), "Freeze: failed: " + BUSY_WORDS);
+check("the IDL line never shows a page", idlSummary({ status: "unavailable: cannot reach the sequencer at https://x/: HTTP 429: " + CF, idl: null }).text,
+  "IDL unavailable: The network is busy. Trying again in a few seconds. The entry still shows; its interface can't be read right now.");
+check("the Names lookup: busy is worth another try, a name is a name", [reverseRetry(JSON.stringify({ success: false, error: "cannot reach the sequencer at https://x/: HTTP 429: " + CF })),
+  reverseRetry(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: false, error: CF }))], [true, false, ""]);
 check("day", [day(0), day(1795200292766)], ["", "20 Nov 2026"]);
 check("hostOf", [hostOf("https://lez.nameswallet.app/"), hostOf("http://127.0.0.1:3040"), hostOf("odd")], ["lez.nameswallet.app", "127.0.0.1", "odd"]);
 check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.stringify({ success: true, value: { name: "jefdiesel" } })), reverseName(JSON.stringify({ success: true, value: null })),

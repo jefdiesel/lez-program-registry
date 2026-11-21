@@ -1,4 +1,5 @@
-// A heading in an index ("Bridges", "Tokens", or a letter), with a hairline under it.
+// A heading in an index ("Bridges", "Tokens", or a letter): a small spaced-caps label; the space
+// above it is the caller's.
 import QtQuick
 import QtQuick.Layouts
 
@@ -30,5 +31,4 @@ ColumnLayout {
         }
         Item { Layout.fillWidth: true }
     }
-    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: look.line }
 }

@@ -1,4 +1,4 @@
-// A small thing to do beside text: underlined, the accent on hover.
+// A small thing to do beside text: semibold ink; underlined, in the accent, on hover or focus.
 import QtQuick
 
 Text {
@@ -9,7 +9,8 @@ Text {
     color: linkArea.containsMouse || activeFocus ? look.brass : look.ink
     font.family: look.sans
     font.pixelSize: look.px(15)
-    font.underline: true
+    font.weight: Font.DemiBold
+    font.underline: linkArea.containsMouse || activeFocus
     activeFocusOnTab: true
     Accessible.role: Accessible.Link
     Accessible.name: text

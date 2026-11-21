@@ -16,11 +16,12 @@
 use std::path::PathBuf;
 
 mod bridge;
+mod net;
 mod network_file;
 pub mod writes;
 
 use lezreg_sdk::{
-    HttpRpc, Kind, Registry, Rpc as _,
+    Kind, Registry, Rpc as _,
     apps::{self, Names},
     idl::{self, FetchConfig, IdlStatus},
     lgx::Contents,
@@ -28,6 +29,7 @@ use lezreg_sdk::{
     types::AccountId,
 };
 use serde_json::{Value, json};
+use net::Seq;
 
 /// The sequencer of a module with no network profile at all (unit tests; a broken build). A
 /// normal build takes its defaults from the network profile: the built-in `network-rc3.json`
@@ -157,6 +159,11 @@ pub trait ProgramRegistryModule: Send + 'static {
     /// Who would sign: `{cli, cli_version, cli_error, lez_core}`. Trusted callers only.
     fn signer_status(&mut self) -> String;
 
+    /// Drops the reads this module keeps for a while (about 30 s), so the next calls read the
+    /// chain again: an app's Refresh. `{forgotten: true}`. Open to every caller (it only costs
+    /// paced reads).
+    fn forget_reads(&mut self) -> String;
+
     /// Changes other apps submitted that wait for the person's approval: `[{request, from,
     /// at, change}]`. Trusted callers only (the registry browser shows them).
     fn pending_requests(&mut self) -> String;
@@ -266,7 +273,7 @@ pub struct ProgramRegistry {
     /// Registry images trusted beyond [`KNOWN_REGISTRY_IMAGES`] (host-pinned).
     registry_images: Vec<[u8; 32]>,
     /// LNS reads, kept with their derived names, for the sequencer and LNS program they read.
-    names: Option<(String, AccountId, Names<HttpRpc>)>,
+    names: Option<(String, AccountId, Names<Seq>)>,
     /// `(module, root)` → (verdict, when), for [`APP_CHECK_TTL_MS`].
     checked: std::collections::HashMap<(String, [u8; 32]), (Value, u64)>,
 }
@@ -319,16 +326,27 @@ impl Default for ProgramRegistry {
 fn reply(r: Result<Value, String>) -> String {
     match r {
         Ok(v) => json!({"success": true, "value": v, "error": null}),
-        Err(e) => json!({"success": false, "value": null, "error": e}),
+        Err(e) => failed(&e, None),
     }
     .to_string()
+}
+
+/// A failure as an app shows it. Not reaching the sequencer (a rate limit, a 5xx, no
+/// connection) is plain words and a stable code, with the raw cause (no response body: its
+/// text without markup, 200 characters at most) in `detail` for a technical-details line, and
+/// how long to wait in `retry_after_ms` after a rate limit.
+fn failed(message: &str, code: Option<&str>) -> Value {
+    match net::classify(message) {
+        Some((code, words, detail, wait)) => json!({"success": false, "value": null, "error": words, "code": code, "detail": detail, "retry_after_ms": wait}),
+        None => json!({"success": false, "value": null, "error": message, "code": code}),
+    }
 }
 
 /// Like [`reply`], with a stable `code` beside the error text.
 fn reply_coded(r: Result<Value, writes::Failure>) -> String {
     match r {
         Ok(v) => json!({"success": true, "value": v, "error": null, "code": null}),
-        Err(f) => json!({"success": false, "value": null, "error": f.message, "code": f.code}),
+        Err(f) => failed(&f.message, Some(&f.code)),
     }
     .to_string()
 }
@@ -648,9 +666,10 @@ impl ProgramRegistry {
                "registry_images": KNOWN_REGISTRY_IMAGES.iter().map(|i| (*i).to_owned()).chain(self.registry_images.iter().map(hex::encode)).collect::<Vec<_>>()})
     }
 
-    fn reader(&self) -> Result<Registry<HttpRpc>, String> {
+    /// Reads for the apps: paced, batched and cached for a while (net.rs).
+    fn reader(&self) -> Result<Registry<Seq>, String> {
         let reg = self.registry.ok_or("no registry configured: call config_set with {\"registry\": \"<id>\"}")?;
-        Ok(Registry::new(HttpRpc::new(&self.sequencer), reg))
+        Ok(Registry::new(Seq::cached(&self.sequencer), reg))
     }
 
     fn save(&self) -> Result<(), String> {
@@ -715,7 +734,7 @@ impl ProgramRegistry {
     /// Builds changes only for a registry running known code (M6 review E: a program that
     /// answers with a fake self-entry and receives the signer's account can move its funds).
     /// `lezreg` checks the same before it signs.
-    fn check_registry_code(&self, reader: &Registry<HttpRpc>, reg: &AccountId) -> Result<(), writes::Failure> {
+    fn check_registry_code(&self, reader: &Registry<Seq>, reg: &AccountId) -> Result<(), writes::Failure> {
         let header = reader.header(reg).map_err(|e| writes::Failure::new("transport", e.to_string()))?
             .ok_or_else(|| writes::Failure::new("unknown_registry", format!("no program is deployed at the registry id {}", reg.to_base58())))?;
         let live = hex::encode(header.image_id);
@@ -738,7 +757,7 @@ impl ProgramRegistry {
     /// The most a change of `gas` gas and `len` message bytes can cost now (the fee reserve the
     /// signer holds: the next block's ceilings), or `None` if the sequencer won't say.
     fn max_fee(&self, gas: u64, len: usize) -> Option<u128> {
-        let q = HttpRpc::new(&self.sequencer).call("getFeeState", json!([])).ok()?;
+        let q = Seq::fresh(&self.sequencer).call("getFeeState", json!([])).ok()?;
         let exec = u128::from(q["next_base_fee_exec_ceiling"].as_u64()?);
         let stor = u128::from(q["next_base_fee_stor_ceiling"].as_u64()?);
         Some(u128::from(gas) * exec + (u128::try_from(len).ok()? + 2_000) * stor)
@@ -747,7 +766,7 @@ impl ProgramRegistry {
     /// The chain's clock (ms), which the registry checks a change's `now` against.
     fn chain_now(&self) -> Result<u64, writes::Failure> {
         let (account, program) = writes::clock_actor();
-        let state = HttpRpc::new(&self.sequencer).get_actor_state(&account, &program).map_err(|e| writes::Failure::new("transport", e.to_string()))?;
+        let state = Seq::fresh(&self.sequencer).get_actor_state(&account, &program).map_err(|e| writes::Failure::new("transport", e.to_string()))?;
         writes::clock_time(&state).ok_or_else(|| writes::Failure::new("no_clock", format!("the sequencer at {} has no clock account to time the change by", self.sequencer)))
     }
 
@@ -783,7 +802,8 @@ impl ProgramRegistry {
     fn prepare_new(&self, input_json: &str, third_party: bool) -> Result<Value, writes::Failure> {
         let input: Value = serde_json::from_str(input_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
         let reg = self.write_registry()?;
-        let reader = Registry::new(HttpRpc::new(&self.sequencer), reg);
+        // A change is built from the chain as it is now: fresh reads, never the cache.
+        let reader = Registry::new(Seq::fresh(&self.sequencer), reg);
         self.check_registry_code(&reader, &reg)?;
         let program = writes::account(&input["program"], "program")?;
         let live = reader.header(&program).map_err(|e| writes::Failure::new("transport", e.to_string()))?.map(|h| h.image_id);
@@ -800,7 +820,8 @@ impl ProgramRegistry {
         let input: Value = serde_json::from_str(input_json).map_err(|e| writes::Failure::input(format!("not JSON: {e}")))?;
         let reg = self.write_registry()?;
         let at = writes::target(&input)?;
-        let reader = Registry::new(HttpRpc::new(&self.sequencer), reg);
+        // A change is built from the chain as it is now: fresh reads, never the cache.
+        let reader = Registry::new(Seq::fresh(&self.sequencer), reg);
         self.check_registry_code(&reader, &reg)?;
         let e = reader.entry(&at).map_err(|e| writes::Failure::new("transport", e.to_string()))?
             .ok_or_else(|| writes::Failure::new("no_entry", format!("there is no registry entry at {}", at.to_base58())))?;
@@ -817,17 +838,19 @@ impl ProgramRegistry {
             // Every subscriber sees this: only the job and how it ended. The rest (entry, who
             // asked, the CLI's output) is for submit_status, which shows each app only its own.
             let detail = json!({"job": job.id, "state": job.state}).to_string();
+            // A change settled: what was read before it may be out of date.
+            net::forget_all();
             emit_change_settled(&job.id, job.state, &detail);
         })?;
         Ok(job.json())
     }
 
     /// LNS reads for the configured sequencer and LNS program, kept across calls.
-    fn names(&mut self) -> Result<&mut Names<HttpRpc>, String> {
+    fn names(&mut self) -> Result<&mut Names<Seq>, String> {
         let lns = self.lns.ok_or("no LNS program configured: call config_set with {\"lns\": \"<program id>\"}")?;
         let current = matches!(&self.names, Some((seq, l, _)) if *seq == self.sequencer && *l == lns);
         if !current {
-            self.names = Some((self.sequencer.clone(), lns, Names::new(HttpRpc::new(&self.sequencer), lns)));
+            self.names = Some((self.sequencer.clone(), lns, Names::new(Seq::cached(&self.sequencer), lns)));
         }
         Ok(&mut self.names.as_mut().expect("just set").2)
     }
@@ -1075,6 +1098,7 @@ impl ProgramRegistryModule for ProgramRegistry {
             next.apply(&v).map_err(writes::Failure::input)?;
             next.save()?;
             *self = next;
+            net::forget_all();
             Ok(self.shown())
         })())
     }
@@ -1203,6 +1227,11 @@ impl ProgramRegistryModule for ProgramRegistry {
             q.outcome = Some(Err(()));
             Ok(json!({"request": request.trim(), "state": "denied"}))
         })())
+    }
+
+    fn forget_reads(&mut self) -> String {
+        net::forget_all();
+        reply(Ok(json!({"forgotten": true})))
     }
 
     fn signer_status(&mut self) -> String {
@@ -1539,6 +1568,69 @@ mod tests {
     /// Live read of our rc3 chain's LNS (the built-in network file): jef05 carries an NFT deed,
     /// a version-7 record, which SDKs before cec2133 refused to decode. Needs the network, so it
     /// is not in the default run: `cargo test -- --ignored live_`.
+    /// A rate-limited sequencer (Cloudflare's 429 page) reaches an app as plain words and a code,
+    /// never the page, and the module answers at once inside the limit's window.
+    #[test]
+    fn a_rate_limited_sequencer_is_plain_words() {
+        let (url, hits) = net::tests::serve(429, "Retry-After: 5\r\n", net::tests::CLOUDFLARE_429);
+        let reg = AccountId::from_base58(REG).expect("id");
+        let mut m = ProgramRegistry::with_settings(url, Some(reg), "http://127.0.0.1:9".into(), None, None);
+        let raw = m.list_entries(String::new(), 25);
+        let v = parsed(&raw);
+        assert_eq!((v["success"].clone(), v["code"].clone(), v["error"].clone()), (json!(false), json!("rate_limited"), json!("The network is busy. Trying again in a few seconds.")), "{v}");
+        assert_eq!(v["retry_after_ms"], 5000);
+        assert!(v["detail"].as_str().is_some_and(|d| d.starts_with("HTTP 429: Access denied")), "{v}");
+        for bad in ["<", "doctype", "script"] {
+            assert!(!raw.to_lowercase().contains(bad), "{bad} in {raw}");
+        }
+        // Inside the window: answered at once, nothing sent.
+        let started = std::time::Instant::now();
+        let again = parsed(&m.resolve_program(REG.into()));
+        assert_eq!(again["code"], "rate_limited", "{again}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// A sequencer that answers 502 with a page: "Can't reach the network right now."
+    #[test]
+    fn an_unreachable_sequencer_is_plain_words() {
+        let (url, _) = net::tests::serve(502, "", "<html><body>Bad gateway</body></html>");
+        let mut m = ProgramRegistry::with_settings(url, Some(AccountId::from_base58(REG).expect("id")), "http://127.0.0.1:9".into(), None, None);
+        let v = parsed(&m.program_label(REG.into()));
+        assert_eq!((v["code"].as_str(), v["error"].as_str(), v["detail"].as_str()), (Some("unreachable"), Some("Can't reach the network right now."), Some("HTTP 502: Bad gateway")), "{v}");
+    }
+
+    /// forget_reads answers for anyone.
+    #[test]
+    fn forget_reads_answers() {
+        assert_eq!(parsed(&ProgramRegistry::default().forget_reads())["value"]["forgotten"], true);
+    }
+
+    /// What a cold open of the registry browser asks the module, in order: settings, the first
+    /// page, then the newest entry opened (its four reads and the label RegistryLabel asks
+    /// again), then a second entry opened. Run against a counting forwarder to count the
+    /// sequencer requests: `LEZREG_COLD_RPC=<url> LEZREG_COLD_REG=<id> cargo test -- --ignored cold_open --nocapture`.
+    #[test]
+    #[ignore = "needs a sequencer and a registry"]
+    fn cold_open_reads() {
+        let rpc = std::env::var("LEZREG_COLD_RPC").expect("LEZREG_COLD_RPC");
+        let reg = AccountId::from_base58(&std::env::var("LEZREG_COLD_REG").expect("LEZREG_COLD_REG")).expect("registry id");
+        let mut m = ProgramRegistry::with_settings(rpc, Some(reg), "http://127.0.0.1:9".into(), None, None);
+        let _ = m.config_get();
+        let list = parsed(&m.list_entries(String::new(), 25));
+        assert_eq!(list["success"], true, "{list}");
+        let items = list["value"]["items"].as_array().expect("items").clone();
+        for (n, item) in items.iter().take(2).enumerate() {
+            let program = item["entry"]["program"].as_str().or_else(|| item["link"]["program"].as_str()).expect("program").to_owned();
+            for (what, r) in [("resolve_program", m.resolve_program(program.clone())), ("program_label", m.program_label(program.clone())),
+                              ("third_party_entries", m.third_party_entries(program.clone())), ("get_idl", m.get_idl(program.clone())),
+                              ("program_label", m.program_label(program.clone()))] {
+                assert!(parsed(&r).get("success").is_some(), "{what}: {r}");
+            }
+            eprintln!("COLD-OPEN step {} done (entry {n} opened)", n + 1);
+        }
+    }
+
     #[test]
     #[ignore = "reads the live rc3 chain"]
     fn live_a_deeded_lns_name_reads() {

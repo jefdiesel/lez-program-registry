@@ -86,7 +86,11 @@ moves it with `logosctl call program_registry config_set '{"network_file": "<abs
 single values (`sequencer`, `registry`, `lns`); `config_get` shows what is in use. Build:
 `nix build .#lgx-portable` in `module/` and in `registry_browser/` (as `module.yml` does); install
 and use: `docs/INTEGRATE.md`. Both manifests carry `"author": "lns:jefdiesel"`.
-Since 0.1.7 Basecamp shows the browser as "Apps" (display name only; the ids `registry_browser` and
+Since program_registry 0.3.3 every sequencer read goes through one paced client in the module
+(`module/rust-lib/src/net.rs`: at most 3 requests a second, reads batched 20 to a request and cached
+30 s, writes read fresh); a 429 answers at once with `code: "rate_limited"` and `retry_after_ms`, and the
+browser (0.1.8) retries reads itself (2, 4, 8, 16 s, then "Still busy" with Try again). No response body
+ever reaches the screen. Since 0.1.7 Basecamp shows the browser as "Apps" (display name only; the ids `registry_browser` and
 `program_registry` are unchanged). Since 0.1.3 it reads like a guidebook: an index grouped by section (from tags), each entry a
 title, one sentence and its publisher, with a guide page beside it and everything technical folded
 under "Technical details". Titles and sentences come from the entry (`registry_browser/qml/logic.mjs`,

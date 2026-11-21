@@ -24,14 +24,59 @@ export function parsed(reply) {
   return reply;
 }
 
-/** `{ok, value, error, code}` from a module reply, whatever shape it came in. */
+/** `{ok, value, error, code, detail, retryAfterMs}` from a module reply, whatever shape it came
+ * in. A failure to reach the network is plain words with code "rate_limited" or "unreachable"
+ * (as program_registry 0.3.3 answers; an older module's raw text is read the same way), and
+ * `detail` holds its cause as plain text for a technical-details line, never a response body. */
 export function answer(reply) {
   const r = parsed(reply);
   if (r === undefined || r === null || r === "")
-    return { ok: false, value: null, error: "The program_registry module didn't answer in time.", code: "timeout" };
+    return { ok: false, value: null, error: "The program_registry module didn't answer in time.", code: "timeout", detail: "", retryAfterMs: 0 };
   if (typeof r !== "object" || r.success === undefined)
-    return { ok: false, value: null, error: "The program_registry module is missing or out of date: install it from the catalog.", code: "no_module" };
-  return { ok: !!r.success, value: r.value, error: r.error || "", code: r.code || "" };
+    return { ok: false, value: null, error: "The program_registry module is missing or out of date: install it from the catalog.", code: "no_module", detail: "", retryAfterMs: 0 };
+  if (r.success) return { ok: true, value: r.value, error: "", code: r.code || "", detail: "", retryAfterMs: 0 };
+  const n = networkError(r.error, r.code, r.detail, r.retry_after_ms);
+  return n ? Object.assign({ ok: false, value: null }, n) : { ok: false, value: null, error: plainText(r.error, 300), code: r.code || "", detail: "", retryAfterMs: 0 };
+}
+
+/** Text with markup (tags, comments, scripts, styles) removed and spaces collapsed, at most `n`
+ * characters: what an error page says, never the page. Also cleaned as `clean` does. */
+export function plainText(s, n) {
+  let t = String(s === undefined || s === null ? "" : s)
+    .replace(/<!--[\s\S]*?(-->|$)/g, " ").replace(/<script[\s\S]*?(<\/script>|$)/gi, " ").replace(/<style[\s\S]*?(<\/style>|$)/gi, " ")
+    .replace(/<[^>]*(>|$)/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "‹").replace(/&gt;/g, "›");
+  t = clean(t).replace(/\u23CE/g, " ").replace(/\s+/g, " ").trim().replace(/[<>]/g, "");
+  return n && t.length > n ? t.slice(0, n) : t;
+}
+
+export const BUSY_WORDS = "The network is busy. Trying again in a few seconds.";
+export const STILL_BUSY_WORDS = "Still busy. Try again in a minute.";
+export const UNREACHABLE_WORDS = "Can't reach the network right now.";
+
+/** A failure about reaching the network, as `{error, code, detail, retryAfterMs}`, or null. */
+export function networkError(error, code, detail, retryAfterMs) {
+  const raw = String(error || "");
+  const why = plainText(detail || raw.replace(/^.*?cannot reach the sequencer at \S+?:\s+/i, ""), 200);
+  if (code === "rate_limited" || /\bHTTP 429\b|rate.?limit|Error 1015/i.test(raw))
+    return { error: BUSY_WORDS, code: "rate_limited", detail: why || "HTTP 429", retryAfterMs: Number(retryAfterMs) || 0 };
+  if (code === "unreachable" || /cannot reach the sequencer|\bHTTP 5\d\d\b|not JSON|<!doctype|<html/i.test(raw))
+    return { error: UNREACHABLE_WORDS, code: "unreachable", detail: why, retryAfterMs: 0 };
+  return null;
+}
+
+/** Automatic tries after a rate limit before saying "Still busy". */
+export const MAX_RETRIES = 4;
+
+/** How long to wait before try `attempt` (0-based) after a rate limit: 2, 4, 8, 16 s, or what
+ * the sequencer asked for when that is longer; never more than a minute. */
+export function retryDelay(attempt, retryAfterMs) {
+  const base = 2000 * Math.pow(2, Math.max(0, Math.min(attempt, 4)));
+  return Math.min(60000, Math.max(base, Number(retryAfterMs) || 0));
+}
+
+/** Module methods an app may retry by itself: reads only, never a change or an answer to one. */
+export function retryable(method) {
+  return ["config_get", "list_entries", "search_name", "resolve_program", "program_label", "third_party_entries", "get_idl"].includes(method);
 }
 
 /** Which kind of entry a listed item is: "deployer", "community" or "unverified". */
@@ -72,7 +117,9 @@ export function idlSummary(v) {
   }
   if (v.status === "unknown-format")
     return { ok: true, text: `IDL available${fmt}, format not recognised: the bytes match the chain, but this app can't read its calls.`, instructions: [] };
-  const why = v.reason || String(v.status || "unknown").replace(/^unavailable:\s*/, "");
+  const raw = v.reason || String(v.status || "unknown").replace(/^unavailable:\s*/, "");
+  const n = networkError(raw);
+  const why = n ? n.error.replace(/\.$/, "") : plainText(raw, 300);
   return { ok: false, text: `IDL unavailable: ${String(why).replace(/^unavailable:\s*/, "")}. The entry still shows; its interface can't be read right now.`, instructions: [] };
 }
 
@@ -142,7 +189,9 @@ export function jobText(job) {
   if (job.state === "running") return `${clean(job.what)}: sending…`;
   if (job.state === "applied") return `${clean(job.what)}: applied${job.receipt && job.receipt.block ? " in block " + job.receipt.block : ""}`;
   if (job.state === "awaiting_approval" || job.state === "denied" || job.state === "expired") return `request ${clean(job.state)}`;
-  return `${clean(job.what)}: failed${job.code ? " (" + clean(job.code) + ")" : ""}: ${clean(job.error) || "no reason given"}`;
+  const n = networkError(job.error, job.code);
+  if (n) return `${clean(job.what)}: failed: ${n.error}`;
+  return `${clean(job.what)}: failed${job.code ? " (" + clean(job.code) + ")" : ""}: ${plainText(job.error, 300) || "no reason given"}`;
 }
 
 /** The heading of another app's waiting request. */
@@ -166,6 +215,14 @@ export function titleCase(name) {
     if (/^v\d+(\.\d+)*$/.test(low)) return low;
     return w.charAt(0).toUpperCase() + w.slice(1);
   }).join(" ");
+}
+
+/** A program name as an app title, when its description gives none: in title case, without a
+ * leading "LEZ" (the coin) or "Logos" (the network), which name no app ("lez-token" → "Token"). */
+export function fallbackTitle(name) {
+  const t = titleCase(name);
+  const rest = t.replace(/^((LEZ|Logos)\s+)+/i, "");
+  return rest || t;
 }
 
 /** Text without its (parenthetical asides), and tidy spaces around what is left. */
@@ -202,14 +259,14 @@ export function guideText(entry, fallbackName) {
   const e = entry || {};
   const name = clean(e.name || fallbackName || "");
   const about = clean(e.description || "").replace(/⏎/g, " ").replace(/\s+/g, " ").trim();
-  let title = titleCase(name);
+  let title = fallbackTitle(name);
   let rest = about;
   const colon = about.indexOf(": ");
   if (colon > 0) {
     const lead = about.slice(0, colon).trim();
     const plain = !/[,()[\].;]/.test(lead) && lead.split(/\s+/).length <= 3 && lead.length <= 32;
     if (plain) { title = lead; rest = about.slice(colon + 2); }
-    else if (title && withoutAsides(lead).toLowerCase().replace(/^the\s+/, "").startsWith(title.toLowerCase())) rest = about.slice(colon + 2);
+    else if (title && withoutAsides(lead).toLowerCase().replace(/^the\s+/, "").replace(/^((lez|logos)\s+)+/, "").startsWith(title.toLowerCase())) rest = about.slice(colon + 2);
   }
   const more = about.slice(firstSentence(about).length).trim();
   return { title: title || "Unnamed program", sentence: tidySentence(withoutAsides(firstSentence(rest)), 150), about, more };
@@ -241,85 +298,74 @@ export function sectionOf(tags) {
   return t.length ? titleCase(t[0]) : "Other";
 }
 
-function sectionRank(s) {
-  const i = SECTIONS.findIndex(([name]) => name === s);
-  return i >= 0 ? i : s === "Other" ? 1000 : 100;
-}
 
 /** The family key of a name: the name without a trailing version ("bridge-v7" → "bridge"). */
 function familyKey(name) {
   return clean(name).toLowerCase().replace(/[-_]v\d+$/, "");
 }
 
-/** The index as rows, in reading order:
- *   {type: "heading", text}
- *   {type: "entry", item, title, sentence, publisher, proven, note, secondary, family}
- * Entries whose names differ only by a version ("x-v6", "x-v7"), or extend such a name
- * ("x-token"), and that have the SAME author account, read as one family: the newest (highest
- * seq) leads under the family's title, the others follow as secondary rows, newest first.
- * Sections follow SECTIONS, then other tags A–Z, then "Other"; families A–Z by title inside. */
-export function indexRows(items) {
-  const listed = list(items).filter((i) => i && (i.entry || i.link));
-  const nameOf = (i) => (i.entry ? i.entry.name : i.link.name) || "";
-  const authorOf = (i) => (i.entry ? i.entry.author : i.link.registrant) || "";
-  // Keys that some versioned name ("…-vN") introduces: only these gather a family.
-  const versioned = new Set(listed.filter((i) => familyKey(nameOf(i)) !== clean(nameOf(i)).toLowerCase()).map((i) => authorOf(i) + "\u0000" + familyKey(nameOf(i))));
-  const families = new Map();
-  for (const i of listed) {
-    const key = familyKey(nameOf(i));
-    const author = authorOf(i);
-    let fam = null;
-    for (const v of versioned) {
-      const [a, k] = v.split("\u0000");
-      if (a === author && (key === k || key.startsWith(k + "-") || key.startsWith(k + "_")) && (!fam || k.length > fam.length)) fam = k;
-    }
-    const id = fam !== null ? author + "\u0000" + fam : "\u0001" + i.address;
-    if (!families.has(id)) families.set(id, { key: fam, members: [] });
-    families.get(id).members.push(i);
+const nameOfItem = (i) => (i.entry ? i.entry.name : i.link.name) || "";
+const authorOfItem = (i) => (i.entry ? i.entry.author : i.link.registrant) || "";
+
+/** Versions of one app: entries by the SAME author account whose names differ only by a
+ * trailing version ("x-v6", "x-v7"). A different program stays its own app, even when its
+ * name extends another's ("x-token"). Each version list newest first (highest seq). */
+function versionsOf(items) {
+  const groups = new Map();
+  for (const i of list(items).filter((i) => i && (i.entry || i.link))) {
+    const versioned = familyKey(nameOfItem(i)) !== clean(nameOfItem(i)).toLowerCase();
+    const id = versioned ? authorOfItem(i) + "\u0000" + familyKey(nameOfItem(i)) : "\u0001" + i.address;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(i);
   }
-  const groups = [];
-  for (const f of families.values()) {
-    f.members.sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0));
-    const lead = f.members[0];
-    const family = f.members.length > 1;
-    const leadText = guideText(lead.entry, nameOf(lead));
-    const title = family ? titleCase(f.key) : leadText.title;
-    const variant = (i) => titleCase(clean(nameOf(i)).slice(f.key.length).replace(/^[-_]/, "")) || "Original";
-    const rows = f.members.map((i, n) => {
-      const t = guideText(i.entry, nameOf(i));
-      const p = publisherOf(i.entry || { author: authorOf(i) });
-      return {
-        type: "entry", item: i, title: n === 0 ? title : variant(i), sentence: t.sentence, publisher: p.text, proven: p.proven,
-        note: family ? (n === 0 ? `${variant(i)}, the newest of ${f.members.length}` : "") : "", secondary: n > 0, family: family ? title : "",
-        variant: family ? variant(i) : "",
-      };
-    });
-    groups.push({ section: sectionOf(lead.entry ? lead.entry.tags : []), title, rows });
-  }
-  groups.sort((a, b) => sectionRank(a.section) - sectionRank(b.section) || a.section.localeCompare(b.section) || a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
-  const out = [];
-  let section = null;
-  for (const g of groups) {
-    if (g.section !== section) { out.push({ type: "heading", text: g.section }); section = g.section; }
-    out.push(...g.rows);
-  }
-  return out;
+  const all = [...groups.values()];
+  for (const g of all) g.sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0));
+  return all;
 }
 
-/** What the detail page leads with, for one listed item: the index row's words, its family's
- * other members ({address, label}) and the full title ("Names EVM Bridge v6"). */
+/** An app's title without a trailing version ("Bridge v7" → "Bridge"), for the index. */
+function appTitle(title) {
+  return title.replace(/\s+v\d+(\.\d+)*$/i, "") || title;
+}
+
+/** The index as rows, in reading order:
+ *   {type: "heading", text}
+ *   {type: "entry", item, title, sentence, publisher, proven, note, secondary, older}
+ * One plain line per app, A–Z by title, no headings. Of several versions of one app (see
+ * versionsOf) only the newest is listed, under its title without the version; the older ones
+ * (`older`, newest first) are on its guide page, not in the index. (`type` stays so a caller can
+ * still add headings of its own.) */
+export function indexRows(items) {
+  const groups = versionsOf(items).map((versions) => {
+    const lead = versions[0];
+    const t = guideText(lead.entry, nameOfItem(lead));
+    const p = publisherOf(lead.entry || { author: authorOfItem(lead) });
+    const title = versions.length > 1 ? appTitle(t.title) : t.title;
+    return {
+      section: sectionOf(lead.entry ? lead.entry.tags : []), title,
+      row: { type: "entry", item: lead, title, sentence: t.sentence, publisher: p.text, proven: p.proven,
+             note: versions.length > 1 ? `the newest of ${versions.length} versions` : "", secondary: false, older: versions.slice(1) },
+    };
+  });
+  // One flat list, A–Z by title (no section headings: Jef, 2026-11-21).
+  groups.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }) || a.title.localeCompare(b.title));
+  return groups.map((g) => g.row);
+}
+
+/** What the guide page leads with, for one listed item: its own title, sentence, About text and
+ * publisher, its section, and the other versions of the same app (`versions`: [{address, label,
+ * newest}], newest first, without itself). `newest` says whether this item is the newest. */
 export function guideOf(item, items) {
   if (!item) return null;
-  const rows = indexRows(list(items).some((i) => i && i.address === item.address) ? items : list(items).concat([item]));
-  const row = rows.find((r) => r.type === "entry" && r.item.address === item.address);
-  const name = item.entry ? item.entry.name : item.link ? item.link.name : "";
+  const all = list(items).some((i) => i && i.address === item.address) ? items : list(items).concat([item]);
+  const versions = versionsOf(all).find((g) => g.some((i) => i.address === item.address)) || [item];
+  const name = nameOfItem(item);
   const t = guideText(item.entry, name);
-  const family = row && row.family ? rows.filter((r) => r.type === "entry" && r.family === row.family && r.item.address !== item.address
-      && (r.item.entry ? r.item.entry.author : r.item.link.registrant) === (item.entry ? item.entry.author : item.link.registrant)).map((r) => ({ address: r.item.address, label: r.variant + (r.secondary ? "" : " (newest)") })) : [];
   const p = publisherOf(item.entry || { author: item.link ? item.link.registrant : "" });
   return {
-    title: row && row.family ? titleCase(name) : t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account,
-    family, section: sectionOf(item.entry ? item.entry.tags : []),
+    title: t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account,
+    section: sectionOf(item.entry ? item.entry.tags : []), newest: versions[0].address === item.address,
+    versions: versions.filter((i) => i.address !== item.address).map((i, n) => ({ address: i.address, label: guideText(i.entry, nameOfItem(i)).title, newest: i.address === versions[0].address })),
   };
 }
 
@@ -353,6 +399,12 @@ export function day(ms) {
 export function hostOf(url) {
   const m = /^[a-z]+:\/\/([^/:?#]+)/i.exec(clean(url));
   return m ? m[1] : clean(url);
+}
+
+/** Whether a Names app reply failed for a network reason worth trying again (busy or unreachable). */
+export function reverseRetry(reply) {
+  const a = answer(reply);
+  return !a.ok && (a.code === "rate_limited" || a.code === "unreachable");
 }
 
 /** A name the Names app's `reverse` gave for an account, or "" (no name, no Names app, odd reply). */
