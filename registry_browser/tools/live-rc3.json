@@ -1,5 +1,5 @@
 {
- "_about": "list_entries as read from the live rc3 registry 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82 at https://lez.nameswallet.app/ on 2026-11-21, after every entry got a \"Title: sentence.\" description with no LEZ or Logos in its title (lezreg list --json, the SDK serializer the module uses). Test fixture for logic.test.mjs and tools/render.py.",
+ "_about": "list_entries as read from the live rc3 registry 7sGWX1JTYoD2GFs69sWdX9PqJzhpcdk8ouZBu3BYeY82 at https://lez.nameswallet.app/ on 2026-11-21: every entry has a \"Title: sentence.\" description without LEZ or Logos in its title, and the bridge token is tagged part-of-names-evm-bridge (lezreg list --json, the SDK serializer the module uses). Test fixture for logic.test.mjs and tools/render.py.",
  "items": [
   {
    "address": "ECRWE8kjRpeDmT4q2Y3s7VtSLXZKvUqBHBsNBnazeKkq",
@@ -346,7 +346,7 @@
      "manifest_path": "methods/token_guest/Cargo.toml",
      "risc0_build": "3.0.5"
     },
-    "description": "Bridged ETH: the tokens the bridge mints when you bring ETH in. Shared by bridge versions v3 to v7 (RFP-022). Image ac175cb5. Native build, not reproducible.",
+    "description": "Bridge token: the tokens Bridge mints when you bring ETH in. Shared by bridge versions v3 to v7 (RFP-022). Image ac175cb5. Native build, not reproducible.",
     "frozen": false,
     "idl": {
      "cid": "zb2rhbVCq69PYp2TQfUrqdzaw2kaXsYir2zVEqGvQDDzHYAH5",
@@ -360,7 +360,7 @@
     "program": "5w6nTkftFFDy8mtdpnKpZVetGQJ2WCKdhmpJsAYArbU7",
     "registered_at": 1795197517723,
     "registrant": "EfVaSpczPPEqYrWy6QGtgBt1ULFCaSPT72cjxmbeV8yP",
-    "revision": 4,
+    "revision": 5,
     "source": {
      "archive": null,
      "commit": "fb1a0284a613e75d5ae0a0313d1a700c91ffb202",
@@ -369,9 +369,10 @@
     },
     "tags": [
      "bridge",
-     "token"
+     "token",
+     "part-of-names-evm-bridge"
     ],
-    "updated_at": 1795223097496,
+    "updated_at": 1795225183389,
     "version": "0.1.0"
    },
    "freshness": {

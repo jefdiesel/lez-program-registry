@@ -1,5 +1,5 @@
 // The top of a guide page: Back when nested, a quiet section word, the title, one plain
-// sentence, who published it (italics when it is their own unconfirmed words, with `publisherNote`
+// sentence, an optional context line ("Part of Bridge"), who published it (italics when it is their own unconfirmed words, with `publisherNote`
 // saying so), an optional warning that matters to a reader, then what you can do.
 // `actions`: [{key, label, strong}] → actionPressed(key). Plain text throughout.
 import QtQuick
@@ -16,10 +16,14 @@ ColumnLayout {
     property bool proven: true
     property string publisherNote: ""
     property string warning: ""
+    // A quiet line under the title: `contextLabel` then `contextLink` as a link ("Part of" Bridge).
+    property string contextLabel: ""
+    property string contextLink: ""
     property var actions: []
     property string workingKey: ""
     signal back()
     signal actionPressed(string key)
+    signal contextPressed()
     Layout.fillWidth: true
     spacing: 8
     BackButton { visible: guide.backLabel !== ""; look: guide.look; label: guide.backLabel; onPressed: guide.back(); Layout.bottomMargin: 8 }
@@ -42,6 +46,13 @@ ColumnLayout {
         font.pixelSize: look.px(28)
         font.weight: Font.DemiBold
         wrapMode: Text.WordWrap
+    }
+    Flow {
+        visible: guide.contextLabel !== "" || guide.contextLink !== ""
+        Layout.fillWidth: true
+        spacing: 6
+        Text { textFormat: Text.PlainText; text: guide.contextLabel; color: look.dim; font.family: look.sans; font.pixelSize: look.px(15) }
+        Link { look: guide.look; visible: guide.contextLink !== ""; text: guide.contextLink; font.pixelSize: look.px(15); onPressed: guide.contextPressed() }
     }
     Text {
         textFormat: Text.PlainText

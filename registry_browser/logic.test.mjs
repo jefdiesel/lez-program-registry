@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 // engine. Run with: node registry_browser/logic.test.mjs
 import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText,
   titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName, searchForms,
-  fallbackTitle, plainText, networkError, retryDelay, retryable, reverseRetry, MAX_RETRIES, BUSY_WORDS, UNREACHABLE_WORDS } from "./qml/logic.mjs";
+  fallbackTitle, partOfName, plainText, networkError, retryDelay, retryable, reverseRetry, MAX_RETRIES, BUSY_WORDS, UNREACHABLE_WORDS } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -140,10 +140,9 @@ check("sourceLink: GitHub at the commit", sourceLink(byName("vest").entry.source
 check("sourceLink: only https, nothing odd", [sourceLink({ repo: "http://x.org/a", commit: "" }), sourceLink({ repo: "javascript:alert(1)" }), sourceLink({ repo: "https://a b" }), sourceLink(null),
   sourceLink({ repo: "https://git.example/a.git", commit: "abc1234" })], [null, null, null, null, { url: "https://git.example/a", text: "git.example/a" }]);
 check("listedBy", ["deployer", "community", "unverified"].map((k) => listedBy(k).split(":")[0].split(" ").slice(0, 3).join(" ")), ["Listed by the", "A community listing", "This record is"]);
-check("the live index now: App Registry, Bridge, Bridged ETH, Names, NFTs, Tokens, Vest", indexRows(now).map((r) => r.title + ": " + r.sentence),
+check("the live index now: App Registry, Bridge, Names, NFTs, Tokens, Vest (the bridge token is a part of Bridge)", indexRows(now).map((r) => r.title + ": " + r.sentence),
   ["App Registry: The list Apps reads; anyone can add a program with its source and interface.",
    "Bridge: Bring ETH from Sepolia in privately, and send it back out once 2 of 3 signers approve.",
-   "Bridged ETH: The tokens the bridge mints when you bring ETH in.",
    "Names: Claim a name for your account, with a sealed profile and page and an optional NFT deed.",
    "NFTs: Make a collection, then print, send and burn its NFTs.",
    "Tokens: Make your own token, then mint, send and burn it.",
@@ -153,6 +152,18 @@ check("fallback titles drop a leading LEZ or Logos", ["lez-token", "logos-names"
 check("Bridge's page links Bridge v6 as an older version, and back", [guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v7"), now).versions.map((f) => [f.label, f.newest]),
   guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v6"), now).versions.map((f) => [f.label, f.newest]),
   guideOf(now.find((i) => i.entry.name === "names-evm-bridge-token"), now).versions], [[["Bridge v6", false]], [["Bridge", true]], []]);
+// Parts: a program tagged part-of-<name> belongs to that app, not the index.
+const tokenNow = now.find((i) => i.entry.name === "names-evm-bridge-token");
+check("the tag names the app", [partOfName(tokenNow.entry), partOfName({ tags: ["bridge"] }), partOfName({ tags: ["part-of-"] })], ["names-evm-bridge", "", ""]);
+check("Bridge's page lists its part; the part's page says Part of Bridge", [guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v7"), now).parts.map((p) => p.label),
+  guideOf(tokenNow, now).partOf && guideOf(tokenNow, now).partOf.label, guideOf(tokenNow, now).title, guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v6"), now).parts],
+  [["Bridge token"], "Bridge", "Bridge token", []]);
+check("a search finds the part alone, as its own line", indexRows([tokenNow]).map((r) => r.title), ["Bridge token"]);
+const squat = JSON.parse(JSON.stringify(tokenNow));
+Object.assign(squat, { address: "Squat11111111111111111111111111111111111111" });
+Object.assign(squat.entry, { author: Q, name: "fake-bridge-part", description: "Bridge fees: pay me." });
+check("someone else's part-of tag attaches nothing and hides nothing", [indexRows(now.concat([squat])).some((r) => r.item.address === squat.address),
+  guideOf(squat, now.concat([squat])).partOf, guideOf(now.find((i) => i.entry.name === "names-evm-bridge-v7"), now.concat([squat])).parts.map((p) => p.label)], [true, null, ["Bridge token"]]);
 const nowBy = (n) => now.find((i) => i.entry.name === n);
 check("About is what follows the first sentence; nothing left, no About", ["vest", "lez-nft", "names-evm-bridge-v7", "lez_program_registry"].map((n) => guideOf(nowBy(n), now).more),
   ["Built for RFP-017; schedules can be created in batches and cancelled. Native build, not reproducible yet.",

@@ -24,6 +24,7 @@ Item {
     // ── State ───────────────────────────────────────────────────────────
     property var config: null          // config_get: {sequencer, registry, storage_api, …}
     property var items: []             // listed entries: {address, seq, kind, link, entry}
+    property var known: []             // every entry read this session (list and searches): parents and parts are found here
     property string next: ""           // list_entries' cursor for the next page
     property int total: 0
     property string query: ""          // the search shown, "" for the full list
@@ -58,7 +59,7 @@ Item {
 
     // What the screen shows, derived from the entries (logic.mjs).
     readonly property var rows: Logic.indexRows(items)
-    readonly property var guide: Logic.guideOf(selected, items)
+    readonly property var guide: Logic.guideOf(selected, known)
     readonly property var entry: selected ? selected.entry : null
     readonly property string kind: selected ? Logic.kindOf(selected) : ""
     readonly property var source: entry ? Logic.sourceLink(entry.source) : null
@@ -161,7 +162,7 @@ Item {
                 ask("search_name", [forms[n], 50], function(v) {
                     if (root.query !== asked) return    // a newer search took over
                     if (v.items.length === 0 && n + 1 < forms.length) { tryForm(n + 1); return }
-                    items = v.items; next = ""; total = v.items.length; loading = false
+                    items = v.items; next = ""; total = v.items.length; loading = false; remember(v.items)
                     if (v.truncated) notice = "The search looked at the newest " + v.scanned + " entries."
                 }, function(e, code) { problem = code === "rate_limited" ? "" : e; loading = false })
             }
@@ -170,6 +171,7 @@ Item {
         }
         ask("list_entries", [more ? next : "", 25], function(v) {
             items = more ? items.concat(v.items) : v.items
+            remember(v.items)
             next = v.next || ""
             total = v.total
             loading = false
@@ -197,8 +199,18 @@ Item {
     }
 
     function openAddress(address) {
-        for (var i = 0; i < items.length; i++)
-            if (items[i].address === address) { open(items[i]); return }
+        for (var i = 0; i < known.length; i++)
+            if (known[i].address === address) { open(known[i]); return }
+    }
+
+    /// Keeps every entry read (newest copy wins), so a part found by a search still knows its app.
+    function remember(list) {
+        var byAddress = {}
+        var out = []
+        var all = known.concat(list || [])
+        for (var i = all.length - 1; i >= 0; i--)
+            if (!byAddress[all[i].address]) { byAddress[all[i].address] = true; out.unshift(all[i]) }
+        known = out
     }
 
     /// The LNS name an account goes by, from the Names app's own lookup (`names.reverse`), shown
@@ -511,7 +523,8 @@ Item {
                             // Names only: the sentence and the publisher are on the guide page.
                             secondary: !parent.isHeading && modelData.secondary
                             selected: !parent.isHeading && !!root.selected && (root.selected.address === modelData.item.address
-                                      || modelData.older.some(function(o) { return o.address === root.selected.address }))
+                                      || modelData.older.some(function(o) { return o.address === root.selected.address })
+                                      || modelData.parts.some(function(o) { return o.address === root.selected.address }))
                             onPressed: root.open(modelData.item)
                         }
                     }
@@ -549,6 +562,9 @@ Item {
                         backLabel: root.narrow ? "Apps" : ""
                         onBack: root.selected = null
                         section: ""   // no category kicker over the title
+                        contextLabel: root.guide && root.guide.partOf ? "Part of" : ""
+                        contextLink: root.guide && root.guide.partOf ? root.guide.partOf.label : ""
+                        onContextPressed: if (root.guide && root.guide.partOf) root.openAddress(root.guide.partOf.address)
                         title: root.guide ? root.guide.title : ""
                         sentence: root.guide ? root.guide.sentence : ""
                         publisher: root.guide ? root.guide.publisher : ""
@@ -605,6 +621,18 @@ Item {
                         FactRow { look: root.look; key: "Source"; value: root.source ? root.source.text + (root.entry.source.commit ? " at " + Logic.clean(root.entry.source.commit).slice(0, 7) : "") : "an archive on Logos Storage (see Technical details)" }
                         FactRow { look: root.look; key: "Listed"; value: root.entry ? Logic.day(root.entry.registered_at) + (root.entry.updated_at && Logic.day(root.entry.updated_at) !== Logic.day(root.entry.registered_at) ? ", updated " + Logic.day(root.entry.updated_at) : "") : "" }
                         FactRow { look: root.look; key: "Listing"; value: Logic.listedBy(root.kind) }
+                    }
+
+                    // Programs that are parts of this app (not in the index): one small line of links.
+                    Flow {
+                        visible: !!(root.guide && root.guide.parts.length)
+                        Layout.fillWidth: true
+                        spacing: 14
+                        Text { textFormat: Text.PlainText; text: "Part of " + (root.guide ? root.guide.appTitle : "") + ":"; color: look.dim; font.family: look.sans; font.pixelSize: look.px(15) }
+                        Repeater {
+                            model: root.guide ? root.guide.parts : []
+                            Link { required property var modelData; look: root.look; font.pixelSize: look.px(15); text: modelData.label; onPressed: root.openAddress(modelData.address) }
+                        }
                     }
 
                     // Other versions of the same app (not in the index): one small line of links.

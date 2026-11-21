@@ -323,6 +323,27 @@ function versionsOf(items) {
   return all;
 }
 
+/** The registry name an entry says it is a part of (tag "part-of-<name>"), or "". */
+export function partOfName(entry) {
+  const tag = list(entry && entry.tags).map((t) => clean(t).toLowerCase()).find((t) => /^part-of-[a-z0-9][a-z0-9-]*$/.test(t));
+  return tag ? tag.slice("part-of-".length) : "";
+}
+
+/** For each part (an entry tagged "part-of-<name>"), the version group of its parent: the entry
+ * named <name>, or the versions "<name>-vN", by the SAME author account (anyone else's tag
+ * attaches nothing). Map: part address → parent group (newest first). */
+function partsOf(items, groups) {
+  const out = new Map();
+  for (const i of list(items).filter((i) => i && i.entry)) {
+    const target = partOfName(i.entry);
+    if (!target) continue;
+    const parent = groups.find((g) => g[0].address !== i.address && authorOfItem(g[0]) === authorOfItem(i)
+      && g.some((m) => { const n = clean(nameOfItem(m)).toLowerCase(); return n === target || familyKey(n) === target; }));
+    if (parent) out.set(i.address, parent);
+  }
+  return out;
+}
+
 /** An app's title without a trailing version ("Bridge v7" → "Bridge"), for the index. */
 function appTitle(title) {
   return title.replace(/\s+v\d+(\.\d+)*$/i, "") || title;
@@ -336,7 +357,9 @@ function appTitle(title) {
  * (`older`, newest first) are on its guide page, not in the index. (`type` stays so a caller can
  * still add headings of its own.) */
 export function indexRows(items) {
-  const groups = versionsOf(items).map((versions) => {
+  const all = versionsOf(items);
+  const parts = partsOf(items, all);
+  const groups = all.filter((versions) => !parts.has(versions[0].address)).map((versions) => {
     const lead = versions[0];
     const t = guideText(lead.entry, nameOfItem(lead));
     const p = publisherOf(lead.entry || { author: authorOfItem(lead) });
@@ -344,7 +367,8 @@ export function indexRows(items) {
     return {
       section: sectionOf(lead.entry ? lead.entry.tags : []), title,
       row: { type: "entry", item: lead, title, sentence: t.sentence, publisher: p.text, proven: p.proven,
-             note: versions.length > 1 ? `the newest of ${versions.length} versions` : "", secondary: false, older: versions.slice(1) },
+             note: versions.length > 1 ? `the newest of ${versions.length} versions` : "", secondary: false, older: versions.slice(1),
+             parts: [...parts.entries()].filter(([, g]) => g === versions).map(([a]) => list(items).find((i) => i.address === a)) },
     };
   });
   // One flat list, A–Z by title (no section headings: Jef, 2026-11-21).
@@ -358,14 +382,24 @@ export function indexRows(items) {
 export function guideOf(item, items) {
   if (!item) return null;
   const all = list(items).some((i) => i && i.address === item.address) ? items : list(items).concat([item]);
-  const versions = versionsOf(all).find((g) => g.some((i) => i.address === item.address)) || [item];
+  const groups = versionsOf(all);
+  const versions = groups.find((g) => g.some((i) => i.address === item.address)) || [item];
+  const parts = partsOf(all, groups);
+  const parent = parts.get(item.address);
+  const titleOf = (i) => guideText(i.entry, nameOfItem(i)).title;
   const name = nameOfItem(item);
   const t = guideText(item.entry, name);
   const p = publisherOf(item.entry || { author: item.link ? item.link.registrant : "" });
   return {
     title: t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account,
     section: sectionOf(item.entry ? item.entry.tags : []), newest: versions[0].address === item.address,
-    versions: versions.filter((i) => i.address !== item.address).map((i, n) => ({ address: i.address, label: guideText(i.entry, nameOfItem(i)).title, newest: i.address === versions[0].address })),
+    versions: versions.filter((i) => i.address !== item.address).map((i) => ({ address: i.address, label: titleOf(i), newest: i.address === versions[0].address })),
+    // A part of another app: its parent (newest version) by the same author, or null.
+    partOf: parent ? { address: parent[0].address, label: parent.length > 1 ? appTitle(titleOf(parent[0])) : titleOf(parent[0]) } : null,
+    // The parts of this app (on its newest version's page).
+    parts: versions[0].address === item.address ? [...parts.entries()].filter(([, g]) => g === versions)
+      .map(([a]) => all.find((i) => i.address === a)).filter(Boolean).map((i) => ({ address: i.address, label: titleOf(i) })) : [],
+    appTitle: versions.length > 1 ? appTitle(titleOf(versions[0])) : titleOf(versions[0]),
   };
 }
 
