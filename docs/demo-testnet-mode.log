@@ -5,7 +5,7 @@
 #   sample program X, and its Storage node B as --storage-api. Same Mac mini, same commit.
 LEZ Program Registry: LP-0023 demo (testnet mode), 2026-11-13 17:18:51Z
 repo a0cfd6b83c895f2b7386caec4470e1a5da3ed11e
-host Darwin 24.6.0 arm64; RISC0_DEV_MODE=1; output /Volumes/exos162/logos/lp0023-demo/testnet-out
+host Darwin 24.6.0 arm64; RISC0_DEV_MODE=1; output <work>/lp0023-demo/testnet-out
 == prerequisites (darwin-arm64; LEZ v0.4.0-rc3 (bafd07be), Logos Storage v0.5.3, from e2e.yml/Cargo.toml)
    ok   git
    ok   curl

@@ -21,13 +21,13 @@ The spike also found five DESIGN corrections, listed under "Findings" below. F1â
 | `seedcheck/lib.rs` | Copy of the toy with `revision: u64` plus a `probe` ix, used only to feed the spel CLI's PDA resolver |
 | `out/` | Generated IDLs, spel dry-run JSON, guest build log |
 
-On the Mini everything lives under `/Volumes/exos162/logos/lez-program-registry/spikes/spel-idl/`: binaries in `_deps/spel-root/bin/spel`, and target dirs `_deps/target-spel` (SPEL, 1.94.0) and `_deps/target-04` (0.4, 1.98.1).
+On the Mini everything lives under `<work>/lez-program-registry/spikes/spel-idl/`: binaries in `_deps/spel-root/bin/spel`, and target dirs `_deps/target-spel` (SPEL, 1.94.0) and `_deps/target-04` (0.4, 1.98.1).
 
 ## Commands and trimmed output (Mini)
 
 ```sh
 export PATH=$HOME/.cargo/bin:$HOME/.risc0/bin:/opt/homebrew/bin:$PATH
-cd /Volumes/exos162/logos/lez-program-registry/spikes/spel-idl
+cd <work>/lez-program-registry/spikes/spel-idl
 git clone --branch v0.7.0 --depth 1 https://github.com/logos-co/spel.git _deps/spel     # 4107dcb
 # documented install (README: `cargo install --path spel-cli`), toolchain from its rust-toolchain.toml
 CARGO_TARGET_DIR=$PWD/_deps/target-spel cargo +1.94.0 install --locked --path _deps/spel/spel-cli --root _deps/spel-root

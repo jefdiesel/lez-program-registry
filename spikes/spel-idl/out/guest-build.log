@@ -151,7 +151,7 @@
    Compiling rzup v0.5.2
    Compiling risc0-binfmt v3.0.5
    Compiling risc0-build v3.0.5
-   Compiling toy_methods v0.0.0 (/Volumes/exos162/logos/lez-program-registry/spikes/spel-idl/methods)
+   Compiling toy_methods v0.0.0 (<work>/lez-program-registry/spikes/spel-idl/methods)
     Finished `release` profile [optimized] target(s) in 30.41s
 warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
