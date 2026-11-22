@@ -35,6 +35,7 @@ Item {
     property var idl: null             // get_idl
     property var label: null           // program_label (the local verify mark)
     property var community: []         // third_party_entries
+    property var installedLines: []    // the publisher's apps for this program, against the installed copies
     property bool settingsOpen: false
     property string editVersion: ""
     property string editDescription: ""
@@ -182,7 +183,7 @@ Item {
         selected = item
         var mine = item.address
         var current = function() { return !!root.selected && root.selected.address === mine }
-        resolved = null; idl = null; label = null; community = []
+        resolved = null; idl = null; label = null; community = []; installedLines = []
         change = null
         guideNote = ""
         if (!keepDetails) { techDetails.open = false; authorTools.open = false }
@@ -196,6 +197,30 @@ Item {
         ask("third_party_entries", [program], function(v) { if (current()) community = v }, function(e) {})
         ask("get_idl", [program], function(v) { if (current()) idl = v }, function(e) { if (current()) idl = { status: "unavailable: " + e, idl: null } }, 30000)
         lookUpName(item.entry ? item.entry.author : item.link.registrant)
+        checkInstalled(item.entry, current)
+    }
+
+    /// The version check: for an entry with a proven publisher name, each app that name publishes
+    /// for this program, its installed copy against the newest record (Logic.installedLine).
+    function checkInstalled(listed, current) {
+        if (!listed || listed.author_label_proven !== true) return
+        var by = Logic.publisherOf(listed).text
+        ask("publisher_apps", [by], function(v) {
+            if (!current()) return
+            var found = Logic.appsForEntry(listed, v)
+            installedLines = found.map(function(a) { return { module: a.module, text: "Checking…", tone: "dim", detail: "" } })
+            found.forEach(function(a, at) {
+                var show = function(checked) {
+                    if (!current() || at >= root.installedLines.length) return
+                    var lines = root.installedLines.slice()
+                    lines[at] = Logic.installedLine(by, a, checked)
+                    root.installedLines = lines
+                }
+                ask("verify_app", [a.module], function(r) { show({ ok: true, value: r }) }, function(e) { show({ ok: false, error: e }) }, 60000)
+            })
+        }, function(e) {
+            if (current()) installedLines = [{ module: "", text: "Can't check your installed copy right now.", tone: "dim", detail: Logic.plainText(e, 200) }]
+        }, 60000)
     }
 
     function openAddress(address) {
@@ -621,6 +646,35 @@ Item {
                         FactRow { look: root.look; key: "Source"; value: root.source ? root.source.text + (root.entry.source.commit ? " at " + Logic.clean(root.entry.source.commit).slice(0, 7) : "") : "an archive on Logos Storage (see Technical details)" }
                         FactRow { look: root.look; key: "Listed"; value: root.entry ? Logic.day(root.entry.registered_at) + (root.entry.updated_at && Logic.day(root.entry.updated_at) !== Logic.day(root.entry.registered_at) ? ", updated " + Logic.day(root.entry.updated_at) : "") : "" }
                         FactRow { look: root.look; key: "Listing"; value: Logic.listedBy(root.kind) }
+                    }
+
+                    // The installed copy against the publisher's newest record.
+                    ColumnLayout {
+                        visible: root.installedLines.length > 0
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        spacing: 10
+                        SectionHeading { look: root.look; Layout.fillWidth: true; text: "Your installed copy" }
+                        Repeater {
+                            model: root.installedLines
+                            ColumnLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text { textFormat: Text.PlainText;
+                                    Layout.fillWidth: true
+                                    text: (modelData.module ? modelData.module + ": " : "") + modelData.text
+                                    color: modelData.tone === "good" ? look.good : modelData.tone === "bad" ? look.alarm : modelData.tone === "warn" ? look.ink : look.dim
+                                    wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(16); font.weight: Font.DemiBold
+                                }
+                                Text { textFormat: Text.PlainText;
+                                    visible: modelData.detail !== ""
+                                    Layout.fillWidth: true
+                                    text: modelData.detail
+                                    color: look.dim; wrapMode: Text.Wrap; font.family: look.sans; font.pixelSize: look.px(14)
+                                }
+                            }
+                        }
                     }
 
                     // Programs that are parts of this app (not in the index): one small line of links.

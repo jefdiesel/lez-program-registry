@@ -76,7 +76,7 @@ export function retryDelay(attempt, retryAfterMs) {
 
 /** Module methods an app may retry by itself: reads only, never a change or an answer to one. */
 export function retryable(method) {
-  return ["config_get", "list_entries", "search_name", "resolve_program", "program_label", "third_party_entries", "get_idl"].includes(method);
+  return ["config_get", "list_entries", "search_name", "resolve_program", "program_label", "third_party_entries", "get_idl", "publisher_apps", "verify_app"].includes(method);
 }
 
 /** Which kind of entry a listed item is: "deployer", "community" or "unverified". */
@@ -493,11 +493,12 @@ export function semverCmp(a, b) {
 }
 
 /** What the Apps app says about one installed app, from its `verify_app` answer:
- * `{state, text, detail, tone, module, installed, newest, publisher, cid, keepable}`.
+ * `{state, text, detail, tone, module, installed, newest, publisher}`.
  *   state "up_to_date"   "Up to date": the installed copy is the newest release, proven whole.
  *         "newer"        "Newer version X available": the installed copy is an older release.
  *         "differs"      "Installed copy doesn't match the published one".
  *         "unproven"     the files match a release but the record can't prove the manifest.
+ *         "older_published"  the newest published release is older than the installed copy.
  *         "unpublished"  the app names no publisher, or the publisher publishes no such app.
  *         "unknown"      the check didn't run (no answer, an error).
  * Only a `verified` answer for the newest release is ever "Up to date". */
@@ -511,15 +512,20 @@ export function updateStatus(v) {
   const publisher = clean(claimed.name_checked);
   const out = (state, text, tone, detail) => ({
     state, text, tone, detail: detail || "", module: clean(a && a.module), installed, newest, publisher,
-    cid: record ? clean(record.cid) : "", keepable: !!(record && /^[A-Za-z0-9]{10,100}$/.test(String(record.cid || "")) && releases.length && /^[0-9a-f]{64}$/.test(String(releases[0].sha256 || ""))),
   });
   const s = a ? String(a.status || "") : "";
   const by = publisher ? ` by ${publisher}` : "";
   if (!a || !s) return out("unknown", "Can't check this app right now.", "dim");
   if (s === "verified") {
     if (a.newest === true) return out("up_to_date", "Up to date", "good", `${installed || newest}, the newest release published${by}.`);
-    return out("newer", newest ? `Newer version ${newest} available` : "A newer version is available", "warn",
-      `This copy (${installed || "?"}) is an older release the publisher still vouches for.`);
+    const c = semverCmp(installed, newest);
+    if (c === -1) return out("newer", `Newer version ${newest} available`, "warn",
+      `This copy (${installed}) is an older release the publisher still vouches for.`);
+    // Vouched for, yet not older than the newest release: going back is never called an update.
+    if (c === 1) return out("older_published", `The published version ${newest} is older than yours`, "warn",
+      `This copy (${installed}) is still vouched for${by}, whose newest release is now ${newest}.`);
+    return out("differs", "Installed copy doesn't match the published one", "bad",
+      `The publisher still vouches for this copy (${installed || "?"}), but its newest release (${newest || "?"}) has other contents.`);
   }
   if (s === "mismatch") {
     // The installed files are no release the record names. An older version than the newest is an
@@ -542,16 +548,32 @@ export function updateStatus(v) {
   return out("unknown", "Can't check this app right now.", "dim");
 }
 
-/** A `keep_app_status` answer (the module's keep-a-copy job) in words. */
-export function keepText(j) {
-  if (!j || typeof j !== "object") return "";
-  const what = `${clean(j.module)} ${clean(j.version)}`.trim();
-  if (j.state === "running") return `Keeping ${what} on your Storage node…`;
-  if (j.state === "already_there") return `${what} was already on your Storage node: checked and shared.`;
-  if (j.state === "fetched") return `${what} is now on your Storage node: checked and shared.`;
-  if (j.state === "failed") {
-    const n = networkError(j.error, j.code);
-    return `Couldn't keep ${what}: ${n ? n.error : plainText(j.error, 300) || "no reason given"}`;
+/** The apps a publisher's LNS name lists for a registry entry's program, from `publisher_apps`:
+ * `[{module, version}]`. That answer names each program by its registry entry (name and author),
+ * or by its id where the entry couldn't be read. */
+export function appsForEntry(entry, reply) {
+  if (!entry) return [];
+  const same = (p) => !!p && ((clean(p.name) === clean(entry.name) && p.author === entry.author) || p.text === entry.program);
+  return list(reply && reply.apps).filter((a) => a && a.module && !a.error && list(a.programs).some(same))
+    .map((a) => ({ module: clean(a.module), version: clean(a.version) }));
+}
+
+/** One app's line on a guide page: the installed copy against what THIS page's publisher
+ * publishes. `checked` is `{ok, value, error}` from verify_app. A copy that names another
+ * publisher never reads as up to date here, whatever that other name vouches for. */
+export function installedLine(publisher, app, checked) {
+  const newest = clean(app && app.version), module = clean(app && app.module);
+  const line = (state, text, tone, detail) => ({ module, state, text, tone, detail });
+  if (!checked || !checked.ok) {
+    const why = String((checked && checked.error) || "");
+    if (/is not installed in /.test(why)) return line("not_installed", "Not installed", "dim", newest ? `The newest published version is ${newest}.` : "");
+    const n = networkError(why);
+    return line("unknown", "Can't check this app right now.", "dim", n ? n.error : plainText(why, 200));
   }
-  return "";
+  const v = checked.value || {};
+  const named = [v.claimed && v.claimed.name_checked, v.forwarded_from].map((n) => clean(n).toLowerCase());
+  if (v.status && v.status !== "root_mismatch" && !named.includes(clean(publisher).toLowerCase()))
+    return line("differs", "Installed copy doesn't match the published one", "bad", `The installed ${module} is not published by ${clean(publisher)}.`);
+  const u = updateStatus(v);
+  return line(u.state, u.text, u.tone, u.detail);
 }

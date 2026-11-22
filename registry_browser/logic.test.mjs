@@ -3,7 +3,8 @@ import { readFileSync, readdirSync } from "node:fs";
 // engine. Run with: node registry_browser/logic.test.mjs
 import { clean, requestTitle, shortId, answer, kindOf, kindBadge, freshnessText, idlSummary, labelText, when, changeLines, jobText,
   titleCase, guideText, publisherOf, sectionOf, indexRows, guideOf, sourceLink, listedBy, day, hostOf, reverseName, searchForms,
-  fallbackTitle, partOfName, plainText, networkError, retryDelay, retryable, reverseRetry, MAX_RETRIES, BUSY_WORDS, UNREACHABLE_WORDS } from "./qml/logic.mjs";
+  fallbackTitle, partOfName, plainText, networkError, retryDelay, retryable, reverseRetry, MAX_RETRIES, BUSY_WORDS, UNREACHABLE_WORDS,
+  semverCmp, updateStatus, appsForEntry, installedLine } from "./qml/logic.mjs";
 
 let failures = 0;
 const check = (label, got, want) => {
@@ -209,6 +210,47 @@ check("reverseName: the Names app's answer, or nothing", [reverseName(JSON.strin
   reverseName(""), reverseName(JSON.stringify({ success: false, error: "no" })), reverseName(JSON.stringify({ success: true, value: { name: "<b>x</b>" } }))], ["jefdiesel", "", "", "", ""]);
 check("searchForms: one word as typed, titles as names", [searchForms("Vest"), searchForms(" Names EVM  Bridge "), searchForms("program registry"), searchForms("lez_program_registry"), searchForms("")],
   [["vest"], ["names-evm-bridge", "names_evm_bridge", "bridge"], ["program-registry", "program_registry", "registry"], ["lez-program-registry", "lez_program_registry", "registry"], []]);
+// ── Installed copy against the newest record ────────────────────────────────────────────
+const chain = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.1.0", "2.0.0"];
+check("semverCmp: SemVer's own chain, both ways", chain.slice(1).map((v, i) => [semverCmp(chain[i], v), semverCmp(v, chain[i])]), chain.slice(1).map(() => [-1, 1]));
+check("semverCmp: numbers not text, build ignored, huge, not SemVer",
+  [semverCmp("0.6.10", "0.6.9"), semverCmp("0.18.2", "0.18.2+b.7"), semverCmp("18446744073709551615.0.0", "18446744073709551614.0.0"), semverCmp("v1.0.0", "1.0.0"), semverCmp("", "1.0.0"), semverCmp(null, null)],
+  [1, 0, 1, null, null, null]);
+const verdict = (status, installed, newest, more) => Object.assign({ status, module: "vesting_ui", newest: null,
+  claimed: { manifest_version: installed, name_checked: "names", record: newest ? { releases: [{ version: newest }] } : null } }, more || {});
+const said = (v) => { const u = updateStatus(v); return [u.state, u.text]; };
+const DIFFERS = ["differs", "Installed copy doesn't match the published one"];
+check("update: the newest, proven", said(verdict("verified", "0.6.3", "0.6.3", { newest: true })), ["up_to_date", "Up to date"]);
+check("update: an older release still vouched for", said(verdict("verified", "0.6.3", "0.6.4", { newest: false })), ["newer", "Newer version 0.6.4 available"]);
+check("update: an older release no longer in the record", said(verdict("mismatch", "0.6.3", "0.6.4")), ["newer", "Newer version 0.6.4 available"]);
+check("update: 0.6.10 is newer than 0.6.9", said(verdict("mismatch", "0.6.9", "0.6.10")), ["newer", "Newer version 0.6.10 available"]);
+check("update: going back is never called newer", said(verdict("verified", "0.6.4", "0.6.3", { newest: false })), ["older_published", "The published version 0.6.3 is older than yours"]);
+check("update: same version, other files", said(verdict("mismatch", "0.6.3", "0.6.3")), DIFFERS);
+check("update: same version, vouched for but not the newest release", said(verdict("verified", "0.6.3", "0.6.3", { newest: false })), DIFFERS);
+check("update: a higher version nobody published", said(verdict("mismatch", "0.7.0", "0.6.3")), DIFFERS);
+check("update: versions that can't be compared", said(verdict("mismatch", "dev", "0.6.3")), DIFFERS);
+for (const s of ["file_mismatch", "manifest_mismatch", "root_mismatch", "ambiguous"]) check(`update: ${s}`, said(verdict(s, "0.6.3", "0.6.3")), DIFFERS);
+check("update: only verified + newest is ever up to date",
+  ["verified", "files_verified", "mismatch", "not_published", "no_such_name", "unclaimed", "surprise", ""].map((s) => updateStatus(verdict(s, "0.6.3", "0.6.3")).state).concat(updateStatus(null).state).includes("up_to_date"), false);
+check("update: versions from a record are shown cleaned", updateStatus(verdict("mismatch", "1", "2\u202E\n3")).newest, "2\u23CE3");
+const vest = { name: "vest", author: "EfVa", program: "2kgx" };
+check("appsForEntry: by the program's entry or id, never a namesake by someone else", appsForEntry(vest, { apps: [
+  { module: "vesting_ui", version: "0.6.3", programs: [{ name: "vest", author: "EfVa" }] },
+  { module: "by_id", version: "1.0.0", programs: [{ text: "2kgx", error: "busy" }] },
+  { module: "namesake", version: "1.0.0", programs: [{ name: "vest", author: "Other" }] },
+  { module: "broken", error: "bad record" } ] }), [{ module: "vesting_ui", version: "0.6.3" }, { module: "by_id", version: "1.0.0" }]);
+const app = { module: "vesting_ui", version: "0.6.3" }, good = verdict("verified", "0.6.3", "0.6.3", { newest: true });
+const lineState = (by, checked) => installedLine(by, app, checked).state;
+check("installedLine: this publisher, a forward to it, another publisher, not installed, a failed read", [
+  lineState("names", { ok: true, value: good }),
+  lineState("nameswallet", { ok: true, value: Object.assign({}, good, { forwarded_from: "nameswallet" }) }),
+  lineState("forumer", { ok: true, value: good }),
+  lineState("names", { ok: true, value: { status: "unclaimed", claimed: { manifest_version: "0.6.3" } } }),
+  lineState("names", { ok: false, error: "vesting_ui is not installed in /x/LogosBasecamp" }),
+  lineState("names", { ok: false, error: UNREACHABLE_WORDS }), lineState("names", null)],
+  ["up_to_date", "up_to_date", "differs", "differs", "not_installed", "unknown", "unknown"]);
+check("the version check's reads may be retried", [retryable("publisher_apps"), retryable("verify_app")], [true, true]);
+
 // Every Text in the QML shows plain text: no markup from the chain renders as a fake mark,
 // a link or a fetched image (M6 review C). A Text without it fails here.
 for (const f of ["qml/Main.qml", "qml/RegistryLabel.qml", ...readdirSync(new URL("qml/kit/", import.meta.url)).filter((n) => n.endsWith(".qml")).map((n) => "qml/kit/" + n)]) {

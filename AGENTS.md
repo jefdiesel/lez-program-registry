@@ -102,6 +102,14 @@ profile's public account is the entry's author (`module/rust-lib/src/labels.rs`;
 Offscreen renders: `registry_browser/tools/render.py`, with answers from
 `tools/record.py` (logosctl) or `tools/answers_from_lezreg.py` (read-only `lezreg ... --json` output).
 
+Since registry_browser 0.1.11 a guide page also compares the installed app with the publisher's
+newest record (`publisher_apps`, then `verify_app`; `logic.mjs` `installedLine`). `lezreg app sync`
+keeps the newest releases on the user's own Storage node and `app get` refuses a downgrade without
+`--allow-older` (docs/APPS.md §4). Always pass `--storage-api` on a machine where another service
+holds port 8080. Test readers of Storage content run with `--advertise-content=false`: a reader
+that announces and goes away leaves a dead provider behind. As of 2026-11-22 the `sync` binary
+and the 0.1.11 screen have not been run.
+
 ## Work on this repository
 
 - Tests: `cargo test --release -p lezreg-sdk -p lezreg`, `cargo test --release -p lezreg-engine-test`

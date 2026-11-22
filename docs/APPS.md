@@ -202,6 +202,23 @@ Where it shows:
 No web service is needed: step 3 is a chain read. Fetching a catalog to compare before
 installing is a request to the URL the publisher chose, shown to the user.
 
+### The newest version, and keeping a copy
+
+- **In the Apps app** (registry_browser 0.1.11), the guide page of a program whose publisher name
+  is proven shows each app that name publishes for it, against the installed copy: "Up to date"
+  (only `verified` and the newest release), "Newer version X available", or "Installed copy
+  doesn't match the published one". An installed copy is compared by version, recomputed root
+  and manifest SHA-256: the `.lgx` and so its file `sha256` are gone once installed.
+- **`lezreg app get`** refuses a newest release older than the installed copy unless
+  `--allow-older`, and says so when allowed.
+- **`lezreg app sync [<name>[:<module>]...]`** keeps the newest release on your own Storage
+  node: it checks a copy as `get` does, then announces it. With no target it takes the installed
+  apps that name a publisher; `--every <secs>` repeats. Not yet run against a real node.
+- **Logos Storage v0.5.3 often stalls** on content with a single host
+  ([logos-storage-nim#1556](https://github.com/logos-storage/logos-storage-nim/issues/1556)):
+  a first fetch can deliver nothing and a fresh request succeed. Retry, and don't make Storage
+  the only place a package can be downloaded from.
+
 ## 5. Being listed (opt-in)
 
 Listing is separate from identity. A publisher who wants to be found without being named

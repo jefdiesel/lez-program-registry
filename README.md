@@ -245,7 +245,7 @@ The one list of `lezreg` commands (`lezreg <command> --help` for the flags; ever
 | `deploy`, `publish`, `adopt`, `init --detect` | deploy and register; the author flow from `lezreg.toml` | wallet, coins, r0vm |
 | `verify [--mark]`, `verified`, `build` | rebuild in Docker and compare image ids; `--offline` with `--image-tar`, `--vendor-tar`, `--archive-file`, `--no-forge` | Docker |
 | `release prepare` | the unsigned payload for the GitHub Action | nothing |
-| `app show\|verify\|record\|get` | Basecamp apps checked by LNS publisher ([docs/APPS.md](docs/APPS.md)) | sequencer (Storage for `get`) |
+| `app show\|verify\|record\|get\|sync` | Basecamp apps checked by LNS publisher ([docs/APPS.md](docs/APPS.md)) | sequencer (Storage for `get`, `sync`) |
 | `network show [--check-chain]`, `network set` | networks, network files, chain check | nothing (`--check-chain`: sequencer) |
 | `doctor` | sequencer, registry, Storage, r0vm, wallet, Docker, clock | nothing |
 | `storage up` | start a Logos Storage node | the `logos-storage` binary |
@@ -523,6 +523,7 @@ lezreg app record forumer_ui-1.2.0.lgx --upload \
 lezreg app show forumer                       # its apps, and their programs' registry status
 lezreg app verify forumer_ui-1.2.0.lgx        # verified (exit 0) / files_verified (exit 3) / mismatch, root_mismatch, ... (exit 1)
 lezreg app verify ~/Library/Application\ Support/Logos/LogosBasecamp/plugins/forumer_ui   # an installed copy
+lezreg app sync forumer:forumer_ui            # keep the newest release on your own Storage node
 lezreg app get forumer forumer_ui -o app.lgx  # from Logos Storage by CID, written only if sha256 (required) and root match
 ```
 
