@@ -395,6 +395,139 @@ pub fn check_download(module: &str, publishers: &[&str], record: &AppRecord, byt
     Ok(contents)
 }
 
+/// The most a package download may be: larger than any Basecamp module.
+pub const MAX_PACKAGE: usize = 256 * 1024 * 1024;
+
+/// Whether `offered` is an older release than `installed` (SemVer precedence). `false` when
+/// either isn't SemVer: the caller then has nothing to compare, and says so itself.
+#[must_use]
+pub fn is_older(offered: &str, installed: &str) -> bool {
+    crate::text::semver_cmp(offered, installed) == Some(std::cmp::Ordering::Less)
+}
+
+/// Refuses replacing an installed copy with an older release, unless `allow_older`: a download
+/// is never older than what is installed without saying so. `installed` is the installed copy's
+/// manifest version (`None`: nothing installed).
+pub fn check_not_older(module: &str, offered: Option<&str>, installed: Option<&str>, allow_older: bool) -> Result<()> {
+    if let (Some(offered), Some(installed)) = (offered, installed)
+        && is_older(offered, installed)
+        && !allow_older
+    {
+        return Err(Error::Invalid(format!(
+            "the newest release of {module} the publisher vouches for is {}, older than the installed {}; refused (allow an older one explicitly to go back)",
+            crate::text::shown(offered),
+            crate::text::shown(installed)
+        )));
+    }
+    Ok(())
+}
+
+/// Where Basecamp keeps installed modules: Qt's app data folder for `Logos/LogosBasecamp`.
+#[must_use]
+pub fn default_basecamp_data() -> Option<std::path::PathBuf> {
+    let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
+    Some(if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/Logos/LogosBasecamp")
+    } else {
+        std::env::var_os("XDG_DATA_HOME").map_or_else(|| home.join(".local/share"), std::path::PathBuf::from).join("Logos/LogosBasecamp")
+    })
+}
+
+/// The installed copy of `module` in Basecamp's data folder (core modules under `modules/`, ui
+/// apps under `plugins/`), or `None` when it isn't installed. Only a module name becomes a path.
+#[must_use]
+pub fn installed_dir(data: &std::path::Path, module: &str) -> Option<std::path::PathBuf> {
+    if !is_module_name(module) || module.contains("..") || module.starts_with('.') {
+        return None;
+    }
+    ["modules", "plugins"].iter().map(|d| data.join(d).join(module)).find(|p| p.is_dir())
+}
+
+/// The manifest of the installed copy of `module` (its `manifest.json` only: the files are not
+/// hashed, so this is a claim, good for comparing versions, never for vouching).
+pub fn installed_manifest(data: &std::path::Path, module: &str) -> Result<Option<Manifest>> {
+    let Some(dir) = installed_dir(data, module) else { return Ok(None) };
+    let bytes = std::fs::read(dir.join("manifest.json")).map_err(|e| Error::Invalid(format!("cannot read the installed {module}'s manifest.json: {e}")))?;
+    let m = Manifest::parse(&strict_json(&bytes)?)?;
+    if m.name != module {
+        return Err(Error::Invalid(format!("the installed {module} names another module ({})", crate::text::shown(&m.name))));
+    }
+    Ok(Some(m))
+}
+
+/// Every installed module whose manifest names an LNS publisher: `(module, publisher, version)`,
+/// sorted by module. Manifests that can't be read are skipped (they claim nothing to sync).
+#[must_use]
+pub fn installed_published(data: &std::path::Path) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for d in ["modules", "plugins"] {
+        let Ok(entries) = std::fs::read_dir(data.join(d)) else { continue };
+        for e in entries.flatten() {
+            let Some(module) = e.file_name().to_str().map(str::to_owned) else { continue };
+            if let Ok(Some(m)) = installed_manifest(data, &module)
+                && let Some(name) = m.publisher()
+                && !out.iter().any(|(x, _, _): &(String, String, String)| *x == module)
+            {
+                out.push((module, name, m.version));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// How [`keep_copy`] found the newest release on a Storage node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// The node already held the release, and its bytes passed the check.
+    AlreadyThere,
+    /// The node fetched it from the network now, and it passed the check.
+    Fetched,
+}
+
+/// Keeps the newest release a record names on `node`, so the node serves it to others: reads the
+/// node's own copy of the record's `cid` (or fetches it from the network), checks it exactly as
+/// [`check_download`] does (the record's `sha256` and version, the recomputed root, the module
+/// and publisher), then announces it. A fetched copy that fails the check is dropped from the
+/// node again (best effort) and the error returned; nothing is announced.
+pub fn keep_copy(node: &crate::StorageClient, module: &str, publishers: &[&str], record: &AppRecord) -> Result<(Kept, Contents)> {
+    let cid = record
+        .cid
+        .as_deref()
+        .ok_or_else(|| Error::Invalid(format!("the record for {module} gives no Logos Storage CID; nothing to keep")))?;
+    if !is_cid(cid) {
+        return Err(Error::Invalid(format!("the record for {module} names no usable CID")));
+    }
+    if record.newest().sha256.is_none() {
+        return Err(Error::Invalid(format!("the record for {module} gives no sha256 of the .lgx, so a copy can't be checked; nothing kept")));
+    }
+    let storage = |e: crate::storage::StorageError| Error::Invalid(format!("{} ({cid})", crate::text::shown(&e.to_string())));
+    let held = match node.local(cid, MAX_PACKAGE) {
+        Ok(held) => held,
+        Err(e @ crate::storage::StorageError::Unreachable(_)) => return Err(storage(e)),
+        // An incomplete copy (the manifest, not every block): fetch the rest from the network.
+        Err(_) => None,
+    };
+    let (kept, contents) = match held {
+        // A CID fixes its content, so a whole held copy that fails the check means the record's
+        // cid and sha256 disagree: the publisher's mistake, which no fetch would fix.
+        Some(bytes) => (Kept::AlreadyThere, check_download(module, publishers, record, &bytes)?),
+        None => {
+            let bytes = node.fetch(cid, MAX_PACKAGE, true).map_err(storage)?;
+            match check_download(module, publishers, record, &bytes) {
+                Ok(c) => (Kept::Fetched, c),
+                Err(e) => {
+                    let _ = node.delete(cid);
+                    return Err(e);
+                }
+            }
+        }
+    };
+    // Storage v0.5.3 keeps a streamed copy without announcing it (storage_cmd.rs, pin_ref).
+    node.reannounce(cid).map_err(|e| Error::Invalid(format!("kept {cid}, but could not announce it: {}", crate::text::shown(&e.to_string()))))?;
+    Ok((kept, contents))
+}
+
 /// Every `app.<module>` entry of a profile, parsed (a malformed one is kept as its error; a
 /// module whose key is there more than once is one error: the record is ambiguous).
 #[must_use]

@@ -466,3 +466,92 @@ export function searchForms(typed) {
   const longest = words.slice().sort((a, b) => b.length - a.length)[0];
   return [words.join("-"), words.join("_"), longest].filter((q, i, all) => all.indexOf(q) === i);
 }
+
+// ── Installed apps: is this copy the newest the publisher vouches for? ──────────────────────
+// Inputs are program_registry's `verify_app` answers (docs/APPS.md §4): `status` is the verdict;
+// `claimed.manifest_version` is what the installed copy says it is (a claim); the record's
+// releases (newest first) are what the publisher's LNS name vouches for.
+
+/** SemVer 2.0.0 precedence of two versions: -1, 0 or 1, or null when either isn't SemVer.
+ * Numbers are compared as digit strings (no BigInt in QML, and no rounding of big numbers). */
+export function semverCmp(a, b) {
+  const re = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+  const x = re.exec(String(a === undefined || a === null ? "" : a)), y = re.exec(String(b === undefined || b === null ? "" : b));
+  if (!x || !y) return null;
+  const num = (p, q) => p.length !== q.length ? (p.length < q.length ? -1 : 1) : p === q ? 0 : p < q ? -1 : 1;
+  for (let i = 1; i <= 3; i++) { const c = num(x[i], y[i]); if (c) return c; }
+  if (!x[4] && !y[4]) return 0;
+  if (!x[4]) return 1;
+  if (!y[4]) return -1;
+  const px = x[4].split("."), py = y[4].split(".");
+  for (let i = 0; i < Math.min(px.length, py.length); i++) {
+    const dx = /^\d+$/.test(px[i]), dy = /^\d+$/.test(py[i]);
+    const c = dx && dy ? num(px[i].replace(/^0+(?=\d)/, ""), py[i].replace(/^0+(?=\d)/, "")) : dx ? -1 : dy ? 1 : px[i] === py[i] ? 0 : px[i] < py[i] ? -1 : 1;
+    if (c) return c;
+  }
+  return px.length === py.length ? 0 : px.length < py.length ? -1 : 1;
+}
+
+/** What the Apps app says about one installed app, from its `verify_app` answer:
+ * `{state, text, detail, tone, module, installed, newest, publisher, cid, keepable}`.
+ *   state "up_to_date"   "Up to date": the installed copy is the newest release, proven whole.
+ *         "newer"        "Newer version X available": the installed copy is an older release.
+ *         "differs"      "Installed copy doesn't match the published one".
+ *         "unproven"     the files match a release but the record can't prove the manifest.
+ *         "unpublished"  the app names no publisher, or the publisher publishes no such app.
+ *         "unknown"      the check didn't run (no answer, an error).
+ * Only a `verified` answer for the newest release is ever "Up to date". */
+export function updateStatus(v) {
+  const a = v && typeof v === "object" ? v : null;
+  const claimed = (a && a.claimed) || {};
+  const record = claimed.record && typeof claimed.record === "object" ? claimed.record : null;
+  const releases = record ? list(record.releases) : [];
+  const newest = releases.length ? clean(releases[0] && releases[0].version) : "";
+  const installed = clean(claimed.manifest_version);
+  const publisher = clean(claimed.name_checked);
+  const out = (state, text, tone, detail) => ({
+    state, text, tone, detail: detail || "", module: clean(a && a.module), installed, newest, publisher,
+    cid: record ? clean(record.cid) : "", keepable: !!(record && /^[A-Za-z0-9]{10,100}$/.test(String(record.cid || "")) && releases.length && /^[0-9a-f]{64}$/.test(String(releases[0].sha256 || ""))),
+  });
+  const s = a ? String(a.status || "") : "";
+  const by = publisher ? ` by ${publisher}` : "";
+  if (!a || !s) return out("unknown", "Can't check this app right now.", "dim");
+  if (s === "verified") {
+    if (a.newest === true) return out("up_to_date", "Up to date", "good", `${installed || newest}, the newest release published${by}.`);
+    return out("newer", newest ? `Newer version ${newest} available` : "A newer version is available", "warn",
+      `This copy (${installed || "?"}) is an older release the publisher still vouches for.`);
+  }
+  if (s === "mismatch") {
+    // The installed files are no release the record names. An older version than the newest is an
+    // update the record no longer covers; the same or a higher version is a different copy.
+    const c = semverCmp(installed, newest);
+    if (c === -1) return out("newer", `Newer version ${newest} available`, "warn",
+      `This copy says it is ${installed}, a release the publisher no longer vouches for. Get ${newest}${by}.`);
+    return out("differs", "Installed copy doesn't match the published one", "bad",
+      `This copy says it is ${installed || "?"}; the newest published${by} is ${newest || "?"}, and its files are not this copy's.`);
+  }
+  if (s === "file_mismatch" || s === "manifest_mismatch" || s === "root_mismatch")
+    return out("differs", "Installed copy doesn't match the published one", "bad",
+      s === "root_mismatch" ? "Its files are not the ones its own manifest names." : `The files are a published release${by}, but ${s === "manifest_mismatch" ? "its manifest" : "the package"} is not.`);
+  if (s === "files_verified")
+    return out("unproven", "Files match the published ones", "warn", "The record doesn't cover this copy's manifest, so its version and dependencies are not proven.");
+  if (s === "ambiguous") return out("differs", "Installed copy doesn't match the published one", "bad", `The publisher's record can be read two ways, so it vouches for nothing.`);
+  if (s === "not_published") return out("unpublished", "Not published", "dim", `${publisher || "Its publisher"} publishes no record for this app.`);
+  if (s === "no_such_name") return out("unpublished", "Not published", "dim", `It names ${publisher || "a publisher"}, which is not a registered LNS name.`);
+  if (s === "unclaimed") return out("unpublished", "No publisher", "dim", "It names no LNS publisher, so there is nothing to compare it with.");
+  return out("unknown", "Can't check this app right now.", "dim");
+}
+
+/** A `keep_app_status` answer (the module's keep-a-copy job) in words. */
+export function keepText(j) {
+  if (!j || typeof j !== "object") return "";
+  const what = `${clean(j.module)} ${clean(j.version)}`.trim();
+  if (j.state === "running") return `Keeping ${what} on your Storage node…`;
+  if (j.state === "already_there") return `${what} was already on your Storage node: checked and shared.`;
+  if (j.state === "fetched") return `${what} is now on your Storage node: checked and shared.`;
+  if (j.state === "failed") {
+    const n = networkError(j.error, j.code);
+    return `Couldn't keep ${what}: ${n ? n.error : plainText(j.error, 300) || "no reason given"}`;
+  }
+  return "";
+}

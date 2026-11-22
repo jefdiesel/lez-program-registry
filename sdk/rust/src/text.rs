@@ -83,9 +83,63 @@ pub fn is_semver(v: &str) -> bool {
         && build.is_none_or(|b| b.split('.').all(ident))
 }
 
+/// SemVer 2.0.0 precedence of two versions (§11: numbers compared as numbers, a pre-release
+/// below its release, build metadata ignored), or `None` when either isn't SemVer.
+#[must_use]
+pub fn semver_cmp(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    if !is_semver(a) || !is_semver(b) {
+        return None;
+    }
+    fn split(v: &str) -> (Vec<u64>, Option<Vec<&str>>) {
+        let v = v.split_once('+').map_or(v, |(r, _)| r);
+        let (core, pre) = v.split_once('-').map_or((v, None), |(c, p)| (c, Some(p)));
+        (core.split('.').map(|n| n.parse().unwrap_or(0)).collect(), pre.map(|p| p.split('.').collect()))
+    }
+    let ((ca, pa), (cb, pb)) = (split(a), split(b));
+    let core = ca.cmp(&cb);
+    if core != Ordering::Equal {
+        return Some(core);
+    }
+    Some(match (pa, pb) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(pa), Some(pb)) => {
+            for (x, y) in pa.iter().zip(pb.iter()) {
+                let o = match (x.parse::<u64>(), y.parse::<u64>()) {
+                    (Ok(x), Ok(y)) => x.cmp(&y),
+                    (Ok(_), Err(_)) => Ordering::Less,
+                    (Err(_), Ok(_)) => Ordering::Greater,
+                    (Err(_), Err(_)) => x.cmp(y),
+                };
+                if o != Ordering::Equal {
+                    return Some(o);
+                }
+            }
+            pa.len().cmp(&pb.len())
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semver_precedence() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        // SemVer §11's own chain, each lower than the next.
+        let chain = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.1.0", "2.0.0"];
+        for w in chain.windows(2) {
+            assert_eq!(semver_cmp(w[0], w[1]), Some(Less), "{} < {}", w[0], w[1]);
+            assert_eq!(semver_cmp(w[1], w[0]), Some(Greater));
+        }
+        assert_eq!(semver_cmp("0.6.10", "0.6.9"), Some(Greater), "numbers, not text");
+        assert_eq!(semver_cmp("0.18.2", "0.18.2+build.7"), Some(Equal), "build metadata is ignored");
+        assert_eq!(semver_cmp("0.6.3", "v0.6.3"), None);
+        assert_eq!(semver_cmp("", "0.6.3"), None);
+    }
 
     #[test]
     fn hostile_text_prints_inert() {

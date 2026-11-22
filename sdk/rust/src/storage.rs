@@ -17,6 +17,9 @@ pub const DEFAULT_API: &str = "http://127.0.0.1:8080/api/storage/v1";
 /// relay.
 pub const MAX_IDL: usize = 120 * 1024;
 
+/// The longest a read of the node's own copy may take ([`StorageClient::local`]).
+pub const LOCAL_READ: Duration = Duration::from_secs(60);
+
 /// The mimetype every registry upload uses. The manifest CID depends on bytes, filename and
 /// mimetype, so a fixed mimetype keeps CIDs reproducible.
 pub const IDL_MIME: &str = "application/json";
@@ -230,6 +233,62 @@ impl StorageClient {
             return Err(StorageError::TooLarge { limit });
         }
         Ok(bytes)
+    }
+
+    /// The node's own copy of `cid` (`GET /data/{cid}`, which never asks the network), or `None`
+    /// when the node doesn't hold it. Refuses more than `limit` bytes. A node holding the
+    /// manifest but not every block (an interrupted fetch) answers 200 and then stalls or breaks
+    /// off: that is an error here, after at most [`LOCAL_READ`].
+    pub fn local(&self, cid: &str, limit: usize) -> SResult<Option<Vec<u8>>> {
+        check_cid(cid)?;
+        let mut resp = self
+            .agent
+            .get(&self.url(&format!("/data/{cid}")))
+            .config()
+            .timeout_global(Some(LOCAL_READ.min(self.t.stream)))
+            .build()
+            .call()
+            .map_err(|e| transport("local read", &e))?;
+        let code = resp.status().as_u16();
+        if code == 404 {
+            return Ok(None);
+        }
+        if !(200..300).contains(&code) {
+            return Err(StorageError::Status { op: "local read", code });
+        }
+        let limit_u64 = u64::try_from(limit).unwrap_or(u64::MAX);
+        let bytes = resp
+            .body_mut()
+            .with_config()
+            .limit(limit_u64.saturating_add(1))
+            .read_to_vec()
+            .map_err(|e| match e {
+                ureq::Error::BodyExceedsLimit(_) => StorageError::TooLarge { limit },
+                other => transport("local read", &other),
+            })?;
+        if bytes.len() > limit {
+            return Err(StorageError::TooLarge { limit });
+        }
+        Ok(Some(bytes))
+    }
+
+    /// Drops the node's copy of `cid` (`DELETE /data/{cid}`): for a download that failed its check.
+    pub fn delete(&self, cid: &str) -> SResult<()> {
+        check_cid(cid)?;
+        let resp = self
+            .agent
+            .delete(&self.url(&format!("/data/{cid}")))
+            .config()
+            .timeout_global(Some(self.t.manifest))
+            .build()
+            .call()
+            .map_err(|e| transport("delete", &e))?;
+        let code = resp.status().as_u16();
+        if (200..300).contains(&code) {
+            Ok(())
+        } else {
+            Err(StorageError::Status { op: "delete", code })
+        }
     }
 
     /// `GET /debug/info`: the node's peer id and the addresses it advertises.

@@ -61,6 +61,9 @@ pub enum AppCmd {
     /// Download an app a name publishes from Logos Storage (its record's `cid`), check it against
     /// the record (`sha256` of the file, required; the root recomputed from its files), and only
     /// then write it to OUT.
+    ///
+    /// The newest release is never older than the copy installed in Basecamp without saying so:
+    /// that is refused unless --allow-older.
     Get {
         name: String,
         module: String,
@@ -68,11 +71,117 @@ pub enum AppCmd {
         out: PathBuf,
         #[arg(long, env = "LEZREG_STORAGE_API", default_value = lezreg_sdk::storage::DEFAULT_API)]
         storage_api: String,
+        /// Basecamp's data folder, to compare with the installed copy (default: where Basecamp
+        /// keeps it).
+        #[arg(long, env = "LEZREG_BASECAMP_DATA")]
+        basecamp_data: Option<PathBuf>,
+        /// Accept a release older than the installed copy (going back on purpose).
+        #[arg(long)]
+        allow_older: bool,
+    },
+    /// Keep the newest published packages of apps on your own Logos Storage node, so it serves
+    /// them to others too. For each app: read its name's newest record, fetch the record's `cid`
+    /// onto the node unless the node already holds it, check it exactly as `get` does (the
+    /// record's sha256 and version, the files hashed to its root, the module and publisher), and
+    /// announce it. A copy that fails is dropped from the node again and nothing is announced.
+    /// With no TARGET: the apps installed in Basecamp that name an LNS publisher.
+    Sync {
+        /// `<name>` (every app the name publishes) or `<name>:<module>`. Repeatable.
+        targets: Vec<String>,
+        #[arg(long, env = "LEZREG_STORAGE_API", default_value = lezreg_sdk::storage::DEFAULT_API)]
+        storage_api: String,
+        /// Basecamp's data folder, for the installed apps (default: where Basecamp keeps it).
+        #[arg(long, env = "LEZREG_BASECAMP_DATA")]
+        basecamp_data: Option<PathBuf>,
+        /// Repeat every SECS seconds (at least 60), forever: new releases reach the node by
+        /// themselves.
+        #[arg(long)]
+        every: Option<u64>,
     },
 }
 
-/// The most a package may be: a download larger than any Basecamp module is refused.
-const MAX_PACKAGE: usize = 256 * 1024 * 1024;
+/// Fetching a package: Storage's 30 s default is for IDLs; a package of tens of MB over the
+/// network takes longer.
+fn package_node(api: &str) -> lezreg_sdk::StorageClient {
+    let t = lezreg_sdk::storage::Timeouts::default();
+    lezreg_sdk::StorageClient::with_timeouts(api, lezreg_sdk::storage::Timeouts { stream: std::time::Duration::from_secs(900), ..t })
+}
+
+/// A name's profile, following its `forward` one hop as `verify` does (SPEC.md §7): the name
+/// asked for (normalised), the publisher's name, and its profile.
+fn publisher_profile(names: &mut Names<HttpRpc>, asked: &str) -> Result<(String, String, lezreg_sdk::lns::Profile)> {
+    let profile = names
+        .profile(asked, now_ms())?
+        .ok_or_else(|| anyhow!("{} is not a registered LNS name", shown(asked)))?;
+    let asked = profile.name.clone();
+    match apps::forward_of(&asked, &profile) {
+        apps::Forward::None => Ok((asked.clone(), asked, profile)),
+        apps::Forward::Ambiguous(why) => bail!("{asked}'s forward is ambiguous ({why}); nothing fetched"),
+        apps::Forward::To(target) => {
+            let p = names.profile(&target, now_ms())?.ok_or_else(|| anyhow!("{asked} forwards to {target}, which isn't registered; nothing fetched"))?;
+            eprintln!("{asked} forwards to {target}");
+            Ok((asked, target, p))
+        }
+    }
+}
+
+/// The one record `profile` holds for `module`.
+fn record_for(name: &str, profile: &lezreg_sdk::lns::Profile, module: &str) -> Result<AppRecord> {
+    let key = format!("{}{module}", apps::APP_KEY_PREFIX);
+    match profile.entry(&key) {
+        Entry::One(v) => Ok(AppRecord::parse(v)?),
+        Entry::Absent => bail!("{name} doesn't publish {module}"),
+        Entry::Duplicate => bail!("ambiguous record: {name} sets {key} more than once, so it vouches for nothing"),
+    }
+}
+
+/// `lezreg app sync`, one round: `(kept, failed)` as JSON rows.
+fn sync_round(names: &mut Names<HttpRpc>, node: &lezreg_sdk::StorageClient, targets: &[(String, Option<String>)], out: &mut Out) -> (Vec<Value>, Vec<Value>) {
+    let (mut kept, mut failed) = (Vec::new(), Vec::new());
+    let mut fail = |out: &mut Out, name: &str, module: &str, e: String| {
+        out.text(&format!("{}  {}: FAILED: {}", shown(module), shown(name), shown(&e)));
+        failed.push(json!({"name": shown(name), "module": shown(module), "error": shown(&e)}));
+    };
+    for (asked, module) in targets {
+        let (asked, name, profile) = match publisher_profile(names, asked) {
+            Ok(p) => p,
+            Err(e) => {
+                fail(out, asked, module.as_deref().unwrap_or("*"), e.to_string());
+                continue;
+            }
+        };
+        let records: Vec<(String, Result<AppRecord>)> = match module {
+            Some(m) => vec![(m.clone(), record_for(&name, &profile, m))],
+            None => apps::apps_of(&profile).into_iter().map(|(m, r)| (m, r.map_err(anyhow::Error::from))).collect(),
+        };
+        if records.is_empty() {
+            fail(out, &name, "*", format!("{name} publishes no apps"));
+        }
+        for (module, record) in records {
+            let record = match record {
+                Ok(r) => r,
+                Err(e) => {
+                    fail(out, &name, &module, e.to_string());
+                    continue;
+                }
+            };
+            let version = record.newest().version.clone().unwrap_or_default();
+            match apps::keep_copy(node, &module, &[&asked, &name], &record) {
+                Ok((how, _)) => {
+                    let cid = record.cid.clone().unwrap_or_default();
+                    let state = match how {
+                        apps::Kept::AlreadyThere => "already on the node",
+                        apps::Kept::Fetched => "fetched",
+                    };
+                    out.text(&format!("{module}  {}  from {name}: {state}, checked (sha256 and version are the record's) and announced  {cid}", shown(&version)));
+                    kept.push(json!({"name": name, "module": module, "version": version, "cid": cid, "state": match how { apps::Kept::AlreadyThere => "already_there", apps::Kept::Fetched => "fetched" }}));
+                }
+                Err(e) => fail(out, &name, &module, e.to_string()),
+            }
+        }
+    }
+    (kept, failed)
+}
 
 /// The LNS program to read names from: `--lns`, `LEZREG_LNS`, else the network's.
 fn lns_program(lns: Option<&str>) -> Result<AccountId> {
@@ -287,51 +396,84 @@ pub fn run(
                 code => crate::EXIT_CODE.store(code, std::sync::atomic::Ordering::Relaxed),
             }
         }
-        AppCmd::Get { name, module, out: path, storage_api } => {
+        AppCmd::Get { name, module, out: path, storage_api, basecamp_data, allow_older } => {
             let lns = lns_program(lns)?;
             let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
             if !apps::is_module_name(&module) {
                 bail!("\"{}\" is not a module name", shown(&module));
             }
             let mut names = Names::new(HttpRpc::new(&rpc), lns);
-            let profile = names
-                .profile(&name, now_ms())?
-                .ok_or_else(|| anyhow!("{} is not a registered LNS name", shown(&name)))?;
-            let asked = profile.name.clone();
             // The same forwarding as `verify` (SPEC.md §7): a brand name leads to the publisher.
-            let (name, profile) = match apps::forward_of(&asked, &profile) {
-                apps::Forward::None => (asked.clone(), profile),
-                apps::Forward::Ambiguous(why) => bail!("{asked}'s forward is ambiguous ({why}); nothing downloaded"),
-                apps::Forward::To(target) => {
-                    let p = names.profile(&target, now_ms())?.ok_or_else(|| anyhow!("{asked} forwards to {target}, which isn't registered; nothing downloaded"))?;
-                    eprintln!("{asked} forwards to {target}");
-                    (target, p)
-                }
-            };
-            let key = format!("{}{module}", apps::APP_KEY_PREFIX);
-            let value = match profile.entry(&key) {
-                Entry::One(v) => v,
-                Entry::Absent => bail!("{name} doesn't publish {module}"),
-                Entry::Duplicate => bail!("ambiguous record: {name} sets {key} more than once, so it vouches for nothing; nothing downloaded"),
-            };
-            let record = AppRecord::parse(value)?;
+            let (asked, name, profile) = publisher_profile(&mut names, &name)?;
+            let record = record_for(&name, &profile, &module).map_err(|e| anyhow!("{e}; nothing downloaded"))?;
             if record.newest().sha256.is_none() {
                 bail!("unverifiable download: {name}'s record for {module} gives no sha256 of the .lgx, and the package root doesn't cover the manifest; nothing downloaded");
             }
+            let version = record.newest().version.clone();
+            // Never older than the installed copy without saying so (checked before fetching).
+            let installed = match basecamp_data.or_else(apps::default_basecamp_data) {
+                Some(data) => apps::installed_manifest(&data, &module).map_err(|e| anyhow!("{e}; nothing downloaded"))?.map(|m| m.version),
+                None => None,
+            };
+            apps::check_not_older(&module, version.as_deref(), installed.as_deref(), allow_older).map_err(|e| anyhow!("{e}; nothing downloaded"))?;
             let cid = record.cid.clone().ok_or_else(|| anyhow!("{name} gives no Logos Storage CID for {module}; download it from its catalog ({})", shown(record.catalog.as_deref().unwrap_or("none given"))))?;
             eprintln!("fetching {module} ({cid}) from Logos Storage through {storage_api}");
-            let bytes = lezreg_sdk::StorageClient::new(&storage_api)
-                .fetch(&cid, MAX_PACKAGE, false)
+            let bytes = package_node(&storage_api)
+                .fetch(&cid, apps::MAX_PACKAGE, false)
                 .map_err(|e| anyhow!("Logos Storage didn't give {cid}: {}", shown(&e.to_string())))?;
             let contents = apps::check_download(&module, &[&asked, &name], &record, &bytes).map_err(|e| anyhow!("{e}; nothing written"))?;
             std::fs::write(&path, &bytes).with_context(|| format!("cannot write {}", path.display()))?;
-            let version = record.newest().version.clone();
+            let older = matches!((version.as_deref(), installed.as_deref()), (Some(v), Some(i)) if apps::is_older(v, i));
             out.text(&format!(
-                "{module} {} from {name}: checked (sha256 matches, files match the root), written to {}",
+                "{module} {} from {name}: checked (sha256 matches, files match the root), written to {}{}",
                 shown(version.as_deref().unwrap_or("(no version in the record)")),
-                path.display()
+                path.display(),
+                if older { format!("; OLDER than the installed {} (allowed with --allow-older)", shown(installed.as_deref().unwrap_or_default())) } else { String::new() }
             ));
-            out.json(json!({"name": name, "module": module, "version": version, "cid": cid, "bytes": bytes.len(), "root": hex::encode(contents.root), "out": path}));
+            out.json(json!({"name": name, "module": module, "version": version, "installed": installed, "older_than_installed": older, "cid": cid, "bytes": bytes.len(), "root": hex::encode(contents.root), "out": path}));
+        }
+        AppCmd::Sync { targets, storage_api, basecamp_data, every } => {
+            let lns = lns_program(lns)?;
+            let rpc = rpc.ok_or_else(|| anyhow!("no RPC: pass --rpc or --network"))?;
+            let mut list: Vec<(String, Option<String>)> = Vec::new();
+            for t in &targets {
+                let (name, module) = t.split_once(':').map_or((t.as_str(), None), |(n, m)| (n, Some(m)));
+                if let Some(m) = module
+                    && !apps::is_module_name(m)
+                {
+                    bail!("\"{}\" is not a module name", shown(m));
+                }
+                list.push((name.to_owned(), module.map(str::to_owned)));
+            }
+            if list.is_empty() {
+                let data = basecamp_data
+                    .or_else(apps::default_basecamp_data)
+                    .ok_or_else(|| anyhow!("no Basecamp data folder: pass --basecamp-data, or name the apps (<name> or <name>:<module>)"))?;
+                list = apps::installed_published(&data).into_iter().map(|(module, name, _)| (name, Some(module))).collect();
+                if list.is_empty() {
+                    bail!("no app installed in {} names an LNS publisher; name the apps to keep (<name> or <name>:<module>)", data.display());
+                }
+                eprintln!("the apps installed in {}: {}", data.display(), list.iter().map(|(n, m)| format!("{n}:{}", m.as_deref().unwrap_or("*"))).collect::<Vec<_>>().join(" "));
+            }
+            let node = package_node(&storage_api);
+            // Announcing before the node has an address makes the announcement unreachable.
+            node.wait_reachable(std::time::Duration::from_secs(30))
+                .map_err(|e| anyhow!("the Storage node at {storage_api} is not ready to serve ({e}): it must be running and advertise an address"))?;
+            let mut names = Names::new(HttpRpc::new(&rpc), lns);
+            loop {
+                let (kept, failed) = sync_round(&mut names, &node, &list, out);
+                eprintln!("app sync: {} kept, {} failed", kept.len(), failed.len());
+                let Some(secs) = every else {
+                    if !failed.is_empty() {
+                        crate::FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    out.json(json!({"storage_api": storage_api, "kept": kept, "failed": failed}));
+                    break;
+                };
+                std::thread::sleep(std::time::Duration::from_secs(secs.max(60)));
+                // Read records fresh each round: a new release is what the loop is for.
+                names = Names::new(HttpRpc::new(&rpc), lns);
+            }
         }
         AppCmd::Record { file, catalog, programs, keep, cid, upload, storage_api } => {
             let (bytes, contents, name) = vouchable(&file)?;
