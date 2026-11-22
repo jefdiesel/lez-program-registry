@@ -138,7 +138,8 @@ jobs:
           "$L" wallet config set sequencer_addr "$RPC" || true
           "$L" wallet account list >/dev/null
           # PRIVATE_KEY_PUB_ACC_A in lez/testnet_initial_state/src/lib.rs (public test key; local chains only).
-          out=$("$L" wallet account import public --private-key 10a26a9aec7d34b82364eeae45c5294dbb0a764b000b94eeb9b58511dc487c4d)
+          payer_key=$("$GITHUB_WORKSPACE/tools/lez-test-key.sh") || exit 1
+          out=$("$L" wallet account import public --private-key "$payer_key")
           payer=$(echo "$out" | sed -n 's|.*Public/\([1-9A-HJ-NP-Za-km-z]*\).*|\1|p' | head -1)
           test -n "$payer"
           echo "PAYER=$payer" >> "$GITHUB_ENV"

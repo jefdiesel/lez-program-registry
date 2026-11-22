@@ -39,7 +39,8 @@ for _ in $(seq 1 60); do rpc getLastBlockId >/dev/null && break; sleep 2; done
 "$L" wallet config set sequencer_addr "$RPC" >> "$LOG" 2>&1 || true
 "$L" wallet account list >/dev/null 2>&1
 # PRIVATE_KEY_PUB_ACC_A in lez/testnet_initial_state/src/lib.rs (public test key; local chains only).
-out=$("$L" wallet account import public --private-key 10a26a9aec7d34b82364eeae45c5294dbb0a764b000b94eeb9b58511dc487c4d 2>&1)
+payer_key=$("$ROOT/tools/lez-test-key.sh") || exit 1
+out=$("$L" wallet account import public --private-key "$payer_key" 2>&1)
 P=$(echo "$out" | sed -n 's|.*Public/\([1-9A-HJ-NP-Za-km-z]*\).*|\1|p' | head -1)
 "$L" network set cyc --rpc "$RPC" >> "$LOG" 2>&1
 export LEZREG_NETWORK=cyc
