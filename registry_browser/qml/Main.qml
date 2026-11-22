@@ -569,7 +569,7 @@ Item {
                         sentence: root.guide ? root.guide.sentence : ""
                         publisher: root.guide ? root.guide.publisher : ""
                         proven: !root.guide || root.guide.proven
-                        publisherNote: root.guide && !root.guide.proven ? "a name they gave themselves" : ""
+                        publisherNote: root.guide ? root.guide.publisherNote : ""
                         // What a reader must know before trusting it: the program no longer runs
                         // the code this entry describes, or nothing runs there at all.
                         warning: {
@@ -667,7 +667,7 @@ Item {
                         FactRow { look: root.look; key: "Entry"; value: root.selected ? root.selected.address : ""; monospace: true }
                         FactRow { look: root.look; key: "Author (proven)"; value: root.entry ? root.accountLine(root.entry.author) : ""; monospace: true }
                         FactRow { look: root.look; key: "Author label"; visible: !!(root.entry && root.entry.author_label); tone: look.dim
-                                  value: root.entry ? Logic.clean(root.entry.author_label) + (root.entry.author_label_proven ? "" : "  (their own words, not checked)") : "" }
+                                  value: root.entry ? Logic.clean(root.entry.author_label) + (root.entry.author_label_proven === true ? "  (LNS name: its public account is this author)" : "  (their own words, not checked)") : "" }
                         FactRow { look: root.look; key: "Kind"; value: Logic.kindBadge(root.kind).text + ": " + Logic.kindBadge(root.kind).note; tone: look.dim }
                         FactRow { look: root.look; key: "Name, version"; value: root.entry ? Logic.clean(root.entry.name) + " " + Logic.clean(root.entry.version) : "" }
                         FactRow { look: root.look; key: "Tags"; visible: !!(root.entry && root.entry.tags.length); value: root.entry ? root.entry.tags.map(Logic.clean).join(", ") : "" }

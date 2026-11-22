@@ -1,6 +1,6 @@
 // The top of a guide page: Back when nested, a quiet section word, the title, one plain
-// sentence, an optional context line ("Part of Bridge"), who published it (italics when it is their own unconfirmed words, with `publisherNote`
-// saying so), an optional warning that matters to a reader, then what you can do.
+// sentence, an optional context line ("Part of Bridge"), who published it (italics when it is their own unconfirmed words; `publisherNote`
+// after it: "a name they gave themselves", or "LNS name" for a proven one), an optional warning that matters to a reader, then what you can do.
 // `actions`: [{key, label, strong}] → actionPressed(key). Plain text throughout.
 import QtQuick
 import QtQuick.Layouts

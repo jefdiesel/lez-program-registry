@@ -18,6 +18,9 @@ serde_json = "1"
 # The module's own paced, cached sequencer client (src/net.rs); the SDK already brings ureq 3.
 ureq = "3.4.2"
 hex = "0.4"
+# Opening an LNS profile for its public account (src/labels.rs: author_label_proven), the cipher
+# lezreg-sdk already uses; goes once the SDK pin carries apps::AuthorLabels.
+aes-gcm = "0.10"
 # The module builds registry instructions itself (src/writes.rs), with the borsh lezreg-types uses.
 borsh = { version = "1.5.7", features = ["derive"] }
 # Staged by the builder from the logos-rust-sdk revision its code generator comes from.

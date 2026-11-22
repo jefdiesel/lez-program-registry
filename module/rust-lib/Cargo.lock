@@ -439,6 +439,7 @@ dependencies = [
 name = "program_registry"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "borsh",
  "hex",
  "lezreg-sdk",

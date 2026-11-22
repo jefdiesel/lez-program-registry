@@ -273,12 +273,19 @@ export function guideText(entry, fallbackName) {
 }
 
 /** Who published an entry, as people read it: the author label without its "lns:" prefix, or the
- * short account when there is no label. `proven` is false for a label the chain doesn't confirm. */
+ * short account when there is no label. `proven` is false for a label the chain doesn't confirm;
+ * a proven label is an LNS name whose public account is the author (the module checks it:
+ * `author_label_proven`). `note` is the quiet words after it, as nameswallet.app/apps says it:
+ * "LNS name" for a proven label, "a name they gave themselves" for an unproven one, none for an
+ * account. */
 export function publisherOf(entry) {
   const e = entry || {};
   const label = clean(e.author_label || "").trim().replace(/^lns:/i, "");
-  if (label) return { text: label, proven: !!e.author_label_proven, account: false };
-  return { text: shortId(e.author), proven: true, account: true };
+  if (label) {
+    const proven = e.author_label_proven === true;
+    return { text: label, proven, account: false, note: proven ? "LNS name" : "a name they gave themselves" };
+  }
+  return { text: shortId(e.author), proven: true, account: true, note: "" };
 }
 
 /** Sections of the index, in reading order, and the tags that put an entry in one. */
@@ -391,7 +398,7 @@ export function guideOf(item, items) {
   const t = guideText(item.entry, name);
   const p = publisherOf(item.entry || { author: item.link ? item.link.registrant : "" });
   return {
-    title: t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account,
+    title: t.title, sentence: t.sentence, about: t.about, more: t.more, publisher: p.text, proven: p.proven, account: p.account, publisherNote: p.note,
     section: sectionOf(item.entry ? item.entry.tags : []), newest: versions[0].address === item.address,
     versions: versions.filter((i) => i.address !== item.address).map((i) => ({ address: i.address, label: titleOf(i), newest: i.address === versions[0].address })),
     // A part of another app: its parent (newest version) by the same author, or null.

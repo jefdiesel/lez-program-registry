@@ -105,9 +105,17 @@ check("no description: title from the name, no sentence", guideText({ name: "my-
 check("a long sentence is cut at a word with …", guideText({ name: "x", description: "word ".repeat(60) }).sentence.length <= 150 && guideText({ name: "x", description: "word ".repeat(60) }).sentence.endsWith("…"), true);
 check("chain text is cleaned before anything is derived", guideText({ name: "to‮ken", description: "Evil : line​ two" }), { title: "Evil", sentence: "Line two.", about: "Evil : line two", more: "" });
 check("a colon lead with markup-ish or punctuation is not a title", guideText({ name: "abc", description: "Hi, there: x" }).title, "Abc");
-check("publisher: lns label without its prefix, unproven", publisherOf(byName("vest").entry), { text: "jefdiesel", proven: false, account: false });
-check("publisher: no label is the short account (proven by the chain)", publisherOf({ author: P, author_label: "" }), { text: "6YWH…VayN", proven: true, account: true });
-check("publisher: a proven label", publisherOf({ author: P, author_label: "lns:alice", author_label_proven: true }).proven, true);
+check("publisher: lns label without its prefix, unproven", publisherOf(byName("vest").entry), { text: "jefdiesel", proven: false, account: false, note: "a name they gave themselves" });
+check("publisher: no label is the short account (proven by the chain), no note", publisherOf({ author: P, author_label: "" }), { text: "6YWH…VayN", proven: true, account: true, note: "" });
+check("publisher: a proven label is the name, then \"LNS name\" (as nameswallet.app/apps)", publisherOf({ author: P, author_label: "lns:names", author_label_proven: true }), { text: "names", proven: true, account: false, note: "LNS name" });
+check("publisher: only a true author_label_proven proves", [false, "true", 1, null, undefined].map((v) => publisherOf({ author: P, author_label: "lns:names", author_label_proven: v }).proven), [false, false, false, false, false]);
+{
+  const proven = live.find((i) => i.entry && /^lns:/i.test(i.entry.author_label || ""));
+  const asProven = { ...proven, entry: { ...proven.entry, author_label_proven: true } };
+  const g = guideOf(asProven, live.map((i) => (i.address === proven.address ? asProven : i)));
+  check("guide page: a proven label reads \"by <name> · LNS name\", upright", [g.publisher, g.publisherNote, g.proven], [proven.entry.author_label.replace(/^lns:/i, ""), "LNS name", true]);
+  check("guide page: the same label unproven is \"a name they gave themselves\"", [guideOf(proven, live).publisherNote, guideOf(proven, live).proven], ["a name they gave themselves", false]);
+}
 check("sections from tags", [["token", "vesting"], ["vesting", "token"], ["lns", "names"], ["nft", "lns"], ["bridge", "eth"], ["registry", "infrastructure"], ["games"], [], { 0: "dao", length: 1 }].map(sectionOf),
   ["Tokens", "Tokens", "Names", "NFTs", "Bridges", "Tools", "Games", "Other", "DAO"]);
 const rows = indexRows(live);

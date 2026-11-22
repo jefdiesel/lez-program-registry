@@ -95,7 +95,11 @@ ever reaches the screen. Since 0.1.7 Basecamp shows the browser as "Apps" (displ
 title, one sentence and its publisher, with a guide page beside it and everything technical folded
 under "Technical details". Titles and sentences come from the entry (`registry_browser/qml/logic.mjs`,
 `guideText` / `indexRows`); the look is in `registry_browser/qml/kit/` (no registry logic there:
-shared with our other apps). Offscreen renders: `registry_browser/tools/render.py`, with answers from
+shared with our other apps). Since program_registry 0.3.4 / registry_browser 0.1.10 an entry's
+`author_label_proven` is real: a label `lns:<name>` is true when that LNS name is registered and its
+profile's public account is the entry's author (`module/rust-lib/src/labels.rs`; the SDK's
+`apps::AuthorLabels` is the same rule), else false; the guide page then reads "by names · LNS name".
+Offscreen renders: `registry_browser/tools/render.py`, with answers from
 `tools/record.py` (logosctl) or `tools/answers_from_lezreg.py` (read-only `lezreg ... --json` output).
 
 ## Work on this repository

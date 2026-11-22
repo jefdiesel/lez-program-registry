@@ -16,6 +16,7 @@
 use std::path::PathBuf;
 
 mod bridge;
+mod labels;
 mod net;
 mod network_file;
 pub mod writes;
@@ -276,11 +277,13 @@ pub struct ProgramRegistry {
     names: Option<(String, AccountId, Names<Seq>)>,
     /// `(module, root)` → (verdict, when), for [`APP_CHECK_TTL_MS`].
     checked: std::collections::HashMap<(String, [u8; 32]), (Value, u64)>,
+    /// LNS names derived for `author_label_proven` (labels.rs), kept across calls.
+    label_keys: labels::Keys,
 }
 
 impl ProgramRegistry {
     fn with_settings(sequencer: String, registry: Option<AccountId>, storage_api: String, lns: Option<AccountId>, basecamp_data: Option<PathBuf>) -> Self {
-        Self { defaults: Defaults::none(), network_error: None, sequencer, registry, storage_api, lns, basecamp_data, cli: None, registry_images: Vec::new(), names: None, checked: std::collections::HashMap::new() }
+        Self { defaults: Defaults::none(), network_error: None, sequencer, registry, storage_api, lns, basecamp_data, cli: None, registry_images: Vec::new(), names: None, checked: std::collections::HashMap::new(), label_keys: labels::Keys::default() }
     }
 
     /// A module on `defaults`, nothing else set.
@@ -666,6 +669,12 @@ impl ProgramRegistry {
                "registry_images": KNOWN_REGISTRY_IMAGES.iter().map(|i| (*i).to_owned()).chain(self.registry_images.iter().map(hex::encode)).collect::<Vec<_>>()})
     }
 
+    /// `author_label_proven` for one answer: `lns:<name>` labels checked against the network's
+    /// LNS program, through the same paced, cached reads (labels.rs).
+    fn labels(&mut self) -> labels::Check<'_, Seq> {
+        labels::Check::new(&mut self.label_keys, Seq::cached(&self.sequencer), self.lns, now_ms())
+    }
+
     /// Reads for the apps: paced, batched and cached for a while (net.rs).
     fn reader(&self) -> Result<Registry<Seq>, String> {
         let reg = self.registry.ok_or("no registry configured: call config_set with {\"registry\": \"<id>\"}")?;
@@ -951,7 +960,7 @@ impl ProgramRegistryModule for ProgramRegistry {
             let reader = self.reader()?;
             let r = reader.resolve(&program).map_err(|e| e.to_string())?;
             let third = reader.third_party(&program, 50).map_err(|e| e.to_string())?.len();
-            let mut v = js::resolved(&r);
+            let mut v = self.labels().resolved(&r);
             v["third_party_count"] = json!(third);
             Ok(v)
         })())
@@ -1021,14 +1030,16 @@ impl ProgramRegistryModule for ProgramRegistry {
         reply((|| {
             let after = if after.trim().is_empty() { None } else { Some(program_arg(&after)?) };
             let page = self.reader()?.list(after.as_ref(), limit_arg(limit)).map_err(|e| e.to_string())?;
-            Ok(json!({"items": page.items.iter().map(js::listed).collect::<Vec<_>>(), "next": page.next.map(|n| n.to_base58()), "total": page.total}))
+            let mut labels = self.labels();
+            Ok(json!({"items": page.items.iter().map(|i| labels.listed(i)).collect::<Vec<_>>(), "next": page.next.map(|n| n.to_base58()), "total": page.total}))
         })())
     }
 
     fn search_name(&mut self, query: String, limit: i64) -> String {
         reply((|| {
             let found = self.reader()?.search_name(&query, limit_arg(limit), 1000).map_err(|e| e.to_string())?;
-            Ok(json!({"items": found.items.iter().map(js::listed).collect::<Vec<_>>(), "scanned": found.scanned, "truncated": found.truncated}))
+            let mut labels = self.labels();
+            Ok(json!({"items": found.items.iter().map(|i| labels.listed(i)).collect::<Vec<_>>(), "scanned": found.scanned, "truncated": found.truncated}))
         })())
     }
 
@@ -1036,7 +1047,8 @@ impl ProgramRegistryModule for ProgramRegistry {
         reply((|| {
             let program = program_arg(&program_id)?;
             let items = self.reader()?.third_party(&program, 50).map_err(|e| e.to_string())?;
-            Ok(json!(items.iter().filter(|i| matches!(i.kind, Some(Kind::ThirdParty { .. }))).map(js::listed).collect::<Vec<_>>()))
+            let mut labels = self.labels();
+            Ok(json!(items.iter().filter(|i| matches!(i.kind, Some(Kind::ThirdParty { .. }))).map(|i| labels.listed(i)).collect::<Vec<_>>()))
         })())
     }
 

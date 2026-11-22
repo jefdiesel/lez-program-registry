@@ -8,7 +8,7 @@ wallet holds an entry's author key, you can update or freeze that entry from its
 ## Install it
 
 In Basecamp, open **Package Manager** and use **Install Local Package** twice: first the core
-module `program_registry`, then this app (`registry_browser`, version 0.1.9). The app needs the
+module `program_registry`, then this app (`registry_browser`, version 0.1.10). The app needs the
 module to read the registry, so install the module first. Once installed, open **Apps** from the
 sidebar.
 
@@ -28,10 +28,11 @@ up it says "Still busy" and offers **Try again**. Nothing is sent twice.
 
 Pick a name to open its guide page:
 
-- At the top: the app's title and one sentence, who published it (and whether that name is proven
-  on chain), and buttons to **View source**, **Copy program ID** and **Copy source link**. A warning
+- At the top: the app's title and one sentence, who published it, and buttons to **View source**, **Copy program ID** and **Copy source link**. A warning
   appears here if the program no longer runs the code the entry describes, or if nothing is
-  deployed at that id.
+  deployed at that id. The publisher reads "by names · LNS name" when the entry's label is the
+  LNS name `names` and that name's public account is the entry's author (the module checks it on
+  chain); a label the chain does not confirm is in italics, "a name they gave themselves".
 - **About**: the rest of the entry's description, when there is more.
 - **At a glance**: the version, where the source lives, when it was listed, and who listed it.
 - Links to the parts of the app, to older versions and to other versions, when there are any.
