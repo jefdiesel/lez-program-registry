@@ -47,5 +47,14 @@ for item in listed["value"]["items"][:1]:
     for m in ("resolve_program", "program_label", "third_party_entries", "get_idl"):
         keep(m, program)
     keep("prepare_freeze", json.dumps({"entry": item["address"]}, separators=(",", ":")))
+# The installed-copy check (0.1.11): it only draws for an entry with a proven publisher name.
+for item in listed["value"]["items"]:
+    entry = item.get("entry") or {}
+    if entry.get("author_label_proven") is not True:
+        continue
+    published = keep("publisher_apps", entry["author_label"].strip().removeprefix("lns:"))
+    for app in ((published or {}).get("value") or {}).get("apps", []):
+        keep("verify_app", app["module"])
+    break
 json.dump(answers, open(out, "w"), indent=1)
 print(f"recorded {len(answers)} answers to {out}")
