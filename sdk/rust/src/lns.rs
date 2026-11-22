@@ -136,16 +136,29 @@ pub fn parse_name(input: &str) -> std::result::Result<String, NameError> {
     Ok(name)
 }
 
+/// The LNS name an entry's `author_label` claims: `lns:<name>` (the prefix in any case, the
+/// name as [`parse_name`] reads it), else `None`. Only a claim: [`crate::apps::AuthorLabels`]
+/// checks it against the chain.
+#[must_use]
+pub fn label_name(label: &str) -> Option<String> {
+    let start = label.trim_start_matches(is_shared_space);
+    let prefixed = start.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("lns:"));
+    prefixed.then(|| parse_name(label).ok()).flatten()
+}
+
 /// The account holding the record of the name `id` under the LNS program `lns`.
 #[must_use]
 pub fn record_address(lns: &AccountId, id: &[u8; 32]) -> AccountId {
     for_public_pda(lns, &sha256(&[NAME_SEED_DOMAIN, id].concat()))
 }
 
-/// What a name resolves to, as its holder sealed it: only the parts app checking reads.
+/// What a name resolves to, as its holder sealed it: only the parts app checking and author
+/// labels read.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Profile {
     pub name: String,
+    /// The public account the holder set for the name (SPEC §5 `account`), if any.
+    pub account: Option<AccountId>,
     pub texts: Vec<(String, String)>,
 }
 
@@ -244,10 +257,10 @@ impl<'a> Reader<'a> {
         String::from_utf8(self.byte_vec()?.to_vec())
             .map_err(|_| Error::Invalid("an LNS text is not UTF-8".into()))
     }
-    fn option32(&mut self) -> Result<()> {
+    fn option32(&mut self) -> Result<Option<[u8; 32]>> {
         match self.u8()? {
-            0 => Ok(()),
-            1 => self.take(32).map(|_| ()),
+            0 => Ok(None),
+            1 => self.bytes32().map(Some),
             _ => Err(Error::Invalid("an LNS option tag is not 0 or 1".into())),
         }
     }
@@ -274,7 +287,7 @@ pub fn open_profile(key: &[u8; 32], sealed: &[u8], name: &str) -> Option<Profile
         .ok()?;
     let mut r = Reader(&plain);
     let profile_name = r.string().ok()?;
-    r.option32().ok()?; // account
+    let account = r.option32().ok()?.map(AccountId);
     r.option32().ok()?; // npk
     r.byte_vec().ok()?; // vpk
     let count = r.u32().ok()?;
@@ -284,6 +297,7 @@ pub fn open_profile(key: &[u8; 32], sealed: &[u8], name: &str) -> Option<Profile
     }
     (profile_name == name).then_some(Profile {
         name: profile_name,
+        account,
         texts,
     })
 }
@@ -506,9 +520,27 @@ mod tests {
     }
 
     #[test]
+    fn author_labels_name_a_name_only_with_lns_prefix() {
+        for (label, want) in [
+            ("lns:names", Some("names")),
+            ("LNS:Names", Some("names")),
+            ("  lns:@names.lez", Some("names")),
+            ("names", None),
+            ("Acme Labs", None),
+            ("lns:", None),
+            ("lns:not a name", None),
+            ("lns:11111111111111111111111111111112", None),
+            ("", None),
+        ] {
+            assert_eq!(label_name(label).as_deref(), want, "{label:?}");
+        }
+    }
+
+    #[test]
     fn duplicate_keys_are_reported() {
         let p = Profile {
             name: "x".into(),
+            account: None,
             texts: vec![("forward".into(), "a".into()), ("forward".into(), "b".into()), ("chat".into(), "c".into())],
         };
         assert_eq!(p.entry("forward"), Entry::Duplicate);

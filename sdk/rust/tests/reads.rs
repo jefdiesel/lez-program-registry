@@ -482,6 +482,7 @@ fn json_views_are_stable() {
     let v = lezreg_sdk::json::resolved(&r.resolve(&x).unwrap());
     assert_eq!(v["deployer_entry"]["kind"], "deployer");
     assert_eq!(v["freshness"]["status"], "fresh");
+    // Without an LNS check, never proven (the label here is not even `lns:`).
     assert_eq!(v["deployer_entry"]["author_label_proven"], false);
     assert!(
         v["deployer_entry"]["idl"]["cid"]
@@ -614,4 +615,165 @@ fn counts_for_names_and_third_parties() {
     // Review fix (conformance 9): names are normalised in the SDK, not only in the CLI.
     assert_eq!(r.name_count("TOKEN").unwrap(), 3);
     assert_eq!(r.by_name("Token", 10).unwrap().len(), 3);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Author labels: `lns:<name>` is proven when the name's public account is the entry's author.
+
+const LNS: AccountId = AccountId([0x4C; 32]);
+
+/// A name's record as the LNS program stores it (logos-names SPEC.md §5, v6), its profile
+/// sealed under the name's key with `account` as the public account.
+fn name_record(name: &str, account: Option<AccountId>) -> Vec<u8> {
+    use aes_gcm::{
+        Aes256Gcm, KeyInit as _, Nonce,
+        aead::{Aead as _, Payload},
+    };
+    let derived = lezreg_sdk::lns::derive(name);
+    let mut plain = Vec::new();
+    plain.extend((name.len() as u32).to_le_bytes());
+    plain.extend(name.as_bytes());
+    match account {
+        Some(a) => {
+            plain.push(1);
+            plain.extend(a.0);
+        }
+        None => plain.push(0),
+    }
+    plain.push(0); // no npk
+    plain.extend(0_u32.to_le_bytes()); // no vpk
+    plain.extend(0_u32.to_le_bytes()); // no texts
+    plain.resize(plain.len().div_ceil(256) * 256, 0);
+    let nonce = [3_u8; 12];
+    let sealed = Aes256Gcm::new_from_slice(&derived.key)
+        .unwrap()
+        .encrypt(Nonce::from_slice(&nonce), Payload { msg: &plain, aad: b"logos-names/v5/record" })
+        .unwrap();
+    let sealed = [nonce.as_slice(), &sealed].concat();
+    let mut record = vec![6];
+    record.extend([1_u8; 32]); // owner tag
+    record.extend(u64::MAX.to_le_bytes()); // held by a deposit
+    record.extend((sealed.len() as u32).to_le_bytes());
+    record.extend(&sealed);
+    record.push(0); // not claimed
+    record
+}
+
+fn put_name(c: &Chain, name: &str, account: Option<AccountId>) {
+    let at = lezreg_sdk::lns::record_address(&LNS, &lezreg_sdk::lns::derive(name).id);
+    c.rpc.set(at, LNS, name_record(name, account));
+}
+
+/// A deployer entry for `program` by `author`, labelled `label`.
+fn labelled(c: &mut Chain, program: AccountId, author: AccountId, name: &str, label: &str) {
+    c.rpc.set(program, LOADER, header_bytes(1, false));
+    let mut e = entry(t::KIND_DEPLOYER, program, author, name, 1);
+    e.author_label = label.into();
+    c.register(program, &e);
+}
+
+/// name → author_label_proven, over one listing checked by `labels`.
+fn proven_in_listing(
+    c: &Chain,
+    labels: &mut lezreg_sdk::apps::AuthorLabels<'_, &MockRpc>,
+) -> std::collections::BTreeMap<String, bool> {
+    let page = c.registry().list(None, 50).unwrap();
+    page.items
+        .iter()
+        .map(|i| lezreg_sdk::json::listed_checked(i, &mut |e| labels.proven(e)))
+        .map(|v| {
+            let e = &v["entry"];
+            (e["name"].as_str().unwrap().to_owned(), e["author_label_proven"].as_bool().unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn author_labels_are_proven_only_by_the_names_public_account() {
+    let mut c = Chain::new();
+    let (me, other) = (acct(2), acct(3));
+    put_name(&c, "names", Some(me));
+    put_name(&c, "bare", None);
+    labelled(&mut c, acct(10), me, "proven", "lns:names");
+    labelled(&mut c, acct(11), me, "proven-too", "LNS:Names");
+    labelled(&mut c, acct(12), other, "different-account", "lns:names");
+    labelled(&mut c, acct(13), me, "missing-name", "lns:ghost");
+    labelled(&mut c, acct(14), me, "no-account-set", "lns:bare");
+    labelled(&mut c, acct(15), me, "not-lns", "names");
+    labelled(&mut c, acct(16), me, "not-a-name", "lns:not a name");
+    let mut names = lezreg_sdk::apps::Names::new(&c.rpc, LNS);
+    let got = proven_in_listing(&c, &mut lezreg_sdk::apps::AuthorLabels::new(&mut names, 0));
+    let want: std::collections::BTreeMap<String, bool> = [
+        ("proven", true),
+        ("proven-too", true),
+        ("different-account", false),
+        ("missing-name", false),
+        ("no-account-set", false),
+        ("not-lns", false),
+        ("not-a-name", false),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    assert_eq!(got, want);
+
+    // No LNS program configured: nothing is proven, and nothing is read for it.
+    c.rpc.reset_reads();
+    let none = proven_in_listing(&c, &mut lezreg_sdk::apps::AuthorLabels::none());
+    assert!(none.values().all(|p| !p), "{none:?}");
+    let listing_only = c.rpc.reads();
+    c.rpc.reset_reads();
+    let _ = c.registry().list(None, 50).unwrap();
+    assert_eq!(listing_only, c.rpc.reads(), "AuthorLabels::none reads nothing");
+
+    // resolve_program's view is checked the same way.
+    let r = c.registry().resolve(&acct(10)).unwrap();
+    let mut labels = lezreg_sdk::apps::AuthorLabels::new(&mut names, 0);
+    let v = lezreg_sdk::json::resolved_checked(&r, &mut |e| labels.proven(e));
+    assert_eq!(v["deployer_entry"]["author_label_proven"], true);
+    assert_eq!(lezreg_sdk::json::resolved(&r)["deployer_entry"]["author_label_proven"], false);
+}
+
+#[test]
+fn each_label_name_is_read_once_per_listing_and_a_failed_read_is_unproven() {
+    let mut c = Chain::new();
+    let me = acct(2);
+    put_name(&c, "names", Some(me));
+    for i in 0..8 {
+        labelled(&mut c, acct(20 + i), me, &format!("app-{i}"), "lns:names");
+    }
+    let mut names = lezreg_sdk::apps::Names::new(&c.rpc, LNS);
+    c.rpc.reset_reads();
+    let _ = c.registry().list(None, 50).unwrap();
+    let listing = c.rpc.reads();
+    c.rpc.reset_reads();
+    let got = proven_in_listing(&c, &mut lezreg_sdk::apps::AuthorLabels::new(&mut names, 0));
+    assert!(got.values().all(|p| *p), "{got:?}");
+    assert_eq!(c.rpc.reads(), listing + 1, "eight entries labelled lns:names read the name once");
+
+    // Every read fails: the label is unproven, never an error and never true.
+    *c.rpc.fail.lock().unwrap() = Some("connection refused".into());
+    let mut labels = lezreg_sdk::apps::AuthorLabels::new(&mut names, 0);
+    let mut e = entry(t::KIND_DEPLOYER, acct(20), me, "app-0", 1);
+    e.author_label = "lns:names".into();
+    assert!(!labels.proven(&e));
+    *c.rpc.fail.lock().unwrap() = None;
+}
+
+#[test]
+fn new_label_names_per_listing_are_capped() {
+    let mut c = Chain::new();
+    let me = acct(2);
+    let n = lezreg_sdk::apps::MAX_NEW_LABEL_NAMES + 1;
+    for i in 0..n {
+        let name = format!("pub{i}");
+        put_name(&c, &name, Some(me));
+        labelled(&mut c, acct(40 + i as u8), me, &format!("app-{i}"), &format!("lns:{name}"));
+    }
+    let mut names = lezreg_sdk::apps::Names::new(&c.rpc, LNS);
+    let first = proven_in_listing(&c, &mut lezreg_sdk::apps::AuthorLabels::new(&mut names, 0));
+    assert_eq!(first.values().filter(|p| **p).count(), n - 1, "{first:?}");
+    // The next listing reuses the derivations and derives the one left over.
+    let second = proven_in_listing(&c, &mut lezreg_sdk::apps::AuthorLabels::new(&mut names, 0));
+    assert!(second.values().all(|p| *p), "{second:?}");
 }

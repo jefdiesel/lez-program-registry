@@ -50,6 +50,13 @@ description, tags, the IDL pointer, the source pointer and the build configurati
 "who registered this" without any off-chain service. Community entries for the same program are
 separate (`reg.third_party(&program_id, 20)`) and never mistaken for it.
 
+The entry's `author_label` is the author's own text. A label `lns:<name>` can be checked:
+`apps::AuthorLabels::new(&mut apps::Names::new(rpc, lns_program), now_ms).proven(entry)` is true
+only when the LNS name is registered and its profile's public account is the entry's author
+(each name read once per listing; read errors and a missing LNS program are simply false). The
+JSON views take it as `json::listed_checked(item, &mut |e| labels.proven(e))` and set
+`author_label_proven`; plain `json::listed`/`resolved` always say false.
+
 **Freshness: is the entry still about the running code?**
 
 ```rust

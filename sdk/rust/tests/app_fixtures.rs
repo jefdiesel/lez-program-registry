@@ -40,7 +40,7 @@ fn profile_of(name: &str) -> lezreg_sdk::Result<Option<Profile>> {
         }
         _ => return Ok(None),
     };
-    Ok(Some(Profile { name: name.into(), texts }))
+    Ok(Some(Profile { name: name.into(), account: None, texts }))
 }
 
 fn verdict(name: &str) -> (Verdict, Option<String>) {
@@ -106,7 +106,7 @@ fn pub_record(fields: &[&str]) -> String {
 }
 
 fn against(record: String) -> impl FnMut(&str) -> lezreg_sdk::Result<Option<Profile>> {
-    move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), texts: vec![("app.forumer_core".into(), record.clone())] }))
+    move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), account: None, texts: vec![("app.forumer_core".into(), record.clone())] }))
 }
 
 /// B1 and the archive battery: a package some reader could read differently is refused outright,
@@ -198,7 +198,7 @@ fn an_older_release_is_marked() {
     };
     let (new, old) = (review3("new"), review3("old"));
     let record = apps::AppRecord { releases: vec![release(&new), release(&old)], ..apps::AppRecord::default() }.to_value().unwrap();
-    let profile = move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), texts: vec![("app.forumer_ui".into(), record.clone())] }));
+    let profile = move |name: &str| Ok((name == "forumer").then(|| Profile { name: name.into(), account: None, texts: vec![("app.forumer_ui".into(), record.clone())] }));
     for (bytes, newest) in [(&new, true), (&old, false)] {
         let c = Contents::from_lgx(bytes).unwrap();
         let (v, _) = apps::check_following(&c, profile.clone()).unwrap();

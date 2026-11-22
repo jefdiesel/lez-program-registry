@@ -49,8 +49,17 @@ pub fn build(b: &BuildConfig) -> Value {
     })
 }
 
+/// An entry, its author label unproven (`author_label_proven: false`). With an LNS program at
+/// hand, use [`entry_proven`] (and the `*_checked` views) with [`crate::apps::AuthorLabels`].
 #[must_use]
 pub fn entry(e: &Entry) -> Value {
+    entry_proven(e, false)
+}
+
+/// An entry, `author_label_proven` as given: true only when the label was checked (an
+/// `lns:<name>` whose public account is the author, [`crate::apps::AuthorLabels::proven`]).
+#[must_use]
+pub fn entry_proven(e: &Entry, label_proven: bool) -> Value {
     json!({
         "kind": if e.kind == lezreg_types::KIND_DEPLOYER { "deployer" } else { "third-party" },
         "program": e.program.to_base58(),
@@ -59,7 +68,7 @@ pub fn entry(e: &Entry) -> Value {
         "name": e.name,
         "version": e.version,
         "author_label": e.author_label,
-        "author_label_proven": false,
+        "author_label_proven": label_proven,
         "description": e.description,
         "tags": e.tags,
         "idl": content(&e.idl),
@@ -102,9 +111,14 @@ pub fn kind(k: Option<&Kind>) -> Value {
 
 #[must_use]
 pub fn resolved(r: &Resolved) -> Value {
+    resolved_checked(r, &mut |_| false)
+}
+
+/// [`resolved`], each entry's label checked by `proven`.
+pub fn resolved_checked(r: &Resolved, proven: &mut dyn FnMut(&Entry) -> bool) -> Value {
     json!({
         "program": r.program.to_base58(),
-        "deployer_entry": r.deployer.as_ref().map(entry),
+        "deployer_entry": r.deployer.as_ref().map(|e| entry_proven(e, proven(e))),
         "header": header(r.header.as_ref()),
         "freshness": r.freshness().as_ref().map(freshness),
     })
@@ -112,10 +126,15 @@ pub fn resolved(r: &Resolved) -> Value {
 
 #[must_use]
 pub fn located(l: &Located) -> Value {
+    located_checked(l, &mut |_| false)
+}
+
+/// [`located`], its entry's label checked by `proven`.
+pub fn located_checked(l: &Located, proven: &mut dyn FnMut(&Entry) -> bool) -> Value {
     json!({
         "address": l.address.to_base58(),
         "kind": kind(Some(&l.kind)),
-        "entry": entry(&l.entry),
+        "entry": entry_proven(&l.entry, proven(&l.entry)),
         "header": header(l.header.as_ref()),
         "freshness": freshness(&l.freshness),
     })
@@ -128,12 +147,17 @@ pub fn link(l: &Link) -> Value {
 
 #[must_use]
 pub fn listed(i: &Listed) -> Value {
+    listed_checked(i, &mut |_| false)
+}
+
+/// [`listed`], its entry's label checked by `proven`.
+pub fn listed_checked(i: &Listed, proven: &mut dyn FnMut(&Entry) -> bool) -> Value {
     json!({
         "address": i.address.to_base58(),
         "seq": i.link.seq,
         "kind": kind(i.kind.as_ref()),
         "link": link(&i.link),
-        "entry": i.entry.as_ref().map(entry),
+        "entry": i.entry.as_ref().map(|e| entry_proven(e, proven(e))),
     })
 }
 

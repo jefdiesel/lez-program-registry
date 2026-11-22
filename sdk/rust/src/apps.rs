@@ -748,6 +748,7 @@ impl<R: Rpc> Names<R> {
             lns::resolve(&self.rpc, &self.lns, &name, &derived, now_ms)?.map(|record| {
                 record.profile.unwrap_or_else(|| Profile {
                     name: name.clone(),
+                    account: None,
                     texts: Vec::new(),
                 })
             }),
@@ -757,6 +758,73 @@ impl<R: Rpc> Names<R> {
     /// [`check_following`] against the chain: the verdict, and the name it forwarded from.
     pub fn verify(&mut self, contents: &Contents, now_ms: u64) -> Result<(Verdict, Option<String>)> {
         check_following(contents, |name| self.profile(name, now_ms))
+    }
+
+    /// The public account a registered name's holder set (its profile's `account`), or `None`:
+    /// not registered, no profile this key opens, or no account set. `name` as [`Self::profile`].
+    pub fn account(&mut self, name: &str, now_ms: u64) -> Result<Option<AccountId>> {
+        Ok(self.profile(name, now_ms)?.and_then(|p| p.account))
+    }
+
+    /// Whether `name` (already a bare name) was derived before, so reading it costs no Argon2.
+    #[must_use]
+    pub fn is_derived(&self, name: &str) -> bool {
+        self.derived.contains_key(name)
+    }
+}
+
+/// New names [`AuthorLabels`] derives in one listing, at most: each takes about a second of
+/// Argon2, and a module answering one call at a time must answer within a host's ~20 s. Names
+/// past this stay unproven in this listing; their derivations are kept, so later listings
+/// (which reuse the same [`Names`]) prove them.
+pub const MAX_NEW_LABEL_NAMES: usize = 4;
+
+/// Checks entries' `author_label`s for one listing (one `list_entries`, one `resolve_program`):
+/// a label `lns:<name>` is **proven** when that name is registered and its profile's public
+/// account is the entry's author (what nameswallet.app/apps calls the author's "LNS name").
+/// Everything else is unproven: no LNS program ([`Self::none`]), a label that isn't `lns:`, a
+/// name that isn't registered or sets another account (or none), a read that fails, and names
+/// past [`MAX_NEW_LABEL_NAMES`] new derivations. Never proven by default.
+///
+/// Each name is read once per listing (eight entries labelled `lns:names` read `names` once);
+/// reads go through the [`Names`]' RPC, so a paced client stays paced. Forwards are not
+/// followed: the label names the name that must name the author.
+pub struct AuthorLabels<'a, R> {
+    names: Option<&'a mut Names<R>>,
+    now_ms: u64,
+    new_left: usize,
+    /// Name → its public account (`None` also for a read that failed), for this listing only.
+    seen: std::collections::HashMap<String, Option<AccountId>>,
+}
+
+impl<'a, R: Rpc> AuthorLabels<'a, R> {
+    /// Labels checked against `names` (the network's LNS program) at `now_ms`.
+    pub fn new(names: &'a mut Names<R>, now_ms: u64) -> Self {
+        Self { names: Some(names), now_ms, new_left: MAX_NEW_LABEL_NAMES, seen: std::collections::HashMap::new() }
+    }
+
+    /// No LNS program configured: every label is unproven.
+    #[must_use]
+    pub fn none() -> Self {
+        Self { names: None, now_ms: 0, new_left: 0, seen: std::collections::HashMap::new() }
+    }
+
+    /// Whether `entry`'s author label is a proven LNS name of its author.
+    pub fn proven(&mut self, entry: &lezreg_types::Entry) -> bool {
+        let Some(name) = lns::label_name(&entry.author_label) else { return false };
+        let Some(names) = self.names.as_deref_mut() else { return false };
+        if let Some(account) = self.seen.get(&name) {
+            return *account == Some(entry.author);
+        }
+        if !names.is_derived(&name) {
+            if self.new_left == 0 {
+                return false;
+            }
+            self.new_left -= 1;
+        }
+        let account = names.account(&name, self.now_ms).unwrap_or(None);
+        self.seen.insert(name, account);
+        account == Some(entry.author)
     }
 }
 
@@ -799,6 +867,7 @@ mod tests {
     fn profile(name: &str, entries: &[(&str, String)]) -> Profile {
         Profile {
             name: name.into(),
+            account: None,
             texts: entries.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect(),
         }
     }
