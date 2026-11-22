@@ -1,11 +1,11 @@
 LEZ Program Registry: M2 demo core, 2026-11-02 19:24:14Z
 sequencer http://127.0.0.1:3062 (local LEZ v0.4.0-rc1 standalone); lezreg lezreg 0.1.0
-registry ELF /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
-sample ELF   /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin
+registry ELF <work>/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
+sample ELF   <work>/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin
 payer (funded, copied wallet) 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg; Mallory FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY (her own wallet)
 
 ######## 1. Deploy the registry and register it in itself (chain/deploy.sh)
-== deploying the registry guest /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
+== deploying the registry guest <work>/lez-program-registry/target/riscv-guest/lezreg-methods/lez_program_registry/riscv32im-risc0-zkvm-elf/release/lez_program_registry.bin
 == deploy 522136 bytes (image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab) at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: 5 segment writes, then CreateHeader
    pre-flight: CreateHeader simulated OK (0 cycles, gas limit 30000); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997716331024, the whole deploy reserves up to about 4833594
    writing segment 1/5 (96496 bytes) at tqPhgBskLp2AzcySqg9FvevSWBJeEY3zBioPJ2K2FVZ
@@ -20,8 +20,8 @@ payer (funded, copied wallet) 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg; Mall
    submitted 00c381f4dc5389c0bfb05b0aed02446a37c786abcc7ad0f9d4782b92e29ac2cc
    block 4259: APPLIED; 607 bytes, gas limit 30000, fee 4864
    read back header at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab (upgradeable): confirmed
-note: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
-deployed the registry at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 (saved in /Volumes/exos162/logos/lez-program-registry/demo-out/deploy-local.env)
+note: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25's header key is in the wallet at <work>/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+deployed the registry at 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 (saved in <work>/lez-program-registry/demo-out/deploy-local.env)
 == registering the registry in itself at (REG, REG)
 == RegisterDeployer
    root (58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25, REG); 6 actors declared; 637 message bytes; signing: 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
@@ -31,13 +31,13 @@ reading the registry's bytecode from the chain (once; it is cached next to the w
    block 4261: APPLIED; 1530 bytes, gas limit 254001, fee 1366920
    read back 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25: lez_program_registry v0.1.0 revision 1, author 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25 (deployer entry: confirmed)
 RegisterDeployer: applied in block 4261 (tx e69484c93056f79d4dc257b3eaebb0055b63ba04b75a465009723b6a5c69cb20); simulated 169334 cycles, gas limit 254001, fee 1366920, 1530 bytes; entry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
-saved network 'local' in /Volumes/exos162/logos/lez-program-registry/demo-out/config/networks.json
+saved network 'local' in <work>/lez-program-registry/demo-out/config/networks.json
 REG=58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 $ lezreg network show
 network  local
 rpc      http://127.0.0.1:3062
 registry 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
-config   /Volumes/exos162/logos/lez-program-registry/demo-out/config/networks.json
+config   <work>/lez-program-registry/demo-out/config/networks.json
 $ lezreg show 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
 program 58muciVqgCfsdYoDCG5H6Lfn1rr1zzmLr6AYayDJcc25
   deployed     image b61b79de2699189381ca70a593929314db6986ca0a7cc0c6a4c5dcb4544f7bab  (upgradeable)
@@ -63,14 +63,14 @@ third-party (community) entries: 0
 A=9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb Q=ASi3Y9u8vah5UKH4RmAsVBjDphfGn481cQBAdMYHp2sV B=8vgLo24z2X1MwK6GC8yPJaYMLL3XrSbZ1DLNe37M3C8K
 
 ######## 3a. Pre-flight: a deploy dry run checks everything (keys, simulation over an in-memory segment chain, funds) and writes nothing
-$ lezreg deploy /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --dry-run --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
+$ lezreg deploy <work>/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --dry-run --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder
 == deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: 4 segment writes, then DeployAndRegister
    pre-flight: DeployAndRegister simulated OK (180894 cycles, gas limit 271341); payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg holds 9997711017320, the whole deploy reserves up to about 5252598
    dry run: nothing written
 program Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6
 DeployAndRegister (after 4 segment writes): dry run, nothing sent; simulated 180894 cycles, gas limit would be 271341; the payer 26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg must hold about 5252598 for the fee reserve
 -- a deploy whose payer cannot cover it is refused before the first (paid) segment write
-$ lezreg deploy /Volumes/exos162/logos/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
+$ lezreg deploy <work>/lez-program-registry/target/riscv-guest/lezreg-helper-methods/lezreg_forwarder/riscv32im-risc0-zkvm-elf/release/lezreg_forwarder.bin --author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb --name smoke-forwarder --version 1.0.0 --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail
 == deploy 329928 bytes (image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082) at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: 4 segment writes, then DeployAndRegister
    pre-flight: DeployAndRegister simulated OK (180894 cycles, gas limit 271341); payer 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb holds 0, the whole deploy reserves up to about 5252598
 error: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb holds 0, but deploying this program reserves up to about 5252598 (4 segment writes and DeployAndRegister): send it at least 5252598 more, or pick another --payer. Nothing was written
@@ -91,7 +91,7 @@ error: 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb holds 0, but deploying this 
    block 4274: APPLIED; 1804 bytes, gas limit 276009, fee 1486488
    read back Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: smoke-forwarder v1.0.0 revision 1, author 9eUMprhAKQVmKYXgBhYZaPpeaX7bbFmeBUWUXcoLLpAb (deploy-and-register: confirmed)
    read back header at Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
-note: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+note: Gi25vnkrz8PqDJgLXyJHFcDNHCjsgia18kzJQ2f7e8T6's header key is in the wallet at <work>/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
 {
   "block": 4274,
   "confirmed_by_read_back": false,
@@ -337,7 +337,7 @@ Transaction is included in block 4291
    submitted cea4f3509d1cc8ec40ad212b9a8703d62564bac5ee7c0b99f4aa6c71f349f5c7
    block 4303: APPLIED; 607 bytes, gas limit 30000, fee 4864
    read back header at 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6: image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082 (upgradeable): confirmed
-note: 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6's header key is in the wallet at /Volumes/exos162/logos/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+note: 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6's header key is in the wallet at <work>/lez-program-registry/demo-out/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
 X3=8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6
 -- (a) RegisterDeployer at (X3, REG) signed only by Mallory: simulation refuses, nothing is sent
 $ lezreg register --program 8Qgq4WwGdY8ZhL8tvBGS6S8fngU2X632XEiv9heEHmV6 --author FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --payer FUAp8rnk78NDGKZca348RcaUftPhweoY4USfssc2zivY --name smoke-forwarder --version 6.6.6 --label totally\ the\ deployer --idl-cid 0x01551220cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-sha256 cbd9ff52220f0c4c0d913c487bdc90b9341721ab4c3a9b270204601b472d2af5 --idl-size 10 --repo https://github.com/jefdiesel/lez-program-registry --commit 0000000000000000000000000000000000000000 --manifest-path tools/engine-test/helper-methods/guest/Cargo.toml --binary lezreg_forwarder   # expected to fail

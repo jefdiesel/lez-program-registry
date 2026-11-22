@@ -1,8 +1,8 @@
 
 ===== encoding check
 encoding OK: CreateHeader = 00
-REG    /Volumes/exos162/logos/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin total=316008 user_elf=283584 segments=3 image_id=bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764
-TARGET /Volumes/exos162/logos/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin total=459452 user_elf=427028 segments=5 image_id=a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a
+REG    <work>/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin total=316008 user_elf=283584 segments=3 image_id=bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764
+TARGET <work>/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin total=459452 user_elf=427028 segments=5 image_id=a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a
 
 ===== accounts
 P=HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R M=EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx R=BLR5We4Zfe8X4HfEZ8DUyL5pSerC6dsNSPCFxd42cEnN X=AWo5M9EgWBsHVzeTUxNXUHZPenrgt3474TbbJsz3rBiE X3=3ZQ8MQK1Cf945v8VTmH8hcPYC4VE8AsMWtE7TygP8XSv X4=7vnzRCGx8znKyF4bPD6k5CjxGBH8uGfevLAHzxrJC7eK X5=9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN R2=De7yr6sosKNHgPJ73n77vRcAL1DH8cepRT35Pn5tChPG
@@ -14,7 +14,7 @@ funded HRpVQCmjL88neqqoFQVFroz69MBfmU7u6NbtXkvawG2R with 200000000 in block 1351
 funded EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx with 20000000 in block 1353; balance 20000000
 
 ===== deploy REG: segments then plain CreateHeader (also = standalone CreateHeader cost)
-elf /Volumes/exos162/logos/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin: 316008 bytes total, user_elf 283584 bytes, 3 chunks
+elf <work>/lez-program-registry/spikes/d-deploy-and-register/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin: 316008 bytes total, user_elf 283584 bytes, 3 chunks
 expected image_id bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764
 segment 2 -> Ff5vCXZSnM3oJd1AiZQR9kosJAjFu5CixpCkCg21Q3AQ (86976 bytes) block 1356 fee 700448
 segment 1 -> 37KdSVTR4anri89BrWCD3X4HcMFTTGVWzeaa54N4yrP5 (98304 bytes) block 1358 fee 791328
@@ -30,7 +30,7 @@ RESULT: APPLIED
 (X, LOADER): header image_id bbbe71d85209a3fd0dcd51f3270c00c9dc42c30c956a8beb78716bf0885d9764 first_segment BBDksmsQ2DFi5SZS13wPpHGTGRgCMtWiNct2X53rHCyc immutable false
 
 ===== write ~400 KB target segments (one chain, reused by every header below)
-elf /Volumes/exos162/logos/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin: 459452 bytes total, user_elf 427028 bytes, 5 chunks
+elf <work>/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin: 459452 bytes total, user_elf 427028 bytes, 5 chunks
 expected image_id a48b16bf0fb4e7e24e12311536159feaf855edfdb98bf97591071b6530abdd3a
 segment 4 -> EfStWqNBWjV5dAqvKPCa7TWNgAwrzYYSEMubXhEV7u28 (33812 bytes) block 1365 fee 275136
 segment 3 -> DHSwDvGx1NLGQXY9mY9ZZX2GDZg5Rn6JpwPJgtJfEBBs (98304 bytes) block 1368 fee 791328
@@ -144,7 +144,7 @@ RESULT: REVERTED (charged)
 variant DarNocheck header 9HGk6GB14hiWMvrMP3vJr1Cg4zEBuK9Ww74c1Mbm3KeN signs=false payer EjSskURNRH61xumFwfn42iKLDKicrbXQ4mYeEBZetyrx
 message 45 bytes; declared actors: 2
 
-thread 'tokio-rt-worker' (351427622) panicked at /Users/minim4/.cargo/git/checkouts/logos-execution-zone-6bae42d7c9cadfe7/1806e87/lez/programs/program_loader/core/src/lib.rs:79:13:
+thread 'tokio-rt-worker' (351427622) panicked at ~/.cargo/git/checkouts/logos-execution-zone-6bae42d7c9cadfe7/1806e87/lez/programs/program_loader/core/src/lib.rs:79:13:
 CreateHeader target must be an authorized account
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 simulated: REFUSED: Failed to execute program: CreateHeader target must be an authorized account; sending anyway with gas 100000

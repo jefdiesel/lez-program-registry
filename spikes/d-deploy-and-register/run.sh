@@ -8,9 +8,9 @@ C="$S/target/release/reg_client --rpc http://127.0.0.1:3062"
 RPC=http://127.0.0.1:3062
 FUNDER=26pkAnG15Y5QzdKBLpxzH9CLmWQCkQ91zQqEJnsrchNg
 REG_ELF=$(ls $S/target/riscv-guest/reg_methods/lezreg_spike_reg/riscv32im-risc0-zkvm-elf/release/lezreg_spike_reg.bin)
-TARGET_ELF=${TARGET_ELF:-/Volumes/exos162/logos/names-0.4/target/riscv-guest/names_methods/logos_names/riscv32im-risc0-zkvm-elf/release/logos_names.bin}
+TARGET_ELF=${TARGET_ELF:?set TARGET_ELF to the logos_names guest .bin}
 mkdir -p $S/out
-SEQLOG=/Volumes/exos162/logos/lp0023-checks/sequencer.log
+SEQLOG=${SEQLOG:?set SEQLOG to the local sequencer log file}
 OFF=$(wc -c <$SEQLOG)
 step() { echo; echo "===== $*"; }
 acct() { $C new-accounts "$1"; }

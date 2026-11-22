@@ -48,13 +48,13 @@ immutable = false
 # program = "<id>"     # set by `lezreg publish` after the first deploy
 
 ######## lezreg doctor
-ok    network    m8 (config /Volumes/exos162/logos/dev/m8-agent-live/config/networks.json)
+ok    network    m8 (config <work>/dev/m8-agent-live/config/networks.json)
 ok    sequencer  http://127.0.0.1:3200, block 12
 ok    clock      this machine is +10.8 s from the chain clock (block 12)
 ok    registry   FHG3ZEDM96qF275fD8LUUdY7GcD27ycyyQi9qWJLNmwY
 ok    storage    http://127.0.0.1:8210/api/storage/v1: peer 16Uiu2HAmGRCs9NH99WoWsbyaHwo3GqDDcFw566enwTxbVPDKTY74
-ok    r0vm       /Users/minim4/.cargo/bin/r0vm
-ok    wallet     /Volumes/exos162/logos/dev/m8-agent-live/wallet/storage.json
+ok    r0vm       ~/.cargo/bin/r0vm
+ok    wallet     <work>/dev/m8-agent-live/wallet/storage.json
 warn  docker     server 29.2.1, buildx yes, memory 5.8 GiB (the builder runs emulated on arm64: give Docker at least 8 GiB)
 exit 0
 
@@ -104,7 +104,7 @@ share: lezreg --network m8 show G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp
 exit 0
 
 ######## publish with a different binary: refused
-error: /Volumes/exos162/logos/lez-program-registry/target/release/lezreg_forwarder: invalid input: not a loadable program: Invalid program bytecode
+error: <work>/lez-program-registry/target/release/lezreg_forwarder: invalid input: not a loadable program: Invalid program bytecode
 warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
 error: G9ryYjbivBeJKVq5osRZrN1Cp6fRXiChgQq9UNeVm9Mp runs image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55, but the binary given is image ac1d4ff257e23af4d2171121590d8b3d9299fa744312fbe49d42b36d5ca6b082: it is not this program's code. Upgrading the code is not something publish does
 exit 1
@@ -128,14 +128,14 @@ warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot
 m8-sample 0.1.2 commit ec8e36a5e736e74d27b8c48f4e0ba4b2360b9ad2
   image id  5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55
   live      5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55  MATCH
-  wrote     /Volumes/exos162/logos/dev/m8-agent-live/rel/{program.bin, idl.json, lezreg-release.json}
+  wrote     <work>/dev/m8-agent-live/rel/{program.bin, idl.json, lezreg-release.json}
 exit 0
 total 1136
-drwxr-xr-x   5 minim4  staff     160 Nov  3 16:11 .
-drwxr-xr-x  16 minim4  staff     512 Nov  3 16:11 ..
--rw-r--r--   1 minim4  staff   18282 Nov  3 16:11 idl.json
--rw-r--r--   1 minim4  staff    1181 Nov  3 16:11 lezreg-release.json
--rw-r--r--   1 minim4  staff  555092 Nov  3 16:11 program.bin
+drwxr-xr-x   5 runner  staff     160 Nov  3 16:11 .
+drwxr-xr-x  16 runner  staff     512 Nov  3 16:11 ..
+-rw-r--r--   1 runner  staff   18282 Nov  3 16:11 idl.json
+-rw-r--r--   1 runner  staff    1181 Nov  3 16:11 lezreg-release.json
+-rw-r--r--   1 runner  staff  555092 Nov  3 16:11 program.bin
 
 ######## tampered payload is refused
 error: idl.json does not match the payload: sha256 baf94d3c665d0ff5c45eb55bebdd596fb5b666dfd8b1a193b93ae097173b299f (18282 B), the payload says 98b7354e9c578ec16239ec649730248f67b84be356bd32f51304d05fb22957c4 (18282 B)
@@ -180,7 +180,7 @@ exit 0
    submitted 754ace39ecc7b3b36e1ae5716d4a9c128a4b9c0d2f7f6be22e6acac017fa4d51
    block 28: APPLIED; 607 bytes, gas limit 30000, fee 4864
    read back header at 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4: image 5f42948ad093b8b0101237c8639a37f90d9d0ddb06dcf029735b91a1b6944b55 (upgradeable): confirmed
-note: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4's header key is in the wallet at /Volumes/exos162/logos/dev/m8-agent-live/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
+note: 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4's header key is in the wallet at <work>/dev/m8-agent-live/wallet/storage.json. It is the program's upgrade key: back the wallet up (and encrypt it with `lezreg wallet set-password`)
 deployed 5m6J4SGu6JtdDkEEvqYGRX6YRAFv5UkBNZg9FVYxKJW4
 warning: commit ec8e36a5e736 is on no remote branch: push it, or `verify` cannot fetch it
 uploading lez_program_registry-0.1.0.idl.json (18282 B canonical) to http://127.0.0.1:8210/api/storage/v1

@@ -23,7 +23,7 @@
 
 Commands (on the Mini):
 ```
-cd /Volumes/exos162/logos/lez-program-registry/spikes/d-deploy-and-register
+cd <work>/lez-program-registry/spikes/d-deploy-and-register
 export PATH=$HOME/.cargo/bin:$HOME/.risc0/bin:/opt/homebrew/bin:$PATH CARGO_TARGET_DIR=$PWD/target
 cargo build --release -p reg_methods -p reg_client
 ./run.sh            # wallet = ./wallet, a copy of lp0023-checks/wallet; own payer P funded 200M from 26pk…
