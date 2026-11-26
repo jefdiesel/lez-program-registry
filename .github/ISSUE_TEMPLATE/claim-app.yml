@@ -1,0 +1,42 @@
+name: Claim or list a Basecamp app
+description: Claim an app Names Wallet lists for you, ask for yours to be listed, or ask for a listing to be removed
+title: "App: "
+labels: [app-listing]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The apps directory at https://nameswallet.app/apps/ lists Basecamp apps by their developers'
+        repositories. **Claiming** means publishing the app from your own LNS name (docs/APPS.md):
+        then your entry shows "vouched for by <your name>" and the listing goes away. Your name can
+        stay private.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What do you want?
+      options:
+        - Claim my listed app (I published it from my LNS name)
+        - List my app (not published under a name yet)
+        - Remove my app's listing
+    validations: { required: true }
+  - type: input
+    id: module
+    attributes:
+      label: Module name (as in metadata.json)
+      placeholder: manifesto_ui
+    validations: { required: true }
+  - type: input
+    id: repo
+    attributes:
+      label: Your repository
+      placeholder: https://github.com/you/your-app
+    validations: { required: true }
+  - type: input
+    id: lns
+    attributes:
+      label: Your LNS name (for a claim)
+      description: The name whose app.<module> record vouches for the release. Leave empty if you only want to be listed or removed.
+  - type: input
+    id: release
+    attributes:
+      label: Release page with the .lgx (to be listed)
